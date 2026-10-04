@@ -140,6 +140,12 @@ pub struct App {
     pub timer_menu: bool,
     pub timer_custom: bool,
     pub timer_custom_min: u32,
+    /// Height of the "Hari ini" body, animated: it folds away when there is nothing to show.
+    pub today_h: f32,
+    pub today_target: f32,
+    /// The user's own open/closed choice for "Hari ini" (None = automatic).
+    pub today_force: Option<bool>,
+    pub task_scroll: usize,
     pub stock_sel: usize,
     pub stock_input: crate::textfield::TextField,
     pub tp_text: String,
@@ -219,6 +225,10 @@ impl App {
             timer_menu: false,
             timer_custom: false,
             timer_custom_min: 30,
+            today_h: 0.0,
+            today_target: 0.0,
+            today_force: None,
+            task_scroll: 0,
             stock_sel: 0,
             stock_input: crate::textfield::TextField::new("Tambah ticker (mis. BBCA)", false),
             tp_text: String::new(),
@@ -488,6 +498,12 @@ impl App {
         if self.st.mode == Mode::Expanded && self.st.view == View::Teleprompter {
             self.tp_step(dt);
         }
+        // Accordion: ease the "Hari ini" body toward its target height.
+        if (self.today_h - self.today_target).abs() > 0.3 {
+            self.today_h += (self.today_target - self.today_h) * (1.0 - (-dt * 14.0).exp());
+        } else {
+            self.today_h = self.today_target;
+        }
         if self.upload.is_active() {
             self.step_sequence();
         }
@@ -516,6 +532,7 @@ impl App {
                 || self.ticker.animating()
                 || self.chat.sending
                 || activity_on
+                || ((self.today_h - self.today_target).abs() > 0.3 && self.st.mode == Mode::Expanded)
                 || (self.tp_playing && self.st.mode == Mode::Expanded && self.st.view == View::Teleprompter)
         };
         if !busy {

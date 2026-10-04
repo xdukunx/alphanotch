@@ -257,45 +257,97 @@ impl App {
     /// Right column (OmniNotch style): today's agenda on top, the task list under it. The timer is one
     /// small button on the tasks header; it opens 5/15/25 and a gear for a custom length.
     fn dash_column(&mut self, g: &mut Gfx, c: Rect) {
-        // ── Today ──
-        text::draw(g, "Hari ini", c.x, c.y + 12.0, Face::Bold, 12.5, hex(pal::INK), Align::Left);
-        let hw = text::measure("Hari ini", Face::Bold, 12.5);
-        text::draw(g, "›", c.x + hw + 6.0, c.y + 11.0, Face::Regular, 13.0, hex(pal::DIM), Align::Left);
-
+        // ── Today (an accordion: it folds away when there is nothing to show) ──
         let gstatus = crate::gtasks::status();
         let needs = crate::gtasks::calendar_needs_login();
+        let connected = gstatus == crate::gtasks::Status::Linked && !needs;
         let events = upcoming(&crate::gtasks::events());
-        if gstatus == crate::gtasks::Status::Linked && !needs {
-            if events.is_empty() {
-                text::draw(g, "Tidak ada agenda lagi hari ini", c.x, c.y + 38.0, Face::Regular, 11.5, hex(pal::DIM2), Align::Left);
-            }
-            for (i, e) in events.iter().take(2).enumerate() {
-                let y = c.y + 38.0 + i as f32 * 32.0;
-                g.fill_style(hex("#B45AF0"));
-                g.fill_round_rect(c.x, y - 11.0, 3.0, 28.0, 1.5);
-                crate::app::fading_text(g, &e.title, c.x + 12.0, y - 2.0, 12.0, hex(pal::INK), c.x + 12.0, c.x + c.w);
-                let when = match (&e.end, e.start.as_str()) {
-                    (_, "Seharian") => "Seharian".to_string(),
-                    (Some(end), s) => format!("{s} – {end}"),
-                    (None, s) => s.to_string(),
-                };
-                text::draw(g, &when, c.x + 12.0, y + 12.0, Face::Regular, 10.5, hex(pal::DIM), Align::Left);
-            }
-            if events.len() > 2 {
-                text::draw(g, &format!("+{} lagi", events.len() - 2), c.x + c.w, c.y + 12.0, Face::Regular, 10.0, hex(pal::DIM3), Align::Right);
-            }
+        let shown = events.len().min(2);
+        let auto_open = connected && !events.is_empty();
+        let open = self.today_force.unwrap_or(auto_open);
+        // The body is: the events, or one line saying why there are none / how to connect.
+        let target = if !open { 0.0 } else if connected && !events.is_empty() { shown as f32 * 32.0 } else { 26.0 };
+        self.today_target = target;
+        if (self.today_h - target).abs() > 0.3 {
+            self.ensure_running();
+        }
+
+        let head = Rect::new(c.x, c.y, c.w, 26.0);
+        let (hclick, hhover, _) = self.ui.click_region(id_of("today-head", 97), head);
+        text::draw(g, "Hari ini", c.x, c.y + 12.0, Face::Bold, 12.5, if hhover { hex("#FFFFFF") } else { hex(pal::INK) }, Align::Left);
+        let hw = text::measure("Hari ini", Face::Bold, 12.5);
+        // Chevron: points right when folded, down when open.
+        g.stroke_style(hex(pal::DIM));
+        g.line_width(1.5);
+        g.line_cap_round();
+        g.line_join_round();
+        g.begin_path();
+        let (cx0, cy0) = (c.x + hw + 10.0, c.y + 12.0);
+        if open {
+            g.move_to(cx0 - 3.0, cy0 - 1.5);
+            g.line_to(cx0, cy0 + 1.8);
+            g.line_to(cx0 + 3.0, cy0 - 1.5);
         } else {
-            let hint = if needs { "Kalender: masuk ulang" } else { "Hubungkan Google untuk agenda" };
-            let r = Rect::new(c.x, c.y + 26.0, c.w, 24.0);
-            let (clicked, hover, _) = self.ui.click_region(id_of("gt-cal", 97), r);
-            text::draw(g, hint, c.x, c.y + 38.0, Face::Medium, 11.5, if hover { hex(pal::INK) } else { hex(pal::AMBER) }, Align::Left);
-            if clicked {
-                crate::gtasks::connect();
+            g.move_to(cx0 - 1.5, cy0 - 3.0);
+            g.line_to(cx0 + 1.8, cy0);
+            g.line_to(cx0 - 1.5, cy0 + 3.0);
+        }
+        g.stroke();
+        if hclick {
+            crate::sound::play("blip");
+            self.today_force = Some(!open);
+        }
+        if !open {
+            // Folded: a one-line summary beside the title.
+            let summary = if !connected {
+                if needs { "kalender: masuk ulang".to_string() } else { "belum terhubung".to_string() }
+            } else if events.is_empty() {
+                "tidak ada agenda".to_string()
+            } else {
+                format!("{} acara · {} {}", events.len(), events[0].start, events[0].title)
+            };
+            crate::app::fading_text(g, &summary, c.x + hw + 22.0, c.y + 12.0, 10.5, hex(pal::DIM2), c.x + hw + 22.0, c.x + c.w);
+        }
+        // Body, clipped by its animated height without a clip: rows that do not fit yet are not drawn.
+        if self.today_h > 6.0 {
+            let fade = clamp(self.today_h / target.max(24.0), 0.0, 1.0);
+            g.save();
+            g.mul_alpha(fade);
+            if !connected {
+                let r = Rect::new(c.x, c.y + 26.0, c.w, 24.0);
+                let (clicked, hover, _) = self.ui.click_region(id_of("gt-cal", 97), r);
+                let hint = if needs { "Kalender: masuk ulang" } else { "Hubungkan Google untuk agenda" };
+                text::draw(g, hint, c.x, c.y + 38.0, Face::Medium, 11.5, if hover { hex(pal::INK) } else { hex(pal::AMBER) }, Align::Left);
+                if clicked {
+                    crate::gtasks::connect();
+                }
+            } else if events.is_empty() {
+                text::draw(g, "Tidak ada agenda lagi hari ini", c.x, c.y + 38.0, Face::Regular, 11.5, hex(pal::DIM2), Align::Left);
+            } else {
+                for (i, e) in events.iter().take(2).enumerate() {
+                    let y = c.y + 38.0 + i as f32 * 32.0;
+                    if y + 17.0 > c.y + 28.0 + self.today_h + 8.0 {
+                        break;
+                    }
+                    g.fill_style(hex("#B45AF0"));
+                    g.fill_round_rect(c.x, y - 11.0, 3.0, 28.0, 1.5);
+                    crate::app::fading_text(g, &e.title, c.x + 12.0, y - 2.0, 12.0, hex(pal::INK), c.x + 12.0, c.x + c.w);
+                    let when = match (&e.end, e.start.as_str()) {
+                        (_, "Seharian") => "Seharian".to_string(),
+                        (Some(end), s) => format!("{s} – {end}"),
+                        (None, s) => s.to_string(),
+                    };
+                    text::draw(g, &when, c.x + 12.0, y + 12.0, Face::Regular, 10.5, hex(pal::DIM), Align::Left);
+                }
+                if events.len() > 2 {
+                    text::draw(g, &format!("+{} lagi", events.len() - 2), c.x + c.w, c.y + 12.0, Face::Regular, 10.0, hex(pal::DIM3), Align::Right);
+                }
             }
+            g.restore();
         }
 
         // ── Tasks ──
-        let ty = c.y + 100.0;
+        let ty = c.y + 40.0 + self.today_h;
         text::draw(g, "Tugas", c.x, ty, Face::Bold, 12.5, hex(pal::INK), Align::Left);
         let tw = text::measure("Tugas", Face::Bold, 12.5);
         text::draw(g, "›", c.x + tw + 6.0, ty - 1.0, Face::Regular, 13.0, hex(pal::DIM), Align::Left);
@@ -408,10 +460,19 @@ impl App {
         // Rows.
         let order = crate::todos::order(&self.todos);
         let field_h = 24.0;
-        let rows = (((r.h - field_h - 8.0) / 21.0).floor().max(0.0) as usize).min(5);
+        let rows = (((r.h - field_h - 8.0) / 21.0).floor().max(0.0) as usize).min(7);
+        // Mouse wheel over the rows scrolls the list.
+        let list_area = Rect::new(r.x, r.y, r.w, (r.h - field_h - 6.0).max(0.0));
+        let (mx0, my0) = self.ui.input.mouse;
+        if list_area.contains(mx0, my0) && self.ui.input.wheel != 0.0 {
+            let step = -self.ui.input.wheel.round() as i32;
+            let max = order.len().saturating_sub(rows) as i32;
+            self.task_scroll = (self.task_scroll as i32 + step).clamp(0, max) as usize;
+        }
+        self.task_scroll = self.task_scroll.min(order.len().saturating_sub(rows));
         let mut y = r.y + 10.0;
         let mut act: Option<(usize, bool)> = None; // (index, toggle star instead of complete)
-        for &i in order.iter().take(rows) {
+        for &i in order.iter().skip(self.task_scroll).take(rows) {
             let t = &self.todos[i];
             let (check, star) = (Rect::new(r.x - 2.0, y - 9.0, 18.0, 18.0), Rect::new(r.x + r.w - 18.0, y - 9.0, 18.0, 18.0));
             let (c_click, c_hover, _) = self.ui.click_region(id_of(&format!("todo-c{i}"), 95), check);
@@ -442,9 +503,22 @@ impl App {
         if order.is_empty() && rows > 0 {
             text::draw(g, "Belum ada tugas", r.x + 2.0, r.y + 10.0, Face::Regular, 11.0, hex(pal::DIM3), Align::Left);
         }
-        let more = order.len().saturating_sub(rows);
-        if more > 0 {
-            text::draw(g, &format!("+{more} lagi"), r.x + r.w, r.y + r.h - field_h - 4.0, Face::Regular, 10.0, hex(pal::DIM3), Align::Right);
+        // "+N lagi" shows the next page of tasks; at the end it says "ke atas". The wheel scrolls too.
+        let below = order.len().saturating_sub(self.task_scroll + rows);
+        let above = self.task_scroll;
+        if below > 0 || above > 0 {
+            let label = if below > 0 { format!("+{below} lagi") } else { "ke atas".to_string() };
+            let lw = text::measure(&label, Face::Medium, 10.0) + 8.0;
+            let hit = Rect::new(r.x + r.w - lw, r.y + r.h - field_h - 17.0, lw, 15.0);
+            let (clicked, hover, _) = self.ui.click_region(id_of("tasks-more", 101), hit);
+            text::draw(g, &label, r.x + r.w, hit.cy(), Face::Medium, 10.0, if hover { hex(pal::INK) } else { hex(pal::DIM2) }, Align::Right);
+            if above > 0 {
+                text::draw(g, &format!("{}–{} dari {}", above + 1, (above + rows).min(order.len()), order.len()), r.x + 2.0, hit.cy(), Face::Regular, 9.5, hex(pal::DIM3), Align::Left);
+            }
+            if clicked {
+                crate::sound::play("blip");
+                self.task_scroll = if below > 0 { (self.task_scroll + rows).min(order.len().saturating_sub(rows)) } else { 0 };
+            }
         }
 
         // Add field, at the bottom.
