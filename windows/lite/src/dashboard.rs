@@ -177,72 +177,105 @@ impl App {
     }
 
     fn dash_now_playing(&mut self, g: &mut Gfx, r: Rect, n: f32) {
-        let art = Rect::new(r.x + 16.0, r.y + (r.h - 96.0) / 2.0, 96.0, 96.0);
-        let col = r.x + 128.0;
-        let colw = r.w - 128.0 - 18.0;
-        let _ = n;
+        let art = Rect::new(r.x + 18.0, r.y + (r.h - 104.0) / 2.0, 104.0, 104.0);
+        let col = r.x + 140.0;
+        let colw = r.w - 140.0 - 20.0;
 
         let Some(m) = activity::media() else {
             g.fill_style(rgba(255, 255, 255, 0.06));
-            g.fill_round_rect(art.x, art.y, art.w, art.h, 14.0);
-            text::draw(g, "♪", art.cx(), art.cy(), Face::Bold, 30.0, rgba(255, 255, 255, 0.25), Align::Center);
+            g.fill_round_rect(art.x, art.y, art.w, art.h, 16.0);
+            text::draw(g, "♪", art.cx(), art.cy(), Face::Bold, 32.0, rgba(255, 255, 255, 0.25), Align::Center);
             text::draw(g, "Tidak ada media", col, r.cy() - 8.0, Face::Medium, 14.0, hex(pal::INK), Align::Left);
             text::draw(g, "Putar musik di Spotify atau browser.", col, r.cy() + 12.0, Face::Regular, 11.5, hex(pal::DIM), Align::Left);
             return;
         };
+        let art_img = activity::art();
+        let tint = art_img.as_ref().map(|a| a.tint).unwrap_or((120, 120, 150));
+        let mix = |t: f32| -> Color {
+            let f = |c: u8| (c as f32 + (255.0 - c as f32) * t).round().clamp(0.0, 255.0) as u8;
+            Color::from_rgba8(f(tint.0), f(tint.1), f(tint.2), 255)
+        };
 
-        // Artwork.
-        match activity::art() {
-            Some(a) => g.fill_image_round_rect(&a.rgba, a.size, art.x, art.y, art.w, art.h, 14.0),
+        // The card takes the artwork's colour as a soft glow behind the cover.
+        crate::ui::glow(g, r, 24.0, 40.0, 300.0, Color::from_rgba8(tint.0, tint.1, tint.2, 96));
+
+        // Cover: a soft shadow, the image, a hairline edge.
+        g.fill_style(rgba(0, 0, 0, 0.30));
+        g.fill_round_rect(art.x - 2.0, art.y + 7.0, art.w + 4.0, art.h, 18.0);
+        match &art_img {
+            Some(a) => g.fill_image_round_rect(&a.rgba, a.size, art.x, art.y, art.w, art.h, 16.0),
             None => {
-                g.fill_style(rgba(255, 255, 255, 0.06));
-                g.fill_round_rect(art.x, art.y, art.w, art.h, 14.0);
-                text::draw(g, "♪", art.cx(), art.cy(), Face::Bold, 30.0, rgba(255, 255, 255, 0.25), Align::Center);
+                g.fill_style(rgba(255, 255, 255, 0.07));
+                g.fill_round_rect(art.x, art.y, art.w, art.h, 16.0);
+                text::draw(g, "♪", art.cx(), art.cy(), Face::Bold, 32.0, rgba(255, 255, 255, 0.25), Align::Center);
             }
         }
+        g.stroke_style(rgba(255, 255, 255, 0.12));
+        g.line_width(1.0);
+        g.round_rect(art.x + 0.5, art.y + 0.5, art.w - 1.0, art.h - 1.0, 15.5);
+        g.stroke();
 
-        fading_text(g, &m.title, col, r.y + 28.0, 14.0, hex(pal::INK), col, col + colw);
-        if !m.artist.is_empty() {
-            fading_text(g, &m.artist, col, r.y + 47.0, 12.0, hex(pal::DIM), col, col + colw);
+        // Source app, and a little equaliser that moves while it plays.
+        if !m.source.is_empty() {
+            text::draw(g, &m.source.to_uppercase(), col, r.y + 22.0, Face::Medium, 9.5, rgba(255, 255, 255, 0.5), Align::Left);
+        }
+        let eq_x = r.x + r.w - 22.0;
+        for k in 0..4 {
+            let h = if m.playing { 4.0 + ((n * (4.5 + k as f32 * 1.3) + k as f32 * 1.7).sin() * 0.5 + 0.5) * 9.0 } else { 3.0 };
+            g.fill_style(if m.playing { mix(0.55) } else { rgba(255, 255, 255, 0.25) });
+            g.fill_round_rect(eq_x - k as f32 * 5.0, r.y + 22.0 - h / 2.0 + 1.0, 3.0, h, 1.5);
         }
 
-        // Seek bar.
+        fading_text(g, &m.title, col, r.y + 44.0, 15.5, hex(pal::INK), col, col + colw);
+        if !m.artist.is_empty() {
+            fading_text(g, &m.artist, col, r.y + 63.0, 12.0, rgba(255, 255, 255, 0.62), col, col + colw);
+        }
+
+        // Seek bar: tinted fill, a knob, times underneath.
         let pos = m.position_now();
-        let bar = Rect::new(col, r.y + 66.0, colw, 4.0);
-        let hit = Rect::new(col - 4.0, r.y + 58.0, colw + 8.0, 20.0);
+        let bar = Rect::new(col, r.y + 86.0, colw, 5.0);
+        let hit = Rect::new(col - 4.0, r.y + 77.0, colw + 8.0, 22.0);
         let (clicked, hover, _) = self.ui.click_region(id_of("dash-seek", 91), hit);
         g.fill_style(rgba(255, 255, 255, 0.16));
-        g.fill_round_rect(bar.x, bar.y, bar.w, bar.h, 2.0);
+        g.fill_round_rect(bar.x, bar.y, bar.w, bar.h, 2.5);
         if m.duration > 0.0 {
             let k = clamp(pos / m.duration, 0.0, 1.0);
-            g.fill_style(if hover { hex("#FFFFFF") } else { rgba(255, 255, 255, 0.88) });
-            g.fill_round_rect(bar.x, bar.y, (bar.w * k).max(4.0), bar.h, 2.0);
+            let fw = (bar.w * k).max(5.0);
+            g.fill_style(if hover { mix(0.8) } else { mix(0.6) });
+            g.fill_round_rect(bar.x, bar.y, fw, bar.h, 2.5);
+            g.fill_style(hex("#FFFFFF"));
+            g.begin_path();
+            g.circle(bar.x + fw, bar.y + bar.h / 2.0, if hover { 5.5 } else { 4.0 });
+            g.fill();
             if clicked {
                 let f = clamp((self.ui.input.mouse.0 - bar.x) / bar.w, 0.0, 1.0);
                 activity::transport(Transport::Seek(f * m.duration));
             }
-            text::draw(g, &mmss(pos), col, r.y + 84.0, Face::Regular, 10.5, hex(pal::DIM3), Align::Left);
-            text::draw(g, &mmss(m.duration), col + colw, r.y + 84.0, Face::Regular, 10.5, hex(pal::DIM3), Align::Right);
+            text::draw(g, &mmss(pos), col, r.y + 104.0, Face::Regular, 10.5, rgba(255, 255, 255, 0.5), Align::Left);
+            text::draw(g, &mmss(m.duration), col + colw, r.y + 104.0, Face::Regular, 10.5, rgba(255, 255, 255, 0.5), Align::Right);
         }
 
-        // Transport.
-        let cy = r.y + 108.0;
+        // Transport: the play button is a solid disc.
+        let cy = r.y + 140.0;
         let mid = col + colw / 2.0;
-        for (id, cx, size, kind) in [("dash-prev", mid - 52.0, 15.0, 0), ("dash-play", mid, 19.0, 1), ("dash-next", mid + 52.0, 15.0, 2)] {
-            let hit = Rect::new(cx - 20.0, cy - 16.0, 40.0, 32.0);
+        for (id, cx, size, kind) in [("dash-prev", mid - 62.0, 16.0, 0), ("dash-play", mid, 15.0, 1), ("dash-next", mid + 62.0, 16.0, 2)] {
+            let hit = Rect::new(cx - 22.0, cy - 22.0, 44.0, 44.0);
             let (clicked, hover, pressed) = self.ui.click_region(id_of(id, 92), hit);
-            let tint: Color = if pressed { rgba(255, 255, 255, 0.6) } else if hover { hex("#FFFFFF") } else { rgba(255, 255, 255, 0.86) };
-            g.fill_style(tint);
-            match kind {
-                0 => glyph_skip(g, cx, cy, size, -1.0),
-                1 => {
-                    if m.playing {
-                        glyph_pause(g, cx, cy, size)
-                    } else {
-                        glyph_play(g, cx, cy, size)
-                    }
+            if kind == 1 {
+                let rad = if pressed { 18.0 } else if hover { 21.0 } else { 20.0 };
+                g.fill_style(hex("#F5F6F8"));
+                g.begin_path();
+                g.circle(cx, cy, rad);
+                g.fill();
+                g.fill_style(hex("#0B0C0E"));
+                if m.playing {
+                    glyph_pause(g, cx, cy, size)
+                } else {
+                    glyph_play(g, cx + 1.0, cy, size)
                 }
-                _ => glyph_skip(g, cx, cy, size, 1.0),
+            } else {
+                g.fill_style(if pressed { rgba(255, 255, 255, 0.55) } else if hover { hex("#FFFFFF") } else { rgba(255, 255, 255, 0.82) });
+                glyph_skip(g, cx, cy, size, if kind == 0 { -1.0 } else { 1.0 });
             }
             if clicked {
                 activity::transport(match kind {
@@ -543,17 +576,47 @@ impl App {
         }
         self.todo_input.draw(g, field, 11.5, pal::INK);
 
-        // Google status beside the header: also the button that connects it.
-        let (label, tint) = match crate::gtasks::status() {
-            crate::gtasks::Status::NoClient => ("impor kredensial Google".to_string(), hex(pal::AMBER)),
-            crate::gtasks::Status::NeedsLogin => ("masuk ke Google".to_string(), hex(pal::AMBER)),
-            crate::gtasks::Status::LoggingIn => ("menunggu login…".to_string(), hex(pal::DIM)),
-            crate::gtasks::Status::Linked if crate::gtasks::calendar_needs_login() => ("tersinkron".to_string(), hex(pal::GREEN2)),
-            crate::gtasks::Status::Linked => ("tersinkron".to_string(), hex(pal::GREEN2)),
-            crate::gtasks::Status::Error(e) => (format!("gagal: {e}"), hex(pal::RED_TEXT)),
-        };
+        // Google status beside the header: a small icon when all is well (the sentence appears on
+        // hover), a pill only when something needs doing. It is also the connect button.
+        let st = crate::gtasks::status();
         let (s_click, s_hover, _) = self.ui.click_region(id_of("gt-status", 97), status_r);
-        crate::app::fading_text(g, &label, status_r.x, status_r.cy(), 9.5, if s_hover { hex(pal::INK) } else { tint }, status_r.x, status_r.x + status_r.w);
+        let cy = status_r.cy();
+        match &st {
+            crate::gtasks::Status::Linked => {
+                let col = if s_hover { hex(pal::GREEN2) } else { rgba(52, 211, 153, 0.75) };
+                g.stroke_style(col);
+                g.line_width(1.3);
+                g.line_cap_round();
+                g.line_join_round();
+                g.begin_path();
+                g.circle(status_r.x + 7.0, cy, 5.5);
+                g.stroke();
+                g.begin_path();
+                g.move_to(status_r.x + 4.6, cy + 0.2);
+                g.line_to(status_r.x + 6.4, cy + 2.0);
+                g.line_to(status_r.x + 9.6, cy - 1.8);
+                g.stroke();
+                if s_hover {
+                    text::draw(g, "tersinkron dengan Google", status_r.x + 18.0, cy, Face::Regular, 9.5, hex(pal::DIM), Align::Left);
+                }
+            }
+            crate::gtasks::Status::LoggingIn => {
+                text::draw(g, "menunggu login…", status_r.x, cy, Face::Regular, 9.5, hex(pal::DIM), Align::Left);
+            }
+            other => {
+                let (label, color) = match other {
+                    crate::gtasks::Status::NoClient => ("Hubungkan Google".to_string(), hex(pal::AMBER)),
+                    crate::gtasks::Status::NeedsLogin => ("Masuk Google".to_string(), hex(pal::AMBER)),
+                    crate::gtasks::Status::Error(e) => (format!("Gagal: {e}"), hex(pal::RED_TEXT)),
+                    _ => (String::new(), hex(pal::DIM)),
+                };
+                let pw = (text::measure(&label, Face::Medium, 9.5) + 14.0).min(status_r.w);
+                let pill = Rect::new(status_r.x, cy - 8.0, pw, 16.0);
+                g.fill_style(rgba(255, 255, 255, if s_hover { 0.12 } else { 0.06 }));
+                g.fill_round_rect(pill.x, pill.y, pill.w, pill.h, 8.0);
+                crate::app::fading_text(g, &label, pill.x + 7.0, cy, 9.5, color, pill.x + 7.0, pill.x + pill.w - 5.0);
+            }
+        }
         if s_click {
             crate::gtasks::connect();
         }

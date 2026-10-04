@@ -92,3 +92,11 @@ Header tabs 5-7 (`views.rs`), drawn by `pages.rs`; data in `stocks.rs` / `weathe
 - Weather: Open-Meteo forecast every 20 min. `weatherCity` is "auto" (default: city-level position from the IP via ipwho.is, then geojs.io; re-detected each cycle so a moved laptop is noticed; the page shows "≈ dari IP") or a city name (Open-Meteo geocoder). Icons are drawn in code. Note: the app re-saves every setting it knows, so an old default can end up written in settings.json: check the file when a default seems ignored.
 - Teleprompter: the script is `%APPDATA%\Coucou\teleprompter.txt` (created with a placeholder; **Edit** opens it in Notepad and the page reloads on save).
   Scrolls with the frame loop (`tp_step`), speed in px/s. Text fades at the edges instead of being clipped.
+
+### Player card, collapse arrow, sync icon (2026-10-05)
+- Player card (`dash_now_playing`): glow tinted from the artwork (`Art::tint`, average of the lit pixels, fed to `ui::glow`), cover with shadow and hairline,
+  source app (`Media::source` from `SourceAppUserModelId`), a 4-bar equaliser, tinted seek bar with a knob, a solid play disc. While music plays and the dashboard is
+  open the frame loop runs (30 fps) so the equaliser moves; that is the only reason it runs there.
+- A small arrow at the bottom centre of every expanded view folds the island (`collapse_req`, handled in `after_event`). The auto-close delay
+  (Settings -> General, `autoCloseInterval`, 15 s by default) still applies when the mouse leaves.
+- Google sync status beside "Tugas": a green check icon when linked (the sentence shows on hover); a pill only when action is needed (Hubungkan / Masuk / Gagal).

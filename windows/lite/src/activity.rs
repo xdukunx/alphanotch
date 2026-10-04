@@ -32,6 +32,8 @@ pub struct Media {
     pub position: f32,
     pub duration: f32,
     pub sampled: Instant,
+    /// The app playing it, as a short name ("Spotify", "Chrome").
+    pub source: String,
 }
 
 impl PartialEq for Media {
@@ -53,6 +55,8 @@ pub struct Art {
     pub key: u64,
     pub size: u32,
     pub rgba: Vec<u8>,
+    /// Average colour of the artwork's lit pixels, for the player card's glow.
+    pub tint: (u8, u8, u8),
 }
 
 #[derive(Clone, PartialEq)]
@@ -256,7 +260,9 @@ fn read_media(s: &Session) -> Option<Media> {
             duration = (secs(end) - secs(start)).max(0.0) as f32;
         }
     }
+    let source = s.SourceAppUserModelId().ok().map(|h| pretty_source(&h.to_string())).unwrap_or_default();
     Some(Media {
+        source,
         title,
         artist: props.Artist().map(|a| a.to_string()).unwrap_or_default(),
         playing,
@@ -317,7 +323,27 @@ fn decode_art(s: &Session, id: &(String, String)) -> windows::core::Result<Art> 
     for b in id.0.bytes().chain(id.1.bytes()) {
         key = (key ^ b as u64).wrapping_mul(0x100_0000_01b3);
     }
-    Ok(Art { key, size: SIDE, rgba })
+    // Premultiplied RGBA: average the pixels that are not near-black.
+    let (mut r, mut g, mut b, mut n) = (0u64, 0u64, 0u64, 0u64);
+    for px in rgba.chunks_exact(4) {
+        if px[0].max(px[1]).max(px[2]) > 48 {
+            r += px[0] as u64;
+            g += px[1] as u64;
+            b += px[2] as u64;
+            n += 1;
+        }
+    }
+    let tint = if n > 0 { ((r / n) as u8, (g / n) as u8, (b / n) as u8) } else { (120, 120, 140) };
+    Ok(Art { key, size: SIDE, rgba, tint })
+}
+
+/// "SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify" → "Spotify"; "chrome.exe" → "Chrome".
+fn pretty_source(raw: &str) -> String {
+    let t = raw.rsplit('!').next().unwrap_or(raw);
+    let t = t.rsplit(['\\', '/']).next().unwrap_or(t);
+    let t = t.strip_suffix(".exe").or_else(|| t.strip_suffix(".EXE")).unwrap_or(t);
+    let mut c = t.chars();
+    c.next().map(|f| f.to_uppercase().collect::<String>() + c.as_str()).unwrap_or_default()
 }
 
 fn download_loop() {

@@ -145,6 +145,8 @@ pub struct App {
     pub today_target: f32,
     /// The user's own open/closed choice for "Hari ini" (None = automatic).
     pub today_force: Option<bool>,
+    /// Set by the arrow at the bottom of the island; handled after the frame.
+    pub collapse_req: bool,
     pub task_scroll: usize,
     pub stock_sel: usize,
     pub stock_input: crate::textfield::TextField,
@@ -228,6 +230,7 @@ impl App {
             today_h: 0.0,
             today_target: 0.0,
             today_force: None,
+            collapse_req: false,
             task_scroll: 0,
             stock_sel: 0,
             stock_input: crate::textfield::TextField::new("Tambah ticker (mis. BBCA)", false),
@@ -532,6 +535,7 @@ impl App {
                 || self.ticker.animating()
                 || self.chat.sending
                 || activity_on
+                || (self.st.mode == Mode::Expanded && self.st.view == View::Dashboard && crate::activity::media().map(|m| m.playing).unwrap_or(false))
                 || ((self.today_h - self.today_target).abs() > 0.3 && self.st.mode == Mode::Expanded)
                 || (self.tp_playing && self.st.mode == Mode::Expanded && self.st.view == View::Teleprompter)
         };
@@ -598,6 +602,10 @@ impl App {
 
     /// Called after each message handler: render once and keep the loop alive if needed.
     pub fn after_event(&mut self) {
+        if self.collapse_req {
+            self.collapse_req = false;
+            self.collapse();
+        }
         self.process_transitions();
         self.ui.end_frame();
         if self.running {
