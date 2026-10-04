@@ -232,10 +232,10 @@ impl App {
         let left = Rect::new(v.x, v.y, LEFT_W, v.h.max(0.0));
         // The right column has no card: text sits straight on the island, as in OmniNotch.
         let col = Rect::new(v.x + LEFT_W + 16.0, v.y + 2.0, v.w - LEFT_W - 16.0 - 4.0, (v.h - 2.0).max(0.0));
-        crate::ui::card(g, left, crate::layout::Wash::None, false);
+        crate::app::prof("card", || crate::ui::card(g, left, crate::layout::Wash::None, false));
 
-        self.dash_now_playing(g, left, n);
-        self.dash_column(g, col);
+        crate::app::prof("player", || self.dash_now_playing(g, left, n));
+        crate::app::prof("column", || self.dash_column(g, col));
     }
 
     fn dash_now_playing(&mut self, g: &mut Gfx, r: Rect, n: f32) {
@@ -265,11 +265,19 @@ impl App {
         };
 
         // A quiet glow in the cover's colour behind the ring.
+        let mut lap = std::time::Instant::now();
         crate::ui::glow(g, r, 24.0, 50.0, 280.0, Color::from_rgba8(tint.0, tint.1, tint.2, 80));
 
+        crate::app::prof_lap("p.glow", &mut lap);
         // Cover, as a circle.
         match &art_img {
-            Some(a) => g.fill_image_round_rect(&a.rgba, a.size, ring_c.0 - cover_r, ring_c.1 - cover_r, cover_r * 2.0, cover_r * 2.0, cover_r),
+            Some(a) => {
+                // The cover only changes with the track: draw it once into a cached layer.
+                let side = cover_r * 2.0;
+                let key = crate::gfx::layer_key(&[f32::from_bits(a.key as u32), f32::from_bits((a.key >> 32) as u32), side, 5.0]);
+                let (px, size) = (a.rgba.as_slice(), a.size);
+                g.cached_layer(key, side, side, ring_c.0 - cover_r, ring_c.1 - cover_r, |l| l.fill_image_round_rect(px, size, 0.0, 0.0, side, side, cover_r));
+            }
             None => {
                 g.fill_style(rgba(255, 255, 255, 0.07));
                 g.begin_path();
@@ -279,6 +287,7 @@ impl App {
             }
         }
 
+        crate::app::prof_lap("p.cover", &mut lap);
         // Progress ring: the track, the played part, and a click anywhere on it seeks.
         let pos = m.position_now();
         let k = if m.duration > 0.0 { clamp(pos / m.duration, 0.0, 1.0) } else { 0.0 };
@@ -287,12 +296,18 @@ impl App {
         let on_ring = dist >= ring_r - 8.0 && dist <= ring_r + 8.0;
         let ring_box = Rect::new(ring_c.0 - ring_r - 8.0, ring_c.1 - ring_r - 8.0, (ring_r + 8.0) * 2.0, (ring_r + 8.0) * 2.0);
         let (rc, _, _) = self.ui.click_region(id_of("dash-ring", 91), ring_box);
+        // The empty track never changes: cached.
+        let tside = (ring_r + 4.0) * 2.0;
+        let tkey = crate::gfx::layer_key(&[ring_r, 3.5, 7.0]);
+        g.cached_layer(tkey, tside, tside, ring_c.0 - tside / 2.0, ring_c.1 - tside / 2.0, |l| {
+            l.line_width(3.5);
+            l.stroke_style(rgba(255, 255, 255, 0.12));
+            l.begin_path();
+            l.circle(tside / 2.0, tside / 2.0, ring_r);
+            l.stroke();
+        });
         g.line_width(3.5);
         g.line_cap_round();
-        g.stroke_style(rgba(255, 255, 255, 0.12));
-        g.begin_path();
-        g.circle(ring_c.0, ring_c.1, ring_r);
-        g.stroke();
         if k > 0.002 {
             let a0 = -std::f32::consts::FRAC_PI_2;
             g.stroke_style(if on_ring { mix(0.85) } else { mix(0.6) });
@@ -314,6 +329,7 @@ impl App {
         g.fill_round_rect(ring_c.0 - tw / 2.0, ring_c.1 + ring_r - 8.0, tw, 16.0, 8.0);
         text::draw(g, &tl, ring_c.0, ring_c.1 + ring_r, Face::Medium, 10.5, rgba(255, 255, 255, 0.85), Align::Center);
 
+        crate::app::prof_lap("p.ring", &mut lap);
         // Title, artist, where it plays from.
         if !m.source.is_empty() {
             text::draw(g, &m.source.to_uppercase(), col, r.y + 20.0, Face::Medium, 8.5, rgba(255, 255, 255, 0.45), Align::Left);
@@ -326,6 +342,7 @@ impl App {
             text::draw(g, &mmss(m.duration), col + colw, r.y + 20.0, Face::Regular, 9.0, rgba(255, 255, 255, 0.4), Align::Right);
         }
 
+        crate::app::prof_lap("p.text", &mut lap);
         // One row of controls: shuffle, previous, play, next, repeat.
         let cy = r.y + 100.0;
         let step = colw / 5.0;
@@ -365,6 +382,7 @@ impl App {
                 }
             }
         }
+        crate::app::prof_lap("p.buttons", &mut lap);
     }
 
     /// Right column (OmniNotch style): today's agenda on top, the task list under it. The timer is one
@@ -638,6 +656,7 @@ impl App {
         let field = Rect::new(fb.x + 10.0, fb.y + 2.0, fb.w - 20.0, 18.0);
         let (mx, my) = self.ui.input.mouse;
         let over = field.contains(mx, my);
+        self.ui.note_region(id_of("todo-field", 110), field);
         if self.ui.input.pressed {
             if over {
                 self.todo_input.focused = true;

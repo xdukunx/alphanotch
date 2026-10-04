@@ -83,6 +83,76 @@ pub fn fading_text(g: &mut Gfx, s: &str, x: f32, cy: f32, size: f32, color: tiny
     });
 }
 
+thread_local! {
+    static SECTIONS: std::cell::RefCell<Vec<(&'static str, f32)>> = std::cell::RefCell::new(Vec::new());
+}
+
+/// Times `f` under `name` when COUCOU_PROFILE is set (reported with the frame stats).
+pub fn prof<R>(name: &'static str, f: impl FnOnce() -> R) -> R {
+    if std::env::var_os("COUCOU_PROFILE").is_none() {
+        return f();
+    }
+    let t = std::time::Instant::now();
+    let r = f();
+    let ms = t.elapsed().as_secs_f32() * 1000.0;
+    SECTIONS.with(|s| {
+        let mut s = s.borrow_mut();
+        match s.iter_mut().find(|(n, _)| *n == name) {
+            Some(e) => e.1 += ms,
+            None => s.push((name, ms)),
+        }
+    });
+    r
+}
+
+/// Adds the time since `*t` to `name` and restarts the lap (only when COUCOU_PROFILE is set).
+pub fn prof_lap(name: &'static str, t: &mut std::time::Instant) {
+    if std::env::var_os("COUCOU_PROFILE").is_some() {
+        let ms = t.elapsed().as_secs_f32() * 1000.0;
+        SECTIONS.with(|s| {
+            let mut s = s.borrow_mut();
+            match s.iter_mut().find(|(n, _)| *n == name) {
+                Some(e) => e.1 += ms,
+                None => s.push((name, ms)),
+            }
+        });
+    }
+    *t = std::time::Instant::now();
+}
+
+/// With COUCOU_PROFILE set, logs the average and worst frame cost every two seconds.
+fn profile_frame(render_ms: f32, present_ms: f32, view: View) {
+    use std::cell::RefCell;
+    thread_local! {
+        static ON: bool = std::env::var_os("COUCOU_PROFILE").is_some();
+        static ACC: RefCell<(u32, f32, f32, f32, f32, std::time::Instant)> = RefCell::new((0, 0.0, 0.0, 0.0, 0.0, std::time::Instant::now()));
+    }
+    if !ON.with(|o| *o) {
+        return;
+    }
+    ACC.with(|a| {
+        let mut a = a.borrow_mut();
+        a.0 += 1;
+        a.1 += render_ms;
+        a.2 += present_ms;
+        a.3 = a.3.max(render_ms);
+        a.4 = a.4.max(present_ms);
+        if a.5.elapsed().as_secs_f32() >= 2.0 {
+            let parts: Vec<String> = SECTIONS.with(|s| {
+                let mut s = s.borrow_mut();
+                let out = s.iter().map(|(n, ms)| format!("{n} {:.1}", ms / a.0.max(1) as f32)).collect();
+                s.clear();
+                out
+            });
+            crate::log::line(format!(
+                "profile {:?}: {} frames in 2s, render avg {:.1} ms (max {:.1}), present avg {:.1} ms (max {:.1}) | per frame: {}",
+                view, a.0, a.1 / a.0 as f32, a.3, a.2 / a.0 as f32, a.4, parts.join(", ")
+            ));
+            *a = (0, 0.0, 0.0, 0.0, 0.0, std::time::Instant::now());
+        }
+    });
+}
+
 /// Compact bar: where the live-activity slot starts (right of Mochi) and how much room
 /// the integration pills keep on the right.
 const ACT_X: f32 = 56.0;
@@ -147,6 +217,10 @@ pub struct App {
     pub today_force: Option<bool>,
     /// Set by the arrow at the bottom of the island; handled after the frame.
     pub collapse_req: bool,
+    /// A mouse move skipped its render to stay under ~60 fps; the poll tick draws it.
+    move_dirty: bool,
+    last_hover_sig: u64,
+    last_move_render: f32,
     pub task_scroll: usize,
     pub stock_sel: usize,
     pub stock_input: crate::textfield::TextField,
@@ -231,6 +305,9 @@ impl App {
             today_target: 0.0,
             today_force: None,
             collapse_req: false,
+            move_dirty: false,
+            last_hover_sig: 0,
+            last_move_render: 0.0,
             task_scroll: 0,
             stock_sel: 0,
             stock_input: crate::textfield::TextField::new("Tambah ticker (mis. BBCA)", false),
@@ -429,6 +506,13 @@ impl App {
                 self.render_now();
             }
 
+            // A mouse move that skipped its render (see on_mouse_move).
+            if self.move_dirty {
+                self.move_dirty = false;
+                self.last_move_render = n;
+                self.render_now();
+            }
+
             // Blinks in the idle island: wake the frame loop only for the blink itself.
             if !self.running && self.engine.blink_due() {
                 self.ensure_running();
@@ -535,7 +619,6 @@ impl App {
                 || self.ticker.animating()
                 || self.chat.sending
                 || activity_on
-                || (self.st.mode == Mode::Expanded && self.st.view == View::Dashboard && crate::activity::media().map(|m| m.playing).unwrap_or(false))
                 || ((self.today_h - self.today_target).abs() > 0.3 && self.st.mode == Mode::Expanded)
                 || (self.tp_playing && self.st.mode == Mode::Expanded && self.st.view == View::Teleprompter)
         };
@@ -552,7 +635,9 @@ impl App {
                 || self.upload.is_active()
                 || self.ticker.animating()
                 || self.engine.in_transition();
-            self.platform.set_frame_interval(if hard { 16 } else { 33 });
+            // Only the compact bar's equaliser moving: 15 fps is plenty.
+            let only_activity = activity_on && !hard && !self.engine.busy() && !self.chat.sending;
+            self.platform.set_frame_interval(if hard { 16 } else if only_activity { 66 } else { 33 });
         }
     }
 
@@ -622,7 +707,9 @@ impl App {
         if self.gfx.width() as i32 != pw || self.gfx.height() as i32 != ph || (self.gfx.scale() - self.platform.scale).abs() > 1e-4 {
             self.gfx = Gfx::new(pw as u32, ph as u32, self.platform.scale);
         }
+        let t_render = std::time::Instant::now();
         self.render();
+        let render_ms = t_render.elapsed().as_secs_f32() * 1000.0;
         // Nothing is ever drawn below the island plus a little hang-room.
         let used = ((self.height.value() + 70.0) * self.platform.scale).ceil() as usize;
         let used = if self.collapsed { usize::MAX } else { used };
@@ -630,7 +717,10 @@ impl App {
         // Borrow dance: present needs &mut platform and the pixmap.
         let pm_ptr: *const tiny_skia::Pixmap = pm;
         // SAFETY: `gfx` and `platform` are disjoint fields; the pixmap is only read.
+        let t_present = std::time::Instant::now();
         self.platform.present(unsafe { &*pm_ptr }, used);
+        profile_frame(render_ms, t_present.elapsed().as_secs_f32() * 1000.0, self.st.view);
+        self.last_hover_sig = self.ui.hover_signature();
         self.ui.end_frame();
     }
 
@@ -857,8 +947,19 @@ impl App {
             return;
         }
         self.on_cursor(x, y);
+        // Nothing changes under the cursor (same widgets hovered as in the last frame): no redraw.
+        if self.st.mode == Mode::Expanded && self.ui.hover_signature() == self.last_hover_sig && !self.ui.input.down {
+            return;
+        }
         if self.st.mode != Mode::Hidden {
-            self.render_now();
+            let t = now();
+            if t - self.last_move_render >= 0.016 {
+                self.last_move_render = t;
+                self.move_dirty = false;
+                self.render_now();
+            } else {
+                self.move_dirty = true;
+            }
         }
     }
 
@@ -1410,7 +1511,9 @@ impl App {
 
         // Bot, glow, minis and the countdown bar sit above the clip.
         if !greeting_active {
+            let mut lap = std::time::Instant::now();
             self.draw_bot(g, iw, ih, &body);
+            prof_lap("bot", &mut lap);
         }
         if self.st.mode == Mode::Compact {
             self.draw_activity(g, iw, ih);

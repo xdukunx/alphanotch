@@ -81,7 +81,9 @@ impl App {
         let confused = self.st.view == View::Confused;
         g.save();
         g.set_alpha(if confused { 0.0 } else { 1.0 });
+        let mut lap = std::time::Instant::now();
         self.draw_header(g, iw);
+        crate::app::prof_lap("header", &mut lap);
         g.restore();
 
         let v = Rect::new(10.0, 42.0, iw - 20.0, (ih - 52.0).max(0.0));
@@ -639,6 +641,7 @@ impl App {
             let extend = crate::platform::shift_down();
             self.chat.input.click_at(self.ui.input.mouse.0, 13.0, extend);
         }
+        self.ui.note_region(id_of("chat-field", 112), field);
         if field.contains(self.ui.input.mouse.0, self.ui.input.mouse.1) {
             self.ui.hovering_text = true;
         }

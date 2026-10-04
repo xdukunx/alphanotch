@@ -117,3 +117,11 @@ player card is 160 px tall (cover 92 px, ring 106 px); the right column shows **
 The dashboard pages are narrower than the other views: `DASH_W = 548` (`layout::view_width`), Home 196 px tall, Stocks/Weather/Teleprompter 220 px. Player card 296 x 144;
 the right column is ~210 px wide and the day's event is a single line ("07:00  title"); Weather shows as many days as fit (`cols`); Stocks list has 3 rows. Tune `DASH_W`
 and the heights in `layout.rs` (`layout()`), and `LEFT_W` in `dashboard.rs`.
+
+### Performance rules learned from a "laggy" report (2026-10-05)
+- **Profile first**: start the exe with `COUCOU_PROFILE=1` and read `coucou.log`: every 2 s it prints frames, average/max render and present ms, and per-section ms
+  (`crate::app::prof(..)` / `prof_lap(..)`, add your own around anything suspicious).
+- A mouse move no longer renders unless the **set of widgets under the cursor changed** (`Ui::regions`, `hover_signature`; text fields must call `ui.note_region`),
+  and never more than once per 16 ms; the 30 Hz poll flushes the last skipped one (`move_dirty`). New widgets must go through `click_region` (or `note_region`) or their hover will not redraw.
+- Do not keep the frame loop alive for something that moves slowly: the progress ring is redrawn by the 2 Hz `dash_t` tick. The compact bar's equaliser runs at 15 fps (66 ms interval).
+- Static art goes through `Gfx::cached_layer` (the cover, the ring track, glows). Measured per frame at 7 ms before: Mochi 1.7, player 3.0 -> 1.7, column 1.2, header 0.4, card 0.5.

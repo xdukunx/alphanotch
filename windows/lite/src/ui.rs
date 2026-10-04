@@ -76,6 +76,8 @@ pub struct Ui {
     /// Anything under the cursor this frame (used to pick the cursor shape).
     pub hovering_button: bool,
     pub hovering_text: bool,
+    /// Where the widgets of the last drawn frame are (id, rect).
+    pub regions: Vec<(u64, Rect)>,
 }
 
 pub fn id_of(label: &str, salt: u64) -> u64 {
@@ -95,6 +97,21 @@ impl Ui {
     pub fn begin_frame(&mut self) {
         self.hovering_button = false;
         self.hovering_text = false;
+        self.regions.clear();
+    }
+
+    /// Registers an area that reacts to the cursor but is not a click region (a text field).
+    pub fn note_region(&mut self, id: u64, r: Rect) {
+        self.regions.push((id, r));
+    }
+
+    /// Which widgets are under the cursor, as one number: a mouse move only needs a redraw when this changes.
+    pub fn hover_signature(&self) -> u64 {
+        if !self.input.inside {
+            return 0;
+        }
+        let (x, y) = self.input.mouse;
+        self.regions.iter().filter(|(_, r)| r.contains(x, y)).fold(1u64, |a, (id, _)| a ^ id.rotate_left(7))
     }
 
     pub fn end_frame(&mut self) {
@@ -112,6 +129,7 @@ impl Ui {
 
     /// Registers a clickable region. Returns true on the frame the click lands.
     pub fn click_region(&mut self, id: u64, r: Rect) -> (bool, bool, bool) {
+        self.regions.push((id, r));
         let hover = self.hover(r);
         if hover {
             self.hovering_button = true;

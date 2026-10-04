@@ -261,6 +261,7 @@ impl App {
         let field = Rect::new(fb.x + 12.0, fb.y + 4.0, fb.w - 24.0, 18.0);
         let (mx, my) = self.ui.input.mouse;
         let over = field.contains(mx, my);
+        self.ui.note_region(id_of("stock-field", 111), field);
         if self.ui.input.pressed {
             if over {
                 self.stock_input.focused = true;
