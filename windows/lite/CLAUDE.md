@@ -51,8 +51,8 @@ Added on top of upstream v0.1.6, for running Coucou inside a status bar (YASB) a
   (`Machine::stay_visible` in `fsm.rs`). Default off. Costs ~0.4 s CPU per 3 min with an activity showing.
 - `activity.rs`: live activities in the compact bar, one at a time: timer > media (system media session, with
   artwork, seek and transport) > download (`.crdownload`/`.part` in Downloads). Timer is started with a pipe
-  event `{"hook_event_name":"CoucouTimer","minutes":25}` (0 cancels) or from the dashboard. Clicking the slot
-  toggles play/pause, or cancels the timer.
+  event `{"hook_event_name":"CoucouTimer","minutes":25}` (0 cancels) or from the dashboard. A click on the compact
+  bar always just opens the island (it used to toggle play/pause or cancel the timer, which paused the music every time you opened it); controls live on the dashboard.
 - `dashboard.rs` (`View::Dashboard`, 262 px): greeting, Now Playing, timer presets, to-do (`todos.rs`, plain JSON in
   `%APPDATA%\Coucou\todos.json`), agenda. It is the home view when nothing is running and `stayVisible` is on;
   the 4th header tab always opens it. It redraws twice a second while open (`dash_t` in `app.rs`).

@@ -871,26 +871,6 @@ impl App {
         self.ui.input.down = true;
         self.ui.input.pressed = true;
 
-        if self.st.mode == Mode::Compact {
-            let (lx, _, iw, _) = self.island_rect();
-            let local = x - lx;
-            if local >= ACT_X && local <= iw - ACT_RIGHT {
-                match crate::activity::current() {
-                    Some(crate::activity::Activity::Media(_)) => {
-                        crate::activity::toggle_media();
-                        self.ui.input.pressed = false;
-                        return;
-                    }
-                    Some(crate::activity::Activity::Timer { .. }) => {
-                        crate::activity::cancel_timer();
-                        self.ui.input.pressed = false;
-                        self.ensure_running();
-                        return;
-                    }
-                    _ => {}
-                }
-            }
-        }
         if self.st.mode != Mode::Expanded {
             // A click on one of the small agent pills opens the island on that agent.
             let picked = if self.st.mode == Mode::Compact { self.mini_pill_at(x) } else { None };
