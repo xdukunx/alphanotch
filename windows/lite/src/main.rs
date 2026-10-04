@@ -7,6 +7,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod activity;
+mod agenthooks;
 mod anim;
 mod app;
 mod cards;
@@ -59,6 +60,14 @@ fn main() {
         if let Some(i) = args.iter().position(|a| a == "--snapshot") {
             snapshot::run(args.get(i + 1).map(String::as_str).unwrap_or("snap"));
             return;
+        }
+    }
+
+    // `--agent-hooks <agent> <action>`: install or inspect hooks from the command line, no window.
+    {
+        let args: Vec<String> = std::env::args().collect();
+        if let Some(i) = args.iter().position(|a| a == "--agent-hooks") {
+            std::process::exit(agenthooks::run(&args[i + 1..]));
         }
     }
 

@@ -282,46 +282,116 @@ impl App {
         }
     }
 
+    /// Right card: the to-do list is always there; the timer is one button in the header
+    /// that opens its options (presets, a gear for a custom length) underneath.
     fn dash_side(&mut self, g: &mut Gfx, r: Rect) {
         let x = r.x + 16.0;
         let w = r.w - 32.0;
 
-        // Timer.
-        text::draw(g, "Timer", x, r.y + 20.0, Face::Medium, 12.0, hex(pal::DIM), Align::Left);
-        if let Some((left, total)) = activity::timer() {
-            text::draw(g, &activity::format_clock(left), x + 46.0, r.y + 20.0, Face::Bold, 13.0, hex(pal::INK), Align::Left);
-            let k = clamp(left / total.max(1.0), 0.0, 1.0);
-            g.fill_style(rgba(255, 255, 255, 0.12));
-            g.fill_round_rect(x, r.y + 38.0, w, 4.0, 2.0);
-            g.fill_style(hex(pal::AMBER));
-            g.fill_round_rect(x, r.y + 38.0, (w * k).max(4.0), 4.0, 2.0);
-            let b = Rect::new(x + w - 44.0, r.y + 10.0, 44.0, 20.0);
-            let (clicked, hover, _) = self.ui.click_region(id_of("dash-timer-stop", 93), b);
-            g.fill_style(rgba(255, 255, 255, if hover { 0.14 } else { 0.07 }));
-            g.fill_round_rect(b.x, b.y, b.w, b.h, 10.0);
-            text::draw(g, "Batal", b.cx(), b.cy(), Face::Medium, 10.5, hex(pal::INK), Align::Center);
-            if clicked {
-                activity::cancel_timer();
-            }
-        } else {
-            let cw = (w - 3.0 * 6.0) / 4.0;
-            for (i, mins) in [5.0f32, 15.0, 25.0, 45.0].iter().enumerate() {
-                let b = Rect::new(x + i as f32 * (cw + 6.0), r.y + 30.0, cw, 26.0);
-                let (clicked, hover, _) = self.ui.click_region(id_of(&format!("dash-timer-{mins}"), 94), b);
-                g.fill_style(rgba(255, 255, 255, if hover { 0.14 } else { 0.07 }));
-                g.fill_round_rect(b.x, b.y, b.w, b.h, 9.0);
-                text::draw(g, &format!("{}m", *mins as u32), b.cx(), b.cy(), Face::Medium, 11.5, hex(pal::INK), Align::Center);
-                if clicked {
-                    crate::sound::play("blip");
-                    activity::start_timer(*mins);
-                }
-            }
+        text::draw(g, "To-Do", x, r.y + 20.0, Face::Medium, 12.0, hex(pal::DIM), Align::Left);
+
+        // Timer button: an icon when idle, the countdown when running.
+        let running = activity::timer();
+        let label = running.map(|(left, _)| activity::format_clock(left));
+        let bw = if label.is_some() { 66.0 } else { 30.0 };
+        let btn = Rect::new(x + w - bw, r.y + 8.0, bw, 24.0);
+        let (clicked, hover, _) = self.ui.click_region(id_of("dash-timer-btn", 93), btn);
+        g.fill_style(rgba(255, 255, 255, if self.timer_menu { 0.16 } else if hover { 0.12 } else { 0.07 }));
+        g.fill_round_rect(btn.x, btn.y, btn.w, btn.h, 12.0);
+        let tint = if label.is_some() { hex(pal::AMBER) } else { hex(pal::INK) };
+        let icon_x = if label.is_some() { btn.x + 15.0 } else { btn.cx() };
+        crate::icons::fill(g, crate::icons::Icon::Timer, icon_x, btn.cy(), 13.0, tint);
+        if let Some(l) = &label {
+            text::draw(g, l, btn.x + 27.0, btn.cy(), Face::Bold, 11.5, hex(pal::INK), Align::Left);
+        }
+        if clicked {
+            crate::sound::play("blip");
+            self.timer_menu = !self.timer_menu;
+            self.timer_custom = false;
         }
 
-        // To-do.
-        g.fill_style(rgba(255, 255, 255, 0.07));
-        g.fill_rect(x, r.y + 66.0, w, 1.0);
-        self.dash_todos(g, Rect::new(x, r.y + 72.0, w, r.h - 72.0 - 10.0));
+        let mut top = r.y + 34.0;
+        if self.timer_menu {
+            self.dash_timer_menu(g, Rect::new(x, top, w, 26.0));
+            top += 34.0;
+        }
+
+        let rel = top - r.y;
+        self.dash_todos(g, Rect::new(x, top, w, r.h - rel - 10.0));
+    }
+
+    fn dash_timer_menu(&mut self, g: &mut Gfx, row: Rect) {
+        let chip = |ui: &mut crate::ui::Ui, g: &mut Gfx, id: &str, r: Rect, label: &str, accent: bool| -> bool {
+            let (clicked, hover, _) = ui.click_region(id_of(id, 94), r);
+            g.fill_style(if accent { rgba(245, 165, 36, if hover { 0.34 } else { 0.24 }) } else { rgba(255, 255, 255, if hover { 0.14 } else { 0.07 }) });
+            g.fill_round_rect(r.x, r.y, r.w, r.h, 9.0);
+            text::draw(g, label, r.cx(), r.cy(), Face::Medium, 11.0, hex(pal::INK), Align::Center);
+            clicked
+        };
+
+        if let Some((left, total)) = activity::timer() {
+            // Running: progress and a cancel chip.
+            let cancel = Rect::new(row.x + row.w - 52.0, row.y, 52.0, row.h);
+            let bar_w = row.w - 52.0 - 10.0;
+            let k = clamp(left / total.max(1.0), 0.0, 1.0);
+            g.fill_style(rgba(255, 255, 255, 0.12));
+            g.fill_round_rect(row.x, row.cy() - 2.0, bar_w, 4.0, 2.0);
+            g.fill_style(hex(pal::AMBER));
+            g.fill_round_rect(row.x, row.cy() - 2.0, (bar_w * k).max(4.0), 4.0, 2.0);
+            if chip(&mut self.ui, g, "dash-timer-stop", cancel, "Batal", false) {
+                activity::cancel_timer();
+                self.timer_menu = false;
+            }
+            return;
+        }
+
+        if !self.timer_custom {
+            let gear_w = 28.0;
+            let cw = (row.w - gear_w - 3.0 * 6.0) / 3.0;
+            for (i, mins) in [5.0f32, 15.0, 25.0].iter().enumerate() {
+                let r = Rect::new(row.x + i as f32 * (cw + 6.0), row.y, cw, row.h);
+                if chip(&mut self.ui, g, &format!("dash-timer-{mins}"), r, &format!("{}m", *mins as u32), false) {
+                    crate::sound::play("blip");
+                    activity::start_timer(*mins);
+                    self.timer_menu = false;
+                }
+            }
+            let gear = Rect::new(row.x + row.w - gear_w, row.y, gear_w, row.h);
+            let (clicked, hover, _) = self.ui.click_region(id_of("dash-timer-gear", 94), gear);
+            g.fill_style(rgba(255, 255, 255, if hover { 0.14 } else { 0.07 }));
+            g.fill_round_rect(gear.x, gear.y, gear.w, gear.h, 9.0);
+            crate::icons::fill(g, crate::icons::Icon::Gear, gear.cx(), gear.cy(), 13.0, hex(pal::INK));
+            if clicked {
+                self.timer_custom = true;
+            }
+            return;
+        }
+
+        // Custom length: back, minus, value, plus, start.
+        let step = |m: u32, up: bool| -> u32 {
+            if up { (m + 5).min(180) } else if m > 5 { m - 5 } else { 1 }
+        };
+        let back = Rect::new(row.x, row.y, 22.0, row.h);
+        let minus = Rect::new(back.x + 22.0 + 4.0, row.y, 24.0, row.h);
+        let start = Rect::new(row.x + row.w - 50.0, row.y, 50.0, row.h);
+        let plus = Rect::new(start.x - 4.0 - 24.0, row.y, 24.0, row.h);
+        let val = Rect::new(minus.x + 24.0 + 4.0, row.y, plus.x - 4.0 - (minus.x + 28.0), row.h);
+        if chip(&mut self.ui, g, "dash-timer-back", back, "‹", false) {
+            self.timer_custom = false;
+        }
+        if chip(&mut self.ui, g, "dash-timer-minus", minus, "−", false) {
+            self.timer_custom_min = step(self.timer_custom_min, false);
+        }
+        text::draw(g, &format!("{} m", self.timer_custom_min), val.cx(), val.cy(), Face::Bold, 12.0, hex(pal::INK), Align::Center);
+        if chip(&mut self.ui, g, "dash-timer-plus", plus, "+", false) {
+            self.timer_custom_min = step(self.timer_custom_min, true);
+        }
+        if chip(&mut self.ui, g, "dash-timer-start", start, "Mulai", true) {
+            crate::sound::play("blip");
+            activity::start_timer(self.timer_custom_min as f32);
+            self.timer_menu = false;
+            self.timer_custom = false;
+        }
     }
 
     fn dash_todos(&mut self, g: &mut Gfx, r: Rect) {
@@ -349,7 +419,7 @@ impl App {
 
         // Rows.
         let order = crate::todos::order(&self.todos);
-        let rows = 2usize;
+        let rows = (((r.h - 60.0) / 20.0).floor() as usize).clamp(1, 5);
         let mut y = r.y + 38.0;
         let mut act: Option<(usize, bool)> = None; // (index, toggle star instead of complete)
         for &i in order.iter().take(rows) {

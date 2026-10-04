@@ -137,6 +137,9 @@ pub struct App {
     dash_t: f32,
     pub todos: Vec<crate::todos::Todo>,
     pub done_gids: Vec<String>,
+    pub timer_menu: bool,
+    pub timer_custom: bool,
+    pub timer_custom_min: u32,
     pub todo_input: crate::textfield::TextField,
     quit: bool,
 }
@@ -204,6 +207,9 @@ impl App {
             dash_t: 0.0,
             todos: crate::todos::load(),
             done_gids: Vec::new(),
+            timer_menu: false,
+            timer_custom: false,
+            timer_custom_min: 30,
             todo_input: crate::textfield::TextField::new("Tambah tugas…", false),
             quit: false,
         };
@@ -831,8 +837,14 @@ impl App {
             }
         }
         if self.st.mode != Mode::Expanded {
+            // A click on one of the small agent pills opens the island on that agent.
+            let picked = if self.st.mode == Mode::Compact { self.mini_pill_at(x) } else { None };
             self.fsm.click();
             self.process_transitions();
+            if let Some(id) = picked {
+                self.st.set_focus(id);
+                self.set_view(View::Overview);
+            }
             self.ui.input.pressed = false;
             return;
         }
@@ -1475,6 +1487,21 @@ impl App {
                 text::draw(g, &size, x1, cy, Face::Regular, 11.0, hex(pal::DIM), Align::Right);
             }
         }
+    }
+
+    /// Which of the small pills (2×2 grid, right end of the compact bar) is under window-x `x`.
+    fn mini_pill_at(&self, x: f32) -> Option<&'static str> {
+        let (lx, _, iw, _) = self.island_rect();
+        let local = x - lx;
+        let left = iw - 40.0 - 14.5;
+        if local < left - 2.0 || local > left + 32.0 {
+            return None;
+        }
+        let col = ((local - left) / 16.0).floor().max(0.0) as usize;
+        let (_, y) = self.st.mouse;
+        let row = if y < crate::layout::COMPACT_H / 2.0 { 0 } else { 1 };
+        let others = self.st.other_tasks();
+        others.get(row * 2 + col.min(1)).map(|t| t.id)
     }
 
     fn draw_mini_grid(&mut self, g: &mut Gfx, iw: f32, ih: f32) {

@@ -113,6 +113,8 @@ impl App {
         // pill; absent or invalid means Claude Code, so existing hooks keep working.
         let external = payload.get("coucou_agent").and_then(Value::as_str).and_then(validate_agent);
         let is_external = external.is_some();
+        let standing = external.as_deref().map(|n| self.st.settings.agent_pills.iter().any(|p| p == n)).unwrap_or(false);
+        let home_name = external.as_deref().map(crate::state::agent_label).unwrap_or_else(|| "Claude Code".to_string());
         let target: &'static str = match &external {
             Some(name) => self.st.upsert_external_agent(name),
             None => CLAUDE_ID,
@@ -140,7 +142,7 @@ impl App {
                 self.surface(View::Overview, false);
                 sound::play("work");
             }
-            "UserPromptSubmit" => {
+            "UserPromptSubmit" | "PreInvocation" => {
                 upsert(self);
                 self.st.update_task(target, BotState::Thinking);
                 let asked = payload
@@ -159,7 +161,7 @@ impl App {
                 self.st.append_step(target, step_label(&tool, &input));
                 self.surface(View::Overview, false);
             }
-            "PostToolUse" => self.st.update_task(target, BotState::Working),
+            "PostToolUse" | "PostInvocation" => self.st.update_task(target, BotState::Working),
             "PostToolUseFailure" => {
                 self.st.update_task(target, BotState::Working);
                 self.st.append_step(target, "⚠ failed".into());
@@ -189,7 +191,7 @@ impl App {
                 } else {
                     self.st.set_pill_badge(target, Some(PillBadge::Finished));
                 }
-                if is_external {
+                if is_external && !standing {
                     self.later(5.2, Timer::RemoveTask(target));
                 } else {
                     self.later(5.2, Timer::TaskIdle(target));
@@ -204,13 +206,13 @@ impl App {
                     self.st.set_pill_badge(target, Some(PillBadge::Error));
                 }
             }
-            "SessionEnd" if is_external => self.st.remove_task(target),
+            "SessionEnd" if is_external && !standing => self.st.remove_task(target),
             "SessionEnd" => {
                 self.st.update_task(target, BotState::Idle);
                 if let Some(t) = self.st.task_mut(target) {
                     t.steps.clear();
                     t.step_index = 0;
-                    t.name = "Claude Code".into();
+                    t.name = home_name.clone();
                     t.pill_badge = None;
                 }
             }

@@ -90,7 +90,7 @@ pub fn layout(v: View) -> ViewLayout {
         View::Note => l(160.0, 60.0, None, 50.0),
         View::Settings => l(160.0, 54.0, None, 46.0),
         View::Greeting => l(150.0, 320.0, Some(90.0), 0.0),
-        View::Dashboard => l(262.0, 34.0, Some(60.0), 30.0),
+        View::Dashboard => l(282.0, 34.0, Some(60.0), 30.0),
     }
 }
 

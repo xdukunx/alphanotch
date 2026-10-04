@@ -70,3 +70,16 @@ Added on top of upstream v0.1.6, for running Coucou inside a status bar (YASB) a
   releases it on blur, fold and view change.
 - Built exe is copied to `%LOCALAPPDATA%\Coucou\` for autostart, together with `coucou-hook.exe` (the app looks
   for the hook next to itself). Re-copy both after a rebuild.
+
+### Agent pills and hook installers (2026-10-05)
+- `agentPills` in settings.json (e.g. `["antigravity","opencode"]`) keeps those agents' pills on the island even
+  when idle; Claude Code always has its own. A standing pill is set back to idle on Stop/SessionEnd, never removed
+  (`standing` in `handlers.rs`). Clicking a small pill in the compact bar opens the island on that agent.
+- `agenthooks.rs`: `coucou-lite.exe --agent-hooks <claude|antigravity> <status|preview|install|uninstall>
+  [--fingerprint <fp>] [--out <file>]`. `preview` prints the diff + a fingerprint, `install` refuses without that
+  fingerprint, takes a dated backup, never touches other tools' entries (Antigravity's hooks.json also holds
+  other apps' blocks, e.g. `catjang`). The exe has no console: use `--out`.
+- Antigravity lifecycle events `PreInvocation`/`PostInvocation` map to UserPromptSubmit/PostToolUse (as the Mac relay does).
+- OpenCode: nothing installed yet (it was not on the machine). Plugin API: `~/.config/opencode/plugin/<name>.js`,
+  events `session.idle`, `tool.execute.before/after`, `permission.asked`. Write it once OpenCode can be tried.
+- Dashboard right card: to-do always shown; the timer is one header button opening 5/15/25 + a gear for a custom length.

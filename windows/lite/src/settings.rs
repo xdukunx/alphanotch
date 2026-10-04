@@ -19,6 +19,10 @@ pub struct Settings {
     /// Keep the compact bar on screen when idle instead of hiding it (docked in a status bar).
     #[serde(default)]
     pub stay_visible: bool,
+    /// Agent pills kept on the island even when idle: names as sent with `--agent <name>`
+    /// ("antigravity", "opencode", …). Claude Code always has its own pill.
+    #[serde(default)]
+    pub agent_pills: Vec<String>,
     /// Claude model used by the chat. Changeable in the settings window.
     /// Defaulted explicitly so a settings.json written by an older build still loads.
     #[serde(default = "default_model")]
@@ -46,6 +50,7 @@ impl Default for Settings {
             autostart: false,
             hooks_installed: false,
             stay_visible: false,
+            agent_pills: Vec::new(),
             model: default_model(),
         }
     }

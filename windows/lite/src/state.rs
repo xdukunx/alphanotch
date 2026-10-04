@@ -87,7 +87,27 @@ pub fn validate_agent(raw: &str) -> Option<String> {
         .then(|| raw.to_string())
 }
 
+/// Name shown for an agent id: the ones people use daily get their proper spelling.
+pub fn agent_label(name: &str) -> String {
+    match name {
+        "antigravity" => "Antigravity".into(),
+        "opencode" => "OpenCode".into(),
+        "gemini-cli" => "Gemini CLI".into(),
+        "codex" => "Codex".into(),
+        "cursor" => "Cursor".into(),
+        other => {
+            let mut c = other.chars();
+            c.next().map(|f| f.to_uppercase().collect::<String>() + c.as_str()).unwrap_or_default()
+        }
+    }
+}
+
 fn agent_color(name: &str) -> &'static str {
+    match name {
+        "antigravity" => return "#E879F9",
+        "opencode" => return "#38BDF8",
+        _ => {}
+    }
     let mut h: i32 = 0;
     for c in name.chars() {
         h = h.wrapping_mul(31).wrapping_add(c as i32);
@@ -265,6 +285,11 @@ impl State {
                 self.tasks.retain(|t| t.id != *id);
             }
         }
+        // Agent pills the user keeps on the island, even before their first event.
+        let wanted: Vec<String> = self.settings.agent_pills.iter().filter_map(|n| validate_agent(n)).collect();
+        for name in &wanted {
+            self.upsert_external_agent(name);
+        }
         // Claude Code first, then agent pills (so they land in the visible four),
         // then the other integrations in declaration order — pills never shuffle.
         let order = |id: &str| INTEGRATIONS.iter().position(|(i, ..)| *i == id).unwrap_or(99);
@@ -288,7 +313,7 @@ impl State {
         let id = intern(&format!("agent_{name}"));
         if !self.tasks.iter().any(|t| t.id == id) {
             let at = self.tasks.iter().position(|t| t.id == CLAUDE_ID).map(|i| i + 1).unwrap_or(0);
-            self.tasks.insert(at, Task::new(id, name, agent_color(name), Source::Agent));
+            self.tasks.insert(at, Task::new(id, &agent_label(name), agent_color(name), Source::Agent));
         }
         id
     }
@@ -302,7 +327,7 @@ impl State {
 
     pub fn default_view(&self) -> View {
         // Docked: the dashboard is home unless a session is actually doing something.
-        let active = self.tasks.iter().any(|t| t.state != BotState::Idle || !t.steps.is_empty());
+        let active = self.tasks.iter().any(|t| t.state != BotState::Idle);
         if self.settings.stay_visible && !active {
             View::Dashboard
         } else if self.tasks.is_empty() {
