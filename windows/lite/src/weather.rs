@@ -1,7 +1,10 @@
 // Weather for the dashboard: Open-Meteo, no key and no account.
 //
-// The only thing sent out is the city name from the settings (once, to find its coordinates) and
-// those coordinates (to get the forecast). Refreshed every 20 minutes, and right away when the city changes.
+// Where: `weatherCity` in the settings is either a city name (looked up once through Open-Meteo's
+// geocoder) or "auto", the default, which estimates the place from the public IP address (city level,
+// so a VPN or a mobile network can put it in the wrong city). Only the city name or the IP request
+// and then the coordinates leave the machine. Refreshed every 20 minutes (a moved laptop is noticed
+// at the next refresh), and right away when the setting changes.
 
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -33,6 +36,8 @@ pub struct Day {
 #[derive(Clone, Debug)]
 pub struct Report {
     pub place: String,
+    /// The place was estimated from the IP address rather than named by the user.
+    pub estimated: bool,
     pub now: Now,
     pub days: Vec<Day>,
 }
@@ -81,17 +86,30 @@ pub fn start(city: &str) {
             if city.is_empty() {
                 continue;
             }
-            if coords.as_ref().map(|c| c.0 != city).unwrap_or(true) {
-                match geocode(&city).await {
-                    Ok((lat, lon, name)) => coords = Some((city.clone(), lat, lon, name)),
+            let auto = city.eq_ignore_ascii_case("auto");
+            let (lat, lon, name) = if auto {
+                // Looked up again every cycle: the laptop may have moved.
+                match locate_ip().await {
+                    Ok(t) => t,
                     Err(e) => {
-                        log::line(format!("weather geocode: {e}"));
+                        log::line(format!("weather locate: {e}"));
                         continue;
                     }
                 }
-            }
-            let Some((_, lat, lon, name)) = coords.clone() else { continue };
-            match forecast(lat, lon, &name).await {
+            } else {
+                if coords.as_ref().map(|c| c.0 != city).unwrap_or(true) {
+                    match geocode(&city).await {
+                        Ok((lat, lon, name)) => coords = Some((city.clone(), lat, lon, name)),
+                        Err(e) => {
+                            log::line(format!("weather geocode: {e}"));
+                            continue;
+                        }
+                    }
+                }
+                let Some((_, lat, lon, name)) = coords.clone() else { continue };
+                (lat, lon, name)
+            };
+            match forecast(lat, lon, &name, auto).await {
                 Ok(r) => {
                     if let Ok(mut s) = REPORT.lock() {
                         *s = Some(r);
@@ -127,6 +145,26 @@ fn enc(s: &str) -> String {
     o
 }
 
+/// City-level position from the public IP: ipwho.is, then geojs.io if that fails.
+async fn locate_ip() -> Result<(f64, f64, String), String> {
+    let first = async {
+        let v = get("https://ipwho.is/").await?;
+        if v["success"].as_bool() == Some(false) {
+            return Err(v["message"].as_str().unwrap_or("lookup failed").to_string());
+        }
+        let name = [v["city"].as_str(), v["region"].as_str(), v["country"].as_str()].into_iter().flatten().find(|s| !s.is_empty()).unwrap_or("Lokasi saya").to_string();
+        Ok((v["latitude"].as_f64().ok_or("no latitude")?, v["longitude"].as_f64().ok_or("no longitude")?, name))
+    }
+    .await;
+    if first.is_ok() {
+        return first;
+    }
+    let v = get("https://get.geojs.io/v1/ip/geo.json").await?;
+    let num = |k: &str| v[k].as_str().and_then(|s| s.parse::<f64>().ok()).or_else(|| v[k].as_f64());
+    let name = v["city"].as_str().filter(|s| !s.is_empty()).or_else(|| v["region"].as_str()).unwrap_or("Lokasi saya").to_string();
+    Ok((num("latitude").ok_or("no latitude")?, num("longitude").ok_or("no longitude")?, name))
+}
+
 async fn geocode(city: &str) -> Result<(f64, f64, String), String> {
     let v = get(&format!("https://geocoding-api.open-meteo.com/v1/search?name={}&count=1&language=id", enc(city))).await?;
     let r = v["results"].get(0).ok_or("city not found")?;
@@ -137,7 +175,7 @@ async fn geocode(city: &str) -> Result<(f64, f64, String), String> {
     ))
 }
 
-async fn forecast(lat: f64, lon: f64, place: &str) -> Result<Report, String> {
+async fn forecast(lat: f64, lon: f64, place: &str, estimated: bool) -> Result<Report, String> {
     let url = format!(
         "https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}\
          &current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m,is_day\
@@ -167,7 +205,7 @@ async fn forecast(lat: f64, lon: f64, place: &str) -> Result<Report, String> {
             rain: d["precipitation_probability_max"][i].as_u64().unwrap_or(0) as u32,
         });
     }
-    Ok(Report { place: place.to_string(), now, days })
+    Ok(Report { place: place.to_string(), estimated, now, days })
 }
 
 /// 0 = Sunday … 6 = Saturday for "YYYY-MM-DD" (Sakamoto's method).

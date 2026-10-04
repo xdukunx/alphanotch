@@ -89,6 +89,6 @@ Header tabs 5-7 (`views.rs`), drawn by `pages.rs`; data in `stocks.rs` / `weathe
 - Stocks: Yahoo Finance's public chart endpoint (`range=1d&interval=5m`), unofficial, no key, may throttle or change.
   Watchlist = `stocks` in settings.json (default `^JKSE` = IHSG, BBCA/BBRI/BMRI/TLKM `.JK`); the add field normalises
   `bbca` → `BBCA.JK`, `ihsg` → `^JKSE`. Polled every 60 s only while the page is open (`stocks::touch()` each frame), every 10 min otherwise.
-- Weather: Open-Meteo (geocoding by `weatherCity`, default Surabaya, then the forecast), every 20 min. Icons are drawn in code.
+- Weather: Open-Meteo forecast every 20 min. `weatherCity` is "auto" (default: city-level position from the IP via ipwho.is, then geojs.io; re-detected each cycle so a moved laptop is noticed; the page shows "≈ dari IP") or a city name (Open-Meteo geocoder). Icons are drawn in code. Note: the app re-saves every setting it knows, so an old default can end up written in settings.json: check the file when a default seems ignored.
 - Teleprompter: the script is `%APPDATA%\Coucou\teleprompter.txt` (created with a placeholder; **Edit** opens it in Notepad and the page reloads on save).
   Scrolls with the frame loop (`tp_step`), speed in px/s. Text fades at the edges instead of being clipped.

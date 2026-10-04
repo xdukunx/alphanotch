@@ -123,7 +123,7 @@ impl App {
         let Some(r) = weather::report() else {
             ui::card(g, v, Wash::None, false);
             text::draw(g, "Memuat cuaca…", v.cx(), v.cy() - 8.0, Face::Medium, 14.0, hex(pal::INK), Align::Center);
-            text::draw(g, &format!("Kota: {}  (ubah `weatherCity` di settings.json)", self.st.settings.weather_city), v.cx(), v.cy() + 14.0, Face::Regular, 11.0, hex(pal::DIM), Align::Center);
+            text::draw(g, &format!("Kota: {}  (`weatherCity` di settings.json: 'auto' atau nama kota)", self.st.settings.weather_city), v.cx(), v.cy() + 14.0, Face::Regular, 11.0, hex(pal::DIM), Align::Center);
             return;
         };
         let left = Rect::new(v.x, v.y, 236.0, v.h);
@@ -133,6 +133,10 @@ impl App {
 
         // Now.
         text::draw(g, &r.place, left.x + 18.0, left.y + 24.0, Face::Medium, 12.5, hex(pal::DIM), Align::Left);
+        if r.estimated {
+            let pw = text::measure(&r.place, Face::Medium, 12.5);
+            text::draw(g, "≈ dari IP", left.x + 18.0 + pw + 8.0, left.y + 24.5, Face::Regular, 9.5, hex(pal::DIM3), Align::Left);
+        }
         weather_icon(g, weather::kind_of(r.now.code), r.now.is_day, left.x + 52.0, left.y + 84.0, 66.0);
         text::draw(g, &format!("{:.0}°", r.now.temp), left.x + 100.0, left.y + 74.0, Face::Bold, 38.0, hex(pal::INK), Align::Left);
         text::draw(g, weather::label_of(r.now.code), left.x + 102.0, left.y + 106.0, Face::Medium, 13.0, hex(pal::INK), Align::Left);

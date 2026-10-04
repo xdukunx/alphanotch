@@ -23,7 +23,7 @@ pub struct Settings {
     /// ("antigravity", "opencode", …). Claude Code always has its own pill.
     #[serde(default)]
     pub agent_pills: Vec<String>,
-    /// City for the weather page (looked up once through Open-Meteo).
+    /// "auto" (default) estimates the place from the IP address; or a city name, e.g. "Surabaya".
     #[serde(default = "default_city")]
     pub weather_city: String,
     /// Watchlist for the stocks page. `^JKSE` is the IHSG; plain codes are Jakarta (BBCA → BBCA.JK).
@@ -36,7 +36,7 @@ pub struct Settings {
 }
 
 fn default_city() -> String {
-    "Surabaya".into()
+    "auto".into()
 }
 
 fn default_stocks() -> Vec<String> {
