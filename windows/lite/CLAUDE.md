@@ -82,7 +82,7 @@ Added on top of upstream v0.1.6, for running Coucou inside a status bar (YASB) a
 - Antigravity lifecycle events `PreInvocation`/`PostInvocation` map to UserPromptSubmit/PostToolUse (as the Mac relay does).
 - OpenCode: nothing installed yet (it was not on the machine). Plugin API: `~/.config/opencode/plugin/<name>.js`,
   events `session.idle`, `tool.execute.before/after`, `permission.asked`. Write it once OpenCode can be tried.
-- Dashboard right card: to-do always shown; the timer is one header button opening 5/15/25 + a gear for a custom length.
+- Dashboard (OmniNotch layout, `dashboard.rs`): player card on the left; on the right a flat column (no card) with **Hari ini** (today's events from Google Calendar, 2 rows) over **Tugas** (to-do rows, add field at the bottom, Google status beside the header, which is also the connect button). The timer is one small button on the Tugas header: it opens 5/15/25 and a gear for a custom length. The menu tabs stay in the header. All dashboard pages are 300 px tall.
 
 ### More dashboard pages (2026-10-05): Stocks, Weather, Teleprompter
 Header tabs 5-7 (`views.rs`), drawn by `pages.rs`; data in `stocks.rs` / `weather.rs`; both are background pollers started in `main.rs`.
