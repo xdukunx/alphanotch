@@ -21,6 +21,7 @@ use windows::Media::Control::{
     GlobalSystemMediaTransportControlsSessionManager as Manager,
     GlobalSystemMediaTransportControlsSessionPlaybackStatus as Playback,
 };
+use windows::Media::MediaPlaybackAutoRepeatMode as RepeatMode;
 use windows::Win32::System::Com::{CoInitializeEx, COINIT_MULTITHREADED};
 
 #[derive(Clone)]
@@ -34,6 +35,12 @@ pub struct Media {
     pub sampled: Instant,
     /// The app playing it, as a short name ("Spotify", "Chrome").
     pub source: String,
+    pub shuffle: bool,
+    /// 0 = off, 1 = repeat the track, 2 = repeat the list.
+    pub repeat: u8,
+    /// What the player lets us change (a browser tab usually allows neither).
+    pub can_shuffle: bool,
+    pub can_repeat: bool,
 }
 
 impl PartialEq for Media {
@@ -154,6 +161,9 @@ pub enum Transport {
     Previous,
     /// Seek to this many seconds.
     Seek(f32),
+    Shuffle(bool),
+    /// 0 = off, 1 = track, 2 = list.
+    Repeat(u8),
 }
 
 /// Sends a transport command to the current media session. Fire and forget.
@@ -171,6 +181,8 @@ pub fn transport(cmd: Transport) {
                     m.position = t;
                     m.sampled = Instant::now();
                 }
+                Transport::Shuffle(on) => m.shuffle = on,
+                Transport::Repeat(r) => m.repeat = r,
                 _ => {}
             }
         }
@@ -184,6 +196,14 @@ pub fn transport(cmd: Transport) {
             Transport::Next => s.TrySkipNextAsync().and_then(|o| o.get()),
             Transport::Previous => s.TrySkipPreviousAsync().and_then(|o| o.get()),
             Transport::Seek(t) => s.TryChangePlaybackPositionAsync((t as f64 * 1.0e7) as i64).and_then(|o| o.get()),
+            Transport::Shuffle(on) => s.TryChangeShuffleActiveAsync(on).and_then(|o| o.get()),
+            Transport::Repeat(r) => s
+                .TryChangeAutoRepeatModeAsync(match r {
+                    1 => RepeatMode::Track,
+                    2 => RepeatMode::List,
+                    _ => RepeatMode::None,
+                })
+                .and_then(|o| o.get()),
         };
     });
 }
@@ -260,8 +280,23 @@ fn read_media(s: &Session) -> Option<Media> {
             duration = (secs(end) - secs(start)).max(0.0) as f32;
         }
     }
+    let info = s.GetPlaybackInfo().ok();
+    let shuffle = info.as_ref().and_then(|i| i.IsShuffleActive().ok()).and_then(|r| r.Value().ok()).unwrap_or(false);
+    let repeat = info
+        .as_ref()
+        .and_then(|i| i.AutoRepeatMode().ok())
+        .and_then(|r| r.Value().ok())
+        .map(|m| if m == RepeatMode::Track { 1u8 } else if m == RepeatMode::List { 2 } else { 0 })
+        .unwrap_or(0);
+    let controls = info.as_ref().and_then(|i| i.Controls().ok());
+    let can_shuffle = controls.as_ref().and_then(|c| c.IsShuffleEnabled().ok()).unwrap_or(false);
+    let can_repeat = controls.as_ref().and_then(|c| c.IsRepeatEnabled().ok()).unwrap_or(false);
     let source = s.SourceAppUserModelId().ok().map(|h| pretty_source(&h.to_string())).unwrap_or_default();
     Some(Media {
+        shuffle,
+        repeat,
+        can_shuffle,
+        can_repeat,
         source,
         title,
         artist: props.Artist().map(|a| a.to_string()).unwrap_or_default(),

@@ -131,16 +131,16 @@ impl App {
 
         // A small arrow at the bottom centre folds the island back to the bar.
         if !matches!(self.st.view, View::Greeting | View::Upload | View::Uploading | View::Choose | View::Confused) {
-            let hit = Rect::new(iw / 2.0 - 22.0, ih - 15.0, 44.0, 15.0);
+            let hit = Rect::new(iw / 2.0 - 24.0, ih - 14.0, 48.0, 14.0);
             let (clicked, hover, _) = self.ui.click_region(id_of("collapse-arrow", 103), hit);
             g.stroke_style(rgba(255, 255, 255, if hover { 0.9 } else { 0.32 }));
             g.line_width(1.6);
             g.line_cap_round();
             g.line_join_round();
             g.begin_path();
-            g.move_to(iw / 2.0 - 6.0, ih - 5.0);
-            g.line_to(iw / 2.0, ih - 9.0);
-            g.line_to(iw / 2.0 + 6.0, ih - 5.0);
+            g.move_to(iw / 2.0 - 6.0, ih - 3.5);
+            g.line_to(iw / 2.0, ih - 7.5);
+            g.line_to(iw / 2.0 + 6.0, ih - 3.5);
             g.stroke();
             if clicked {
                 crate::sound::play("close");

@@ -148,6 +148,59 @@ fn ellipsize(s: &str, face: Face, size: f32, max_w: f32) -> String {
     format!("{out}…")
 }
 
+/// Two crossing arrows.
+fn glyph_shuffle(g: &mut Gfx, cx: f32, cy: f32, col: Color) {
+    g.stroke_style(col);
+    g.line_width(1.5);
+    g.line_cap_round();
+    g.line_join_round();
+    for (a, b) in [(-1.0f32, 1.0f32), (1.0, -1.0)] {
+        g.begin_path();
+        g.move_to(cx - 7.0, cy + a * 4.5);
+        g.line_to(cx - 3.0, cy + a * 4.5);
+        g.line_to(cx + 3.0, cy + b * 4.5);
+        g.line_to(cx + 7.0, cy + b * 4.5);
+        g.stroke();
+        // arrow head
+        g.begin_path();
+        g.move_to(cx + 4.6, cy + b * 4.5 - 2.4);
+        g.line_to(cx + 7.2, cy + b * 4.5);
+        g.line_to(cx + 4.6, cy + b * 4.5 + 2.4);
+        g.stroke();
+    }
+}
+
+/// A loop of two arrows; a "1" in the middle when it repeats the track.
+fn glyph_repeat(g: &mut Gfx, cx: f32, cy: f32, col: Color, one: bool) {
+    g.stroke_style(col);
+    g.line_width(1.5);
+    g.line_cap_round();
+    g.line_join_round();
+    g.begin_path();
+    g.move_to(cx - 6.5, cy);
+    g.line_to(cx - 6.5, cy - 3.0);
+    g.line_to(cx + 5.0, cy - 3.0);
+    g.stroke();
+    g.begin_path();
+    g.move_to(cx + 3.0, cy - 5.4);
+    g.line_to(cx + 5.6, cy - 3.0);
+    g.line_to(cx + 3.0, cy - 0.6);
+    g.stroke();
+    g.begin_path();
+    g.move_to(cx + 6.5, cy);
+    g.line_to(cx + 6.5, cy + 3.0);
+    g.line_to(cx - 5.0, cy + 3.0);
+    g.stroke();
+    g.begin_path();
+    g.move_to(cx - 3.0, cy + 0.6);
+    g.line_to(cx - 5.6, cy + 3.0);
+    g.line_to(cx - 3.0, cy + 5.4);
+    g.stroke();
+    if one {
+        text::draw(g, "1", cx, cy + 0.5, Face::Bold, 7.0, col, Align::Center);
+    }
+}
+
 fn mmss(secs: f32) -> String {
     let s = secs.max(0.0) as u32;
     format!("{}:{:02}", s / 60, s % 60)
@@ -177,16 +230,22 @@ impl App {
     }
 
     fn dash_now_playing(&mut self, g: &mut Gfx, r: Rect, n: f32) {
-        let art = Rect::new(r.x + 18.0, r.y + (r.h - 104.0) / 2.0, 104.0, 104.0);
-        let col = r.x + 140.0;
-        let colw = r.w - 140.0 - 20.0;
+        let _ = n;
+        // Round cover with a progress ring around it, on the left.
+        let ring_c = (r.x + 88.0, r.cy() + 2.0);
+        let cover_r = 55.0;
+        let ring_r = 63.0;
+        let col = r.x + 176.0;
+        let colw = r.w - 176.0 - 18.0;
 
         let Some(m) = activity::media() else {
             g.fill_style(rgba(255, 255, 255, 0.06));
-            g.fill_round_rect(art.x, art.y, art.w, art.h, 16.0);
-            text::draw(g, "♪", art.cx(), art.cy(), Face::Bold, 32.0, rgba(255, 255, 255, 0.25), Align::Center);
-            text::draw(g, "Tidak ada media", col, r.cy() - 8.0, Face::Medium, 14.0, hex(pal::INK), Align::Left);
-            text::draw(g, "Putar musik di Spotify atau browser.", col, r.cy() + 12.0, Face::Regular, 11.5, hex(pal::DIM), Align::Left);
+            g.begin_path();
+            g.circle(ring_c.0, ring_c.1, cover_r);
+            g.fill();
+            text::draw(g, "♪", ring_c.0, ring_c.1, Face::Bold, 32.0, rgba(255, 255, 255, 0.25), Align::Center);
+            text::draw(g, "Tidak ada media", col, r.cy() - 8.0, Face::Regular, 15.0, hex(pal::INK), Align::Left);
+            text::draw(g, "Putar musik di Spotify atau browser.", col, r.cy() + 12.0, Face::Regular, 11.0, hex(pal::DIM), Align::Left);
             return;
         };
         let art_img = activity::art();
@@ -196,93 +255,105 @@ impl App {
             Color::from_rgba8(f(tint.0), f(tint.1), f(tint.2), 255)
         };
 
-        // The card takes the artwork's colour as a soft glow behind the cover.
-        crate::ui::glow(g, r, 24.0, 40.0, 300.0, Color::from_rgba8(tint.0, tint.1, tint.2, 96));
+        // A quiet glow in the cover's colour behind the ring.
+        crate::ui::glow(g, r, 24.0, 50.0, 280.0, Color::from_rgba8(tint.0, tint.1, tint.2, 80));
 
-        // Cover: a soft shadow, the image, a hairline edge.
-        g.fill_style(rgba(0, 0, 0, 0.30));
-        g.fill_round_rect(art.x - 2.0, art.y + 7.0, art.w + 4.0, art.h, 18.0);
+        // Cover, as a circle.
         match &art_img {
-            Some(a) => g.fill_image_round_rect(&a.rgba, a.size, art.x, art.y, art.w, art.h, 16.0),
+            Some(a) => g.fill_image_round_rect(&a.rgba, a.size, ring_c.0 - cover_r, ring_c.1 - cover_r, cover_r * 2.0, cover_r * 2.0, cover_r),
             None => {
                 g.fill_style(rgba(255, 255, 255, 0.07));
-                g.fill_round_rect(art.x, art.y, art.w, art.h, 16.0);
-                text::draw(g, "♪", art.cx(), art.cy(), Face::Bold, 32.0, rgba(255, 255, 255, 0.25), Align::Center);
-            }
-        }
-        g.stroke_style(rgba(255, 255, 255, 0.12));
-        g.line_width(1.0);
-        g.round_rect(art.x + 0.5, art.y + 0.5, art.w - 1.0, art.h - 1.0, 15.5);
-        g.stroke();
-
-        // Source app, and a little equaliser that moves while it plays.
-        if !m.source.is_empty() {
-            text::draw(g, &m.source.to_uppercase(), col, r.y + 22.0, Face::Medium, 9.5, rgba(255, 255, 255, 0.5), Align::Left);
-        }
-        let eq_x = r.x + r.w - 22.0;
-        for k in 0..4 {
-            let h = if m.playing { 4.0 + ((n * (4.5 + k as f32 * 1.3) + k as f32 * 1.7).sin() * 0.5 + 0.5) * 9.0 } else { 3.0 };
-            g.fill_style(if m.playing { mix(0.55) } else { rgba(255, 255, 255, 0.25) });
-            g.fill_round_rect(eq_x - k as f32 * 5.0, r.y + 22.0 - h / 2.0 + 1.0, 3.0, h, 1.5);
-        }
-
-        fading_text(g, &m.title, col, r.y + 44.0, 15.5, hex(pal::INK), col, col + colw);
-        if !m.artist.is_empty() {
-            fading_text(g, &m.artist, col, r.y + 63.0, 12.0, rgba(255, 255, 255, 0.62), col, col + colw);
-        }
-
-        // Seek bar: tinted fill, a knob, times underneath.
-        let pos = m.position_now();
-        let bar = Rect::new(col, r.y + 86.0, colw, 5.0);
-        let hit = Rect::new(col - 4.0, r.y + 77.0, colw + 8.0, 22.0);
-        let (clicked, hover, _) = self.ui.click_region(id_of("dash-seek", 91), hit);
-        g.fill_style(rgba(255, 255, 255, 0.16));
-        g.fill_round_rect(bar.x, bar.y, bar.w, bar.h, 2.5);
-        if m.duration > 0.0 {
-            let k = clamp(pos / m.duration, 0.0, 1.0);
-            let fw = (bar.w * k).max(5.0);
-            g.fill_style(if hover { mix(0.8) } else { mix(0.6) });
-            g.fill_round_rect(bar.x, bar.y, fw, bar.h, 2.5);
-            g.fill_style(hex("#FFFFFF"));
-            g.begin_path();
-            g.circle(bar.x + fw, bar.y + bar.h / 2.0, if hover { 5.5 } else { 4.0 });
-            g.fill();
-            if clicked {
-                let f = clamp((self.ui.input.mouse.0 - bar.x) / bar.w, 0.0, 1.0);
-                activity::transport(Transport::Seek(f * m.duration));
-            }
-            text::draw(g, &mmss(pos), col, r.y + 104.0, Face::Regular, 10.5, rgba(255, 255, 255, 0.5), Align::Left);
-            text::draw(g, &mmss(m.duration), col + colw, r.y + 104.0, Face::Regular, 10.5, rgba(255, 255, 255, 0.5), Align::Right);
-        }
-
-        // Transport: the play button is a solid disc.
-        let cy = r.y + 140.0;
-        let mid = col + colw / 2.0;
-        for (id, cx, size, kind) in [("dash-prev", mid - 62.0, 16.0, 0), ("dash-play", mid, 15.0, 1), ("dash-next", mid + 62.0, 16.0, 2)] {
-            let hit = Rect::new(cx - 22.0, cy - 22.0, 44.0, 44.0);
-            let (clicked, hover, pressed) = self.ui.click_region(id_of(id, 92), hit);
-            if kind == 1 {
-                let rad = if pressed { 18.0 } else if hover { 21.0 } else { 20.0 };
-                g.fill_style(hex("#F5F6F8"));
                 g.begin_path();
-                g.circle(cx, cy, rad);
+                g.circle(ring_c.0, ring_c.1, cover_r);
                 g.fill();
-                g.fill_style(hex("#0B0C0E"));
-                if m.playing {
-                    glyph_pause(g, cx, cy, size)
-                } else {
-                    glyph_play(g, cx + 1.0, cy, size)
+                text::draw(g, "♪", ring_c.0, ring_c.1, Face::Bold, 32.0, rgba(255, 255, 255, 0.25), Align::Center);
+            }
+        }
+
+        // Progress ring: the track, the played part, and a click anywhere on it seeks.
+        let pos = m.position_now();
+        let k = if m.duration > 0.0 { clamp(pos / m.duration, 0.0, 1.0) } else { 0.0 };
+        let (mx, my) = self.ui.input.mouse;
+        let dist = ((mx - ring_c.0).powi(2) + (my - ring_c.1).powi(2)).sqrt();
+        let on_ring = dist >= ring_r - 8.0 && dist <= ring_r + 8.0;
+        let ring_box = Rect::new(ring_c.0 - ring_r - 8.0, ring_c.1 - ring_r - 8.0, (ring_r + 8.0) * 2.0, (ring_r + 8.0) * 2.0);
+        let (rc, _, _) = self.ui.click_region(id_of("dash-ring", 91), ring_box);
+        g.line_width(3.5);
+        g.line_cap_round();
+        g.stroke_style(rgba(255, 255, 255, 0.12));
+        g.begin_path();
+        g.circle(ring_c.0, ring_c.1, ring_r);
+        g.stroke();
+        if k > 0.002 {
+            let a0 = -std::f32::consts::FRAC_PI_2;
+            g.stroke_style(if on_ring { mix(0.85) } else { mix(0.6) });
+            g.begin_path();
+            g.arc(ring_c.0, ring_c.1, ring_r, a0, a0 + k * std::f32::consts::TAU, false);
+            g.stroke();
+        }
+        if rc && on_ring && m.duration > 0.0 {
+            let mut ang = (mx - ring_c.0).atan2(-(my - ring_c.1)); // 0 at the top, clockwise
+            if ang < 0.0 {
+                ang += std::f32::consts::TAU;
+            }
+            activity::transport(Transport::Seek(ang / std::f32::consts::TAU * m.duration));
+        }
+        // Elapsed time sits on the ring, at the bottom.
+        let tl = mmss(pos);
+        let tw = text::measure(&tl, Face::Medium, 10.5) + 14.0;
+        g.fill_style(hex("#0E0F11"));
+        g.fill_round_rect(ring_c.0 - tw / 2.0, ring_c.1 + ring_r - 8.0, tw, 16.0, 8.0);
+        text::draw(g, &tl, ring_c.0, ring_c.1 + ring_r, Face::Medium, 10.5, rgba(255, 255, 255, 0.85), Align::Center);
+
+        // Title, artist, where it plays from.
+        if !m.source.is_empty() {
+            text::draw(g, &m.source.to_uppercase(), col, r.y + 30.0, Face::Medium, 9.5, rgba(255, 255, 255, 0.45), Align::Left);
+        }
+        fading_text(g, &m.title, col, r.y + 58.0, 17.0, hex(pal::INK), col, col + colw);
+        if !m.artist.is_empty() {
+            fading_text(g, &m.artist, col, r.y + 80.0, 12.0, rgba(255, 255, 255, 0.6), col, col + colw);
+        }
+        if m.duration > 0.0 {
+            text::draw(g, &mmss(m.duration), col + colw, r.y + 30.0, Face::Regular, 10.0, rgba(255, 255, 255, 0.4), Align::Right);
+        }
+
+        // One row of controls: shuffle, previous, play, next, repeat.
+        let cy = r.y + 132.0;
+        let step = colw / 5.0;
+        let xs: Vec<f32> = (0..5).map(|i| col + step * (i as f32 + 0.5)).collect();
+        for (idx, (id, kind)) in [("dash-shuffle", 0), ("dash-prev", 1), ("dash-play", 2), ("dash-next", 3), ("dash-repeat", 4)].into_iter().enumerate() {
+            let cx = xs[idx];
+            let hit = Rect::new(cx - step / 2.0, cy - 22.0, step, 44.0);
+            let (clicked, hover, pressed) = self.ui.click_region(id_of(id, 92), hit);
+            match kind {
+                2 => {
+                    let rad = if pressed { 17.0 } else if hover { 20.0 } else { 19.0 };
+                    g.fill_style(hex("#F5F6F8"));
+                    g.begin_path();
+                    g.circle(cx, cy, rad);
+                    g.fill();
+                    g.fill_style(hex("#0B0C0E"));
+                    if m.playing { glyph_pause(g, cx, cy, 14.0) } else { glyph_play(g, cx + 1.0, cy, 14.0) }
                 }
-            } else {
-                g.fill_style(if pressed { rgba(255, 255, 255, 0.55) } else if hover { hex("#FFFFFF") } else { rgba(255, 255, 255, 0.82) });
-                glyph_skip(g, cx, cy, size, if kind == 0 { -1.0 } else { 1.0 });
+                1 | 3 => {
+                    g.fill_style(if pressed { rgba(255, 255, 255, 0.5) } else if hover { hex("#FFFFFF") } else { rgba(255, 255, 255, 0.8) });
+                    glyph_skip(g, cx, cy, 14.0, if kind == 1 { -1.0 } else { 1.0 });
+                }
+                _ => {
+                    let (can, on) = if kind == 0 { (m.can_shuffle, m.shuffle) } else { (m.can_repeat, m.repeat != 0) };
+                    let col_btn = if !can { rgba(255, 255, 255, 0.18) } else if on { mix(0.7) } else if hover { hex("#FFFFFF") } else { rgba(255, 255, 255, 0.55) };
+                    if kind == 0 { glyph_shuffle(g, cx, cy, col_btn) } else { glyph_repeat(g, cx, cy, col_btn, m.repeat == 1) }
+                }
             }
             if clicked {
-                activity::transport(match kind {
-                    0 => Transport::Previous,
-                    1 => Transport::PlayPause,
-                    _ => Transport::Next,
-                });
+                match kind {
+                    0 if m.can_shuffle => activity::transport(Transport::Shuffle(!m.shuffle)),
+                    1 => activity::transport(Transport::Previous),
+                    2 => activity::transport(Transport::PlayPause),
+                    3 => activity::transport(Transport::Next),
+                    4 if m.can_repeat => activity::transport(Transport::Repeat((m.repeat + 1) % 3)),
+                    _ => {}
+                }
             }
         }
     }

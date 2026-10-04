@@ -100,3 +100,9 @@ Header tabs 5-7 (`views.rs`), drawn by `pages.rs`; data in `stocks.rs` / `weathe
 - A small arrow at the bottom centre of every expanded view folds the island (`collapse_req`, handled in `after_event`). The auto-close delay
   (Settings -> General, `autoCloseInterval`, 15 s by default) still applies when the mouse leaves.
 - Google sync status beside "Tugas": a green check icon when linked (the sentence shows on hover); a pill only when action is needed (Hubungkan / Masuk / Gagal).
+
+### Round player (2026-10-05)
+`dash_now_playing` is now the simple round layout: circular cover with a progress ring around it (click the ring to seek; elapsed time sits on the ring),
+title/artist, one row of controls: shuffle, previous, play disc, next, repeat. Shuffle/repeat are read from and written to the system media session
+(`Media::shuffle/repeat/can_shuffle/can_repeat`, `Transport::Shuffle/Repeat`); a player that does not expose them (often a browser tab) shows them dimmed and they do nothing.
+No heart button: the system media session has no "like".
