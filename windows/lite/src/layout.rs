@@ -53,6 +53,15 @@ pub const NOTCH_H: f32 = 32.0;
 pub const COMPACT_H: f32 = 32.0;
 pub const COMPACT_W: f32 = 288.0;
 pub const EXPANDED_W: f32 = 640.0;
+/// The dashboard pages (home, stocks, weather, teleprompter) are slimmer than the other views.
+pub const DASH_W: f32 = 548.0;
+
+pub fn view_width(v: View) -> f32 {
+    match v {
+        View::Dashboard | View::Stocks | View::Weather | View::Teleprompter => DASH_W,
+        _ => EXPANDED_W,
+    }
+}
 
 pub const ROUNDED_CORNER: f32 = 14.0;
 pub const EXPANDED_CORNER: f32 = 22.0;
@@ -94,8 +103,8 @@ pub fn layout(v: View) -> ViewLayout {
         View::Settings => l(160.0, 54.0, None, 46.0),
         View::Greeting => l(150.0, 320.0, Some(90.0), 0.0),
         // Home is short; Mochi sits in the header row beside the greeting.
-        View::Dashboard => l(212.0, 286.0, Some(21.0), 26.0),
-        View::Stocks | View::Weather | View::Teleprompter => l(240.0, 34.0, Some(60.0), 0.0),
+        View::Dashboard => l(196.0, 286.0, Some(21.0), 26.0),
+        View::Stocks | View::Weather | View::Teleprompter => l(220.0, 34.0, Some(60.0), 0.0),
     }
 }
 
@@ -111,7 +120,7 @@ pub fn island_size(mode: Mode, view: View, chat_count: usize) -> (f32, f32) {
         Mode::Compact => (COMPACT_W, COMPACT_H),
         Mode::Expanded => {
             let h = if view == View::Prompt { chat_prompt_height(chat_count) } else { layout(view).height };
-            (EXPANDED_W, h)
+            (view_width(view), h)
         }
     }
 }

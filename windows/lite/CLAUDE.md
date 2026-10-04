@@ -112,3 +112,8 @@ The expanded island was too tall for a screen's centre. Home is now **212 px** (
 (Mochi, 26 px, sits in the header at x=286; greeting text at x=304, two lines: name, then date and weather); the cards start straight under the header. The
 player card is 160 px tall (cover 92 px, ring 106 px); the right column shows **one** event under "Hari ini" (+N lagi) and 2 task rows; opening the timer menu folds
 "Hari ini" to make room. The Stocks list adapts to the room (`rows_max`), Weather is laid out for 188 px of content.
+
+### Slim dashboard (2026-10-05)
+The dashboard pages are narrower than the other views: `DASH_W = 548` (`layout::view_width`), Home 196 px tall, Stocks/Weather/Teleprompter 220 px. Player card 296 x 144;
+the right column is ~210 px wide and the day's event is a single line ("07:00  title"); Weather shows as many days as fit (`cols`); Stocks list has 3 rows. Tune `DASH_W`
+and the heights in `layout.rs` (`layout()`), and `LEFT_W` in `dashboard.rs`.

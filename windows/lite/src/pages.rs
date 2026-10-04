@@ -126,8 +126,8 @@ impl App {
             text::draw(g, &format!("Kota: {}  (`weatherCity` di settings.json: 'auto' atau nama kota)", self.st.settings.weather_city), v.cx(), v.cy() + 14.0, Face::Regular, 11.0, hex(pal::DIM), Align::Center);
             return;
         };
-        let left = Rect::new(v.x, v.y, 236.0, v.h);
-        let right = Rect::new(v.x + 246.0, v.y, v.w - 246.0, v.h);
+        let left = Rect::new(v.x, v.y, 200.0, v.h);
+        let right = Rect::new(v.x + 210.0, v.y, v.w - 210.0, v.h);
         ui::card(g, left, Wash::None, false);
         ui::card(g, right, Wash::None, false);
 
@@ -150,10 +150,11 @@ impl App {
         }
 
         // Week.
-        text::draw(g, "7 hari ke depan", right.x + 18.0, right.y + 24.0, Face::Medium, 12.5, hex(pal::DIM), Align::Left);
-        let n = r.days.len().min(7).max(1) as f32;
+        let cols = ((((right.w - 24.0) / 46.0).floor()) as usize).clamp(3, 7);
+        text::draw(g, &format!("{} hari ke depan", cols.min(r.days.len())), right.x + 18.0, right.y + 24.0, Face::Medium, 12.5, hex(pal::DIM), Align::Left);
+        let n = r.days.len().min(cols).max(1) as f32;
         let colw = (right.w - 24.0) / n;
-        for (i, d) in r.days.iter().take(7).enumerate() {
+        for (i, d) in r.days.iter().take(cols).enumerate() {
             let cx = right.x + 12.0 + colw * (i as f32 + 0.5);
             let today = i == 0;
             if today {
@@ -173,8 +174,8 @@ impl App {
     pub fn draw_stocks(&mut self, g: &mut Gfx, v: Rect) {
         stocks::touch();
         let quotes = stocks::quotes();
-        let left = Rect::new(v.x, v.y, 330.0, v.h);
-        let right = Rect::new(v.x + 340.0, v.y, v.w - 340.0, v.h);
+        let left = Rect::new(v.x, v.y, 250.0, v.h);
+        let right = Rect::new(v.x + 260.0, v.y, v.w - 260.0, v.h);
         ui::card(g, left, Wash::None, false);
         ui::card(g, right, Wash::None, false);
 
