@@ -1,0 +1,462 @@
+// The dashboard: what the island shows when you open it and nothing needs you.
+// Greeting, Now Playing (artwork, seek bar, transport), a timer with presets and a
+// few system gauges. Everything here is read from the system or from `activity`.
+
+use std::cell::Cell;
+
+use tiny_skia::Color;
+use windows::Win32::System::Power::{GetSystemPowerStatus, SYSTEM_POWER_STATUS};
+use windows::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
+use windows::Win32::System::Threading::GetSystemTimes;
+
+use crate::activity::{self, Transport};
+use crate::anim::clamp;
+use crate::app::{fading_text, App};
+use crate::gfx::{hex, rgba, Gfx};
+use crate::text::{self, Align, Face};
+use crate::ui::{id_of, pal, Rect};
+
+const GAP: f32 = 10.0;
+const LEFT_W: f32 = 392.0;
+
+// ── System gauges ─────────────────────────────────────────────────────────────
+
+thread_local! {
+    static CPU_PREV: Cell<(u64, u64)> = const { Cell::new((0, 0)) };
+    static CPU_LAST: Cell<f32> = const { Cell::new(0.0) };
+}
+
+fn ft(f: windows::Win32::Foundation::FILETIME) -> u64 {
+    ((f.dwHighDateTime as u64) << 32) | f.dwLowDateTime as u64
+}
+
+/// CPU load since the previous call, 0…1. Called at about 2 Hz while the dashboard is open.
+fn cpu_load() -> f32 {
+    let (mut idle, mut kernel, mut user) = Default::default();
+    unsafe {
+        if GetSystemTimes(Some(&mut idle), Some(&mut kernel), Some(&mut user)).is_err() {
+            return CPU_LAST.get();
+        }
+    }
+    let (i, total) = (ft(idle), ft(kernel) + ft(user));
+    let (pi, pt) = CPU_PREV.get();
+    CPU_PREV.set((i, total));
+    if pt == 0 || total <= pt {
+        return CPU_LAST.get();
+    }
+    let load = 1.0 - (i - pi) as f32 / (total - pt) as f32;
+    CPU_LAST.set(load.clamp(0.0, 1.0));
+    CPU_LAST.get()
+}
+
+fn mem_load() -> f32 {
+    let mut m = MEMORYSTATUSEX { dwLength: std::mem::size_of::<MEMORYSTATUSEX>() as u32, ..Default::default() };
+    unsafe {
+        if GlobalMemoryStatusEx(&mut m).is_ok() {
+            return m.dwMemoryLoad as f32 / 100.0;
+        }
+    }
+    0.0
+}
+
+/// (percent, charging) or None on a desktop without a battery.
+fn battery() -> Option<(u8, bool)> {
+    let mut s = SYSTEM_POWER_STATUS::default();
+    unsafe {
+        GetSystemPowerStatus(&mut s).ok()?;
+    }
+    (s.BatteryLifePercent <= 100).then_some((s.BatteryLifePercent, s.ACLineStatus == 1))
+}
+
+// ── Greeting ──────────────────────────────────────────────────────────────────
+
+fn greeting() -> (String, String) {
+    use windows::Win32::System::SystemInformation::GetLocalTime;
+    let t = unsafe { GetLocalTime() };
+    let hello = match t.wHour {
+        4..=10 => "Selamat pagi",
+        11..=14 => "Selamat siang",
+        15..=17 => "Selamat sore",
+        _ => "Selamat malam",
+    };
+    let name = std::env::var("USERNAME").unwrap_or_default();
+    let days = ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"];
+    let months = [
+        "Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober",
+        "November", "Desember",
+    ];
+    let date = format!(
+        "{}, {} {} {}",
+        days[(t.wDayOfWeek as usize) % 7],
+        t.wDay,
+        months[(t.wMonth as usize).clamp(1, 12) - 1],
+        t.wYear
+    );
+    (if name.is_empty() { hello.to_string() } else { format!("{hello}, {name}") }, date)
+}
+
+// ── Glyphs ────────────────────────────────────────────────────────────────────
+
+fn glyph_play(g: &mut Gfx, cx: f32, cy: f32, s: f32) {
+    g.begin_path();
+    g.move_to(cx - s * 0.38, cy - s * 0.5);
+    g.line_to(cx + s * 0.52, cy);
+    g.line_to(cx - s * 0.38, cy + s * 0.5);
+    g.close_path();
+    g.fill();
+}
+
+fn glyph_pause(g: &mut Gfx, cx: f32, cy: f32, s: f32) {
+    g.fill_round_rect(cx - s * 0.42, cy - s * 0.5, s * 0.30, s, s * 0.08);
+    g.fill_round_rect(cx + s * 0.12, cy - s * 0.5, s * 0.30, s, s * 0.08);
+}
+
+/// `dir` = 1 for next, -1 for previous.
+fn glyph_skip(g: &mut Gfx, cx: f32, cy: f32, s: f32, dir: f32) {
+    for k in [-0.5f32, 0.05] {
+        let x = cx + dir * k * s;
+        g.begin_path();
+        g.move_to(x - dir * s * 0.38, cy - s * 0.42);
+        g.line_to(x + dir * s * 0.45, cy);
+        g.line_to(x - dir * s * 0.38, cy + s * 0.42);
+        g.close_path();
+        g.fill();
+    }
+}
+
+/// Events that have not ended yet (all-day ones always count).
+fn upcoming(all: &[crate::gtasks::Event]) -> Vec<crate::gtasks::Event> {
+    use windows::Win32::System::SystemInformation::GetLocalTime;
+    let t = unsafe { GetLocalTime() };
+    let now = format!("{:02}:{:02}", t.wHour, t.wMinute);
+    all.iter().filter(|e| e.start == "Seharian" || e.end.as_deref().map(|end| end > now.as_str()).unwrap_or(true)).cloned().collect()
+}
+
+/// Cuts `s` with an ellipsis so it fits `max_w`.
+fn ellipsize(s: &str, face: Face, size: f32, max_w: f32) -> String {
+    if text::measure(s, face, size) <= max_w {
+        return s.to_string();
+    }
+    let mut out = String::new();
+    for c in s.chars() {
+        let mut next = out.clone();
+        next.push(c);
+        if text::measure(&format!("{next}…"), face, size) > max_w {
+            break;
+        }
+        out = next;
+    }
+    format!("{out}…")
+}
+
+fn mmss(secs: f32) -> String {
+    let s = secs.max(0.0) as u32;
+    format!("{}:{:02}", s / 60, s % 60)
+}
+
+impl App {
+    pub fn draw_dashboard(&mut self, g: &mut Gfx, v: Rect, n: f32) {
+        // Greeting row (Mochi sits at the left, see layout).
+        let (hello, date) = greeting();
+        text::draw(g, &hello, v.x + 60.0, v.y + 12.0, Face::Bold, 14.5, hex(pal::INK), Align::Left);
+        text::draw(g, &date, v.x + 60.0, v.y + 29.0, Face::Regular, 11.0, hex(pal::DIM), Align::Left);
+
+        self.dash_next_event(g, v);
+
+        let top = v.y + 44.0;
+        let h = (v.h - 44.0).max(0.0);
+        let left = Rect::new(v.x, top, LEFT_W, h);
+        let right = Rect::new(v.x + LEFT_W + GAP, top, v.w - LEFT_W - GAP, h);
+        crate::ui::card(g, left, crate::layout::Wash::None, false);
+        crate::ui::card(g, right, crate::layout::Wash::None, false);
+
+        self.dash_now_playing(g, left, n);
+        self.dash_side(g, right);
+    }
+
+    /// Right end of the greeting row: the next event, if the calendar is connected.
+    fn dash_next_event(&mut self, g: &mut Gfx, v: Rect) {
+        let events = upcoming(&crate::gtasks::events());
+        let Some(e) = events.first() else { return };
+        let right = v.x + v.w - 6.0;
+        let label = ellipsize(&format!("{}  {}", e.start, e.title), Face::Medium, 12.0, 250.0);
+        text::draw(g, "Berikutnya", right, v.y + 12.0, Face::Regular, 10.0, hex(pal::DIM3), Align::Right);
+        text::draw(g, &label, right, v.y + 29.0, Face::Medium, 12.0, hex(pal::INK), Align::Right);
+    }
+
+    fn dash_now_playing(&mut self, g: &mut Gfx, r: Rect, n: f32) {
+        let art = Rect::new(r.x + 16.0, r.y + (r.h - 96.0) / 2.0, 96.0, 96.0);
+        let col = r.x + 128.0;
+        let colw = r.w - 128.0 - 18.0;
+        let _ = n;
+
+        let Some(m) = activity::media() else {
+            // No music: the card shows today's agenda instead.
+            let events = upcoming(&crate::gtasks::events());
+            if crate::gtasks::status() == crate::gtasks::Status::Linked && !crate::gtasks::calendar_needs_login() {
+                text::draw(g, "Hari ini", r.x + 20.0, r.y + 24.0, Face::Medium, 12.0, hex(pal::DIM), Align::Left);
+                if events.is_empty() {
+                    text::draw(g, "Tidak ada agenda lagi hari ini.", r.x + 20.0, r.cy(), Face::Regular, 12.5, hex(pal::DIM2), Align::Left);
+                }
+                let mut y = r.y + 50.0;
+                for e in events.iter().take(4) {
+                    g.fill_style(hex("#5AC8FA"));
+                    g.fill_round_rect(r.x + 20.0, y - 9.0, 3.0, 18.0, 1.5);
+                    text::draw(g, &e.start, r.x + 32.0, y, Face::Medium, 11.5, hex(pal::INK), Align::Left);
+                    crate::app::fading_text(g, &e.title, r.x + 92.0, y, 12.0, hex(pal::INK), r.x + 92.0, r.x + r.w - 18.0);
+                    y += 26.0;
+                }
+                if events.len() > 4 {
+                    text::draw(g, &format!("+{} lagi", events.len() - 4), r.x + r.w - 18.0, r.y + 24.0, Face::Regular, 10.5, hex(pal::DIM3), Align::Right);
+                }
+                return;
+            }
+            g.fill_style(rgba(255, 255, 255, 0.06));
+            g.fill_round_rect(art.x, art.y, art.w, art.h, 14.0);
+            text::draw(g, "♪", art.cx(), art.cy(), Face::Bold, 30.0, rgba(255, 255, 255, 0.25), Align::Center);
+            text::draw(g, "Tidak ada media", col, r.cy() - 8.0, Face::Medium, 14.0, hex(pal::INK), Align::Left);
+            text::draw(g, "Putar musik di Spotify atau browser.", col, r.cy() + 12.0, Face::Regular, 11.5, hex(pal::DIM), Align::Left);
+            return;
+        };
+
+        // Artwork.
+        match activity::art() {
+            Some(a) => g.fill_image_round_rect(&a.rgba, a.size, art.x, art.y, art.w, art.h, 14.0),
+            None => {
+                g.fill_style(rgba(255, 255, 255, 0.06));
+                g.fill_round_rect(art.x, art.y, art.w, art.h, 14.0);
+                text::draw(g, "♪", art.cx(), art.cy(), Face::Bold, 30.0, rgba(255, 255, 255, 0.25), Align::Center);
+            }
+        }
+
+        fading_text(g, &m.title, col, r.y + 28.0, 14.0, hex(pal::INK), col, col + colw);
+        if !m.artist.is_empty() {
+            fading_text(g, &m.artist, col, r.y + 47.0, 12.0, hex(pal::DIM), col, col + colw);
+        }
+
+        // Seek bar.
+        let pos = m.position_now();
+        let bar = Rect::new(col, r.y + 66.0, colw, 4.0);
+        let hit = Rect::new(col - 4.0, r.y + 58.0, colw + 8.0, 20.0);
+        let (clicked, hover, _) = self.ui.click_region(id_of("dash-seek", 91), hit);
+        g.fill_style(rgba(255, 255, 255, 0.16));
+        g.fill_round_rect(bar.x, bar.y, bar.w, bar.h, 2.0);
+        if m.duration > 0.0 {
+            let k = clamp(pos / m.duration, 0.0, 1.0);
+            g.fill_style(if hover { hex("#FFFFFF") } else { rgba(255, 255, 255, 0.88) });
+            g.fill_round_rect(bar.x, bar.y, (bar.w * k).max(4.0), bar.h, 2.0);
+            if clicked {
+                let f = clamp((self.ui.input.mouse.0 - bar.x) / bar.w, 0.0, 1.0);
+                activity::transport(Transport::Seek(f * m.duration));
+            }
+            text::draw(g, &mmss(pos), col, r.y + 84.0, Face::Regular, 10.5, hex(pal::DIM3), Align::Left);
+            text::draw(g, &mmss(m.duration), col + colw, r.y + 84.0, Face::Regular, 10.5, hex(pal::DIM3), Align::Right);
+        }
+
+        // Transport.
+        let cy = r.y + 108.0;
+        let mid = col + colw / 2.0;
+        for (id, cx, size, kind) in [("dash-prev", mid - 52.0, 15.0, 0), ("dash-play", mid, 19.0, 1), ("dash-next", mid + 52.0, 15.0, 2)] {
+            let hit = Rect::new(cx - 20.0, cy - 16.0, 40.0, 32.0);
+            let (clicked, hover, pressed) = self.ui.click_region(id_of(id, 92), hit);
+            let tint: Color = if pressed { rgba(255, 255, 255, 0.6) } else if hover { hex("#FFFFFF") } else { rgba(255, 255, 255, 0.86) };
+            g.fill_style(tint);
+            match kind {
+                0 => glyph_skip(g, cx, cy, size, -1.0),
+                1 => {
+                    if m.playing {
+                        glyph_pause(g, cx, cy, size)
+                    } else {
+                        glyph_play(g, cx, cy, size)
+                    }
+                }
+                _ => glyph_skip(g, cx, cy, size, 1.0),
+            }
+            if clicked {
+                activity::transport(match kind {
+                    0 => Transport::Previous,
+                    1 => Transport::PlayPause,
+                    _ => Transport::Next,
+                });
+            }
+        }
+    }
+
+    fn dash_side(&mut self, g: &mut Gfx, r: Rect) {
+        let x = r.x + 16.0;
+        let w = r.w - 32.0;
+
+        // Timer.
+        text::draw(g, "Timer", x, r.y + 20.0, Face::Medium, 12.0, hex(pal::DIM), Align::Left);
+        if let Some((left, total)) = activity::timer() {
+            text::draw(g, &activity::format_clock(left), x + 46.0, r.y + 20.0, Face::Bold, 13.0, hex(pal::INK), Align::Left);
+            let k = clamp(left / total.max(1.0), 0.0, 1.0);
+            g.fill_style(rgba(255, 255, 255, 0.12));
+            g.fill_round_rect(x, r.y + 38.0, w, 4.0, 2.0);
+            g.fill_style(hex(pal::AMBER));
+            g.fill_round_rect(x, r.y + 38.0, (w * k).max(4.0), 4.0, 2.0);
+            let b = Rect::new(x + w - 44.0, r.y + 10.0, 44.0, 20.0);
+            let (clicked, hover, _) = self.ui.click_region(id_of("dash-timer-stop", 93), b);
+            g.fill_style(rgba(255, 255, 255, if hover { 0.14 } else { 0.07 }));
+            g.fill_round_rect(b.x, b.y, b.w, b.h, 10.0);
+            text::draw(g, "Batal", b.cx(), b.cy(), Face::Medium, 10.5, hex(pal::INK), Align::Center);
+            if clicked {
+                activity::cancel_timer();
+            }
+        } else {
+            let cw = (w - 3.0 * 6.0) / 4.0;
+            for (i, mins) in [5.0f32, 15.0, 25.0, 45.0].iter().enumerate() {
+                let b = Rect::new(x + i as f32 * (cw + 6.0), r.y + 30.0, cw, 26.0);
+                let (clicked, hover, _) = self.ui.click_region(id_of(&format!("dash-timer-{mins}"), 94), b);
+                g.fill_style(rgba(255, 255, 255, if hover { 0.14 } else { 0.07 }));
+                g.fill_round_rect(b.x, b.y, b.w, b.h, 9.0);
+                text::draw(g, &format!("{}m", *mins as u32), b.cx(), b.cy(), Face::Medium, 11.5, hex(pal::INK), Align::Center);
+                if clicked {
+                    crate::sound::play("blip");
+                    activity::start_timer(*mins);
+                }
+            }
+        }
+
+        // To-do.
+        g.fill_style(rgba(255, 255, 255, 0.07));
+        g.fill_rect(x, r.y + 66.0, w, 1.0);
+        self.dash_todos(g, Rect::new(x, r.y + 72.0, w, r.h - 72.0 - 10.0));
+    }
+
+    fn dash_todos(&mut self, g: &mut Gfx, r: Rect) {
+        // Add field.
+        let field_bg = Rect::new(r.x, r.y, r.w, 24.0);
+        g.fill_style(rgba(255, 255, 255, if self.todo_input.focused { 0.11 } else { 0.06 }));
+        g.fill_round_rect(field_bg.x, field_bg.y, field_bg.w, field_bg.h, 12.0);
+        let field = Rect::new(r.x + 10.0, r.y + 3.0, r.w - 20.0, 18.0);
+        let (mx, my) = self.ui.input.mouse;
+        let over = field.contains(mx, my);
+        if self.ui.input.pressed {
+            if over {
+                self.todo_input.focused = true;
+                self.platform.set_activating(true);
+                self.todo_input.click_at(mx, 11.5, crate::platform::shift_down());
+            } else if self.todo_input.focused {
+                self.todo_input.focused = false;
+                self.platform.set_activating(false);
+            }
+        }
+        if over {
+            self.ui.hovering_text = true;
+        }
+        self.todo_input.draw(g, field, 11.5, pal::INK);
+
+        // Rows.
+        let order = crate::todos::order(&self.todos);
+        let rows = 2usize;
+        let mut y = r.y + 38.0;
+        let mut act: Option<(usize, bool)> = None; // (index, toggle star instead of complete)
+        for &i in order.iter().take(rows) {
+            let t = &self.todos[i];
+            let (check, star) = (Rect::new(r.x - 2.0, y - 9.0, 18.0, 18.0), Rect::new(r.x + r.w - 18.0, y - 9.0, 18.0, 18.0));
+            let (c_click, c_hover, _) = self.ui.click_region(id_of(&format!("todo-c{i}"), 95), check);
+            let (s_click, s_hover, _) = self.ui.click_region(id_of(&format!("todo-s{i}"), 96), star);
+            g.stroke_style(if c_hover { hex(pal::GREEN) } else { rgba(255, 255, 255, 0.4) });
+            g.line_width(1.4);
+            g.begin_path();
+            g.circle(r.x + 7.0, y, 5.5);
+            g.stroke();
+            if c_hover {
+                g.stroke_style(hex(pal::GREEN));
+                g.begin_path();
+                g.move_to(r.x + 4.5, y);
+                g.line_to(r.x + 6.5, y + 2.2);
+                g.line_to(r.x + 10.0, y - 2.4);
+                g.stroke();
+            }
+            crate::app::fading_text(g, &t.text, r.x + 20.0, y, 11.5, hex(pal::INK), r.x + 20.0, r.x + r.w - 24.0);
+            let star_color = if t.star { hex(pal::AMBER) } else if s_hover { rgba(255, 255, 255, 0.55) } else { rgba(255, 255, 255, 0.2) };
+            crate::icons::fill(g, crate::icons::Icon::Star, star.cx(), star.cy(), 11.0, star_color);
+            if c_click {
+                act = Some((i, false));
+            } else if s_click {
+                act = Some((i, true));
+            }
+            y += 20.0;
+        }
+        if order.is_empty() {
+            text::draw(g, "Belum ada tugas.", r.x + 2.0, y, Face::Regular, 11.0, hex(pal::DIM3), Align::Left);
+        }
+
+        // Google Tasks status line: also the button that connects it.
+        let (label, tint) = match crate::gtasks::status() {
+            crate::gtasks::Status::NoClient => ("Google Tasks: impor kredensial".to_string(), hex(pal::AMBER)),
+            crate::gtasks::Status::NeedsLogin => ("Google Tasks: masuk".to_string(), hex(pal::AMBER)),
+            crate::gtasks::Status::LoggingIn => ("Menunggu login di browser…".to_string(), hex(pal::DIM)),
+            crate::gtasks::Status::Linked if crate::gtasks::calendar_needs_login() => ("Tasks ok · Kalender: masuk ulang".to_string(), hex(pal::AMBER)),
+            crate::gtasks::Status::Linked => ("Tersinkron dengan Google".to_string(), hex(pal::GREEN2)),
+            crate::gtasks::Status::Error(e) => (format!("Google Tasks gagal: {e}"), hex(pal::RED_TEXT)),
+        };
+        let status_r = Rect::new(r.x, r.y + r.h - 14.0, r.w, 16.0);
+        let (s_click, s_hover, _) = self.ui.click_region(id_of("gt-status", 97), status_r);
+        // More tasks than fit: the count sits at the right end of this line.
+        let more = order.len().saturating_sub(rows);
+        let mut right = r.x + r.w;
+        if more > 0 {
+            let tag = format!("+{more} lagi");
+            text::draw(g, &tag, r.x + r.w, status_r.cy(), Face::Regular, 10.0, hex(pal::DIM3), Align::Right);
+            right -= text::measure(&tag, Face::Regular, 10.0) + 8.0;
+        }
+        crate::app::fading_text(g, &label, r.x + 2.0, status_r.cy(), 10.0, if s_hover { hex(pal::INK) } else { tint }, r.x, right);
+        if s_click {
+            crate::gtasks::connect();
+        }
+
+        if let Some((i, star_toggle)) = act {
+            crate::sound::play("blip");
+            if star_toggle {
+                self.todos[i].star = !self.todos[i].star;
+            } else {
+                let done = self.todos.remove(i);
+                if let Some(gid) = done.gid {
+                    crate::gtasks::enqueue_complete(&gid);
+                    self.done_gids.push(gid);
+                }
+            }
+            crate::todos::save(&self.todos);
+        }
+    }
+
+    /// Replaces the list with Google's open tasks, keeping stars, and keeps local items that
+    /// have not reached Google yet (unless Google already has one with the same title).
+    pub fn merge_remote_todos(&mut self, remote: Vec<(String, String)>) {
+        let old = std::mem::take(&mut self.todos);
+        let mut merged: Vec<crate::todos::Todo> = Vec::new();
+        for (gid, title) in &remote {
+            if self.done_gids.contains(gid) {
+                continue;
+            }
+            let star = old.iter().any(|t| t.gid.as_deref() == Some(gid) && t.star);
+            merged.push(crate::todos::Todo { text: title.clone(), star, gid: Some(gid.clone()) });
+        }
+        for t in old {
+            if t.gid.is_none() && !remote.iter().any(|(_, title)| *title == t.text) {
+                merged.push(t);
+            }
+        }
+        // A completion Google has acknowledged no longer needs remembering.
+        self.done_gids.retain(|g| remote.iter().any(|(id, _)| id == g));
+        self.todos = merged;
+        crate::todos::save(&self.todos);
+    }
+
+    /// Enter in the add field.
+    pub fn add_todo(&mut self) {
+        let text = self.todo_input.text().trim().to_string();
+        if text.is_empty() {
+            return;
+        }
+        let text: String = text.chars().take(120).collect();
+        crate::gtasks::enqueue_add(&text);
+        self.todos.push(crate::todos::Todo { text, star: false, gid: None });
+        self.todo_input.clear();
+        crate::todos::save(&self.todos);
+        crate::sound::play("send");
+    }
+}

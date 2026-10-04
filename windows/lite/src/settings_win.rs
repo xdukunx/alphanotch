@@ -742,7 +742,7 @@ impl Win {
     fn general(&mut self, g: &mut Gfx, m: f32, y0: f32, cw: f32) -> f32 {
         let pad = 18.0;
         let (ix, iw) = (m + pad, cw - 2.0 * pad);
-        let h = 28.0 + 4.0 * 38.0;
+        let h = 28.0 + 5.0 * 38.0;
         Self::card(g, m, y0, cw, h + 2.0 * pad);
         let mut y = y0 + pad;
         Self::title(g, ix, y + 9.0, None, "General");
@@ -828,6 +828,16 @@ impl Win {
             settings::set_autostart(!on);
             self.save();
         }
+        y += 38.0;
+
+        // Docked mode.
+        lab(g, y, "Stay on screen");
+        let on = self.settings.stay_visible;
+        if self.ui.switch(g, "set-stay", cx, y + 2.0, on) {
+            self.settings.stay_visible = !on;
+            self.save();
+        }
+        text::draw(g, "keep the compact bar visible when idle", cx + 48.0, y + 11.0, Face::Regular, 11.5, hex(pal::DIM3), Align::Left);
         let _ = iw;
         y0 + h + 2.0 * pad + 16.0
     }

@@ -16,6 +16,8 @@ pub struct Machine {
     pub home_to_petit: f32,
     /// petit → hidden delay, seconds.
     pub petit_to_hidden: f32,
+    /// Docked mode: the compact bar never folds away on its own.
+    pub stay_visible: bool,
     pub greet_auto_collapse: f32,
     pub greet_hover_collapse: f32,
     /// An alert waiting for an answer stays open, even when the mouse leaves.
@@ -39,6 +41,7 @@ impl Machine {
             state: Fsm::Hidden,
             home_to_petit: 15.0,
             petit_to_hidden: 60.0,
+            stay_visible: false,
             greet_auto_collapse: 0.6,
             greet_hover_collapse: 10.0,
             pinned: false,
@@ -126,6 +129,14 @@ impl Machine {
         self.transition(Fsm::Petit);
     }
 
+    /// Turns docked mode on or off. Turning it on brings a hidden island back as compact.
+    pub fn set_stay_visible(&mut self, on: bool) {
+        self.stay_visible = on;
+        if on && self.state == Fsm::Hidden {
+            self.force_petit();
+        }
+    }
+
     pub fn force_hidden(&mut self) {
         self.cancel_timers();
         self.transition(Fsm::Hidden);
@@ -135,7 +146,7 @@ impl Machine {
         if let Some(at) = self.petit_hide {
             if now >= at {
                 self.petit_hide = None;
-                if self.state == Fsm::Petit {
+                if self.state == Fsm::Petit && !self.stay_visible {
                     self.transition(Fsm::Hidden);
                 }
             }

@@ -409,6 +409,22 @@ impl Gfx {
         self.fill();
     }
 
+    /// Fills a rounded rect with a square premultiplied-RGBA image (`side` px) stretched over it.
+    pub fn fill_image_round_rect(&mut self, rgba: &[u8], side: u32, x: f32, y: f32, w: f32, h: f32, r: f32) {
+        let Some(img) = tiny_skia::PixmapRef::from_bytes(rgba, side, side) else { return };
+        let Some(path) = rounded_rect_path(x, y, w, h, r) else { return };
+        let (sx, sy) = (w / side as f32, h / side as f32);
+        let pattern = tiny_skia::Pattern::new(
+            img,
+            SpreadMode::Pad,
+            tiny_skia::FilterQuality::Bilinear,
+            self.st.alpha,
+            Transform::from_row(sx, 0.0, 0.0, sy, x, y),
+        );
+        let paint = Paint { shader: pattern, anti_alias: true, ..Paint::default() };
+        self.pm.fill_path(&path, &paint, FillRule::Winding, self.st.tf, self.st.clip.as_deref());
+    }
+
     pub fn fill_round_rect(&mut self, x: f32, y: f32, w: f32, h: f32, r: f32) {
         self.round_rect(x, y, w, h, r);
         self.fill();

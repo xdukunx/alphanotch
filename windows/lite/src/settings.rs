@@ -16,6 +16,9 @@ pub struct Settings {
     pub screen: String,
     pub autostart: bool,
     pub hooks_installed: bool,
+    /// Keep the compact bar on screen when idle instead of hiding it (docked in a status bar).
+    #[serde(default)]
+    pub stay_visible: bool,
     /// Claude model used by the chat. Changeable in the settings window.
     /// Defaulted explicitly so a settings.json written by an older build still loads.
     #[serde(default = "default_model")]
@@ -42,6 +45,7 @@ impl Default for Settings {
             screen: "primary".into(),
             autostart: false,
             hooks_installed: false,
+            stay_visible: false,
             model: default_model(),
         }
     }

@@ -16,6 +16,8 @@ pub const KNOWN_KEYS: &[&str] = &[
     "resend-api-key",
     "notion-api-key",
     "calcom-api-key",
+    "google-client",
+    "google-refresh",
 ];
 
 fn entry(key: &str) -> Option<Entry> {

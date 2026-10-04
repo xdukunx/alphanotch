@@ -71,6 +71,23 @@ pub fn with_app<R>(f: impl FnOnce(&mut App) -> R) -> Option<R> {
     })
 }
 
+/// Text that fades out at `left` / `right` instead of being clipped: a clip would allocate a
+/// window-sized mask on every frame, and the compact bar redraws at 30 Hz while an activity shows.
+pub fn fading_text(g: &mut Gfx, s: &str, x: f32, cy: f32, size: f32, color: tiny_skia::Color, left: f32, right: f32) {
+    use crate::text::{self, Align, Face};
+    let width = text::measure(s, Face::Medium, size);
+    text::draw_with(g, s, x, cy, Face::Medium, size, Align::Left, |f| {
+        let gx = x + f * width;
+        let a = ((gx - left + 6.0) / 6.0).clamp(0.0, 1.0) * ((right - gx) / 10.0).clamp(0.0, 1.0);
+        crate::gfx::with_alpha(color, color.alpha() * a)
+    });
+}
+
+/// Compact bar: where the live-activity slot starts (right of Mochi) and how much room
+/// the integration pills keep on the right.
+const ACT_X: f32 = 56.0;
+const ACT_RIGHT: f32 = 62.0;
+
 pub struct App {
     pub platform: Platform,
     pub ctx: AppHandle,
@@ -116,6 +133,11 @@ pub struct App {
     pub detail_open: bool,
     pub drag_catch: bool,
     pub slider_drag: bool,
+    had_activity: bool,
+    dash_t: f32,
+    pub todos: Vec<crate::todos::Todo>,
+    pub done_gids: Vec<String>,
+    pub todo_input: crate::textfield::TextField,
     quit: bool,
 }
 
@@ -136,6 +158,7 @@ impl App {
         let (pw, ph) = platform.phys_size();
         let mut fsm = Machine::new();
         fsm.home_to_petit = st.settings.auto_close_interval as f32;
+        fsm.stay_visible = st.settings.stay_visible;
         sound::set_enabled(st.settings.sound_enabled);
         sound::set_volume(st.settings.sound_volume as f32);
         let tray = if with_tray { Some(Tray::new(platform.hwnd)) } else { None };
@@ -177,6 +200,11 @@ impl App {
             detail_open: false,
             drag_catch: false,
             slider_drag: false,
+            had_activity: false,
+            dash_t: 0.0,
+            todos: crate::todos::load(),
+            done_gids: Vec::new(),
+            todo_input: crate::textfield::TextField::new("Tambah tugas…", false),
             quit: false,
         };
         app.refresh_flags();
@@ -368,6 +396,30 @@ impl App {
             if !self.running && self.engine.blink_due() {
                 self.ensure_running();
             }
+
+            // Live activities: keep frames coming while one is shown, and once more
+            // when it ends so the slot clears.
+            if crate::activity::take_finished_timer() {
+                sound::play("finish");
+                self.ensure_running();
+            }
+            if let Some(remote) = crate::gtasks::take_remote() {
+                self.merge_remote_todos(remote);
+                if self.st.view == View::Dashboard && self.st.mode == Mode::Expanded {
+                    self.render_now();
+                }
+            }
+            // The dashboard shows a live clock and track position: redraw twice a second.
+            if self.st.mode == Mode::Expanded && self.st.view == View::Dashboard && n - self.dash_t > 0.5 {
+                self.dash_t = n;
+                self.render_now();
+            }
+            if self.st.mode == Mode::Compact {
+                let on = crate::activity::current().is_some();
+                if !self.running && (on || self.had_activity) {
+                    self.ensure_running();
+                }
+            }
         }
 
         // Nothing left to watch: stop polling so a hidden island costs nothing.
@@ -422,6 +474,8 @@ impl App {
         self.render_now();
 
         let settling = self.width.animating() || self.height.animating() || self.radius.animating();
+        let activity_on = self.st.mode == Mode::Compact && crate::activity::current().is_some();
+        self.had_activity = activity_on;
         let busy = if self.st.mode == Mode::Hidden {
             settling
         } else {
@@ -434,6 +488,7 @@ impl App {
                 || self.upload.is_active()
                 || self.ticker.animating()
                 || self.chat.sending
+                || activity_on
         };
         if !busy {
             self.running = false;
@@ -577,6 +632,7 @@ impl App {
             self.st.is_pinned = false;
             self.platform.set_activating(false);
             self.chat.input.focused = false;
+            self.todo_input.focused = false;
         }
         if mode != Mode::Expanded {
             self.engine.reset_morph();
@@ -643,6 +699,10 @@ impl App {
             return;
         }
         let was_chat = self.last_synced_view == Some(View::Prompt);
+        if self.last_synced_view == Some(View::Dashboard) && v != View::Dashboard && self.todo_input.focused {
+            self.todo_input.focused = false;
+            self.platform.set_activating(false);
+        }
         self.last_synced_view = Some(v);
         if v == View::Prompt {
             self.platform.set_activating(true);
@@ -750,6 +810,26 @@ impl App {
         self.ui.input.down = true;
         self.ui.input.pressed = true;
 
+        if self.st.mode == Mode::Compact {
+            let (lx, _, iw, _) = self.island_rect();
+            let local = x - lx;
+            if local >= ACT_X && local <= iw - ACT_RIGHT {
+                match crate::activity::current() {
+                    Some(crate::activity::Activity::Media(_)) => {
+                        crate::activity::toggle_media();
+                        self.ui.input.pressed = false;
+                        return;
+                    }
+                    Some(crate::activity::Activity::Timer { .. }) => {
+                        crate::activity::cancel_timer();
+                        self.ui.input.pressed = false;
+                        self.ensure_running();
+                        return;
+                    }
+                    _ => {}
+                }
+            }
+        }
         if self.st.mode != Mode::Expanded {
             self.fsm.click();
             self.process_transitions();
@@ -795,6 +875,9 @@ impl App {
         if self.st.view == View::Prompt && self.chat.input.focused {
             self.chat.input.on_char(c);
             self.render_now();
+        } else if self.st.view == View::Dashboard && self.todo_input.focused {
+            self.todo_input.on_char(c);
+            self.render_now();
         }
     }
 
@@ -812,11 +895,20 @@ impl App {
             self.render_now();
             return handled;
         }
+        if self.st.view == View::Dashboard && self.todo_input.focused {
+            let handled = self.todo_input.on_key(vk);
+            if self.todo_input.take_submit() {
+                self.add_todo();
+            }
+            self.render_now();
+            return handled;
+        }
         false
     }
 
     pub fn on_focus_lost(&mut self) {
         self.chat.input.focused = false;
+        self.todo_input.focused = false;
     }
 
     /// Cursor in window-logical coordinates.
@@ -977,6 +1069,7 @@ impl App {
                     let on = !self.st.paused;
                     self.st.paused = on;
                     crate::integrations::set_paused(on);
+                    crate::activity::set_paused(on);
                     if on {
                         self.fsm.force_hidden();
                         self.process_transitions();
@@ -1011,6 +1104,8 @@ impl App {
         sound::set_enabled(self.st.settings.sound_enabled);
         sound::set_volume(self.st.settings.sound_volume as f32);
         self.fsm.home_to_petit = self.st.settings.auto_close_interval as f32;
+        self.fsm.set_stay_visible(self.st.settings.stay_visible);
+        self.process_transitions();
         self.st.load_integration_tasks();
         self.refresh_flags();
         self.on_display_change();
@@ -1257,6 +1352,7 @@ impl App {
             self.draw_bot(g, iw, ih, &body);
         }
         if self.st.mode == Mode::Compact {
+            self.draw_activity(g, iw, ih);
             self.draw_mini_grid(g, iw, ih);
         }
         self.draw_countdown(g, iw, ih, n);
@@ -1307,6 +1403,78 @@ impl App {
         let h = size + BOT_OVERHANG;
         self.engine.draw(g, size, h);
         g.restore();
+    }
+
+    /// The live activity in the compact bar, between Mochi and the integration pills.
+    fn draw_activity(&mut self, g: &mut Gfx, iw: f32, ih: f32) {
+        use crate::activity::{format_bytes, format_clock, Activity};
+        use crate::text::{self, Align, Face};
+        use crate::ui::pal;
+        let Some(act) = crate::activity::current() else { return };
+        let n = now();
+        let (x0, x1) = (ACT_X, iw - ACT_RIGHT);
+        let cy = ih / 2.0;
+        match act {
+            Activity::Media(m) => {
+                // Three bars that bounce while it plays.
+                for i in 0..3 {
+                    let ph = n * (5.0 + i as f32 * 1.7) + i as f32 * 1.3;
+                    let h = 4.0 + (ph.sin() * 0.5 + 0.5) * 8.0;
+                    g.fill_style(hex("#B38AFF"));
+                    g.fill_round_rect(x0 + i as f32 * 4.5, cy - h / 2.0, 3.0, h, 1.5);
+                }
+                let tx = x0 + 18.0;
+                let w = x1 - tx;
+                let label = if m.artist.is_empty() { m.title.clone() } else { format!("{} · {}", m.title, m.artist) };
+                let tw = text::measure(&label, Face::Medium, 11.5);
+                let mut px = tx;
+                if tw > w {
+                    // Slow marquee with a pause at both ends.
+                    let travel = tw - w + 12.0;
+                    let t = (n * 0.18).fract();
+                    let k = ((t * 2.0).min(1.0) - ((t - 0.5) * 2.0).max(0.0)).clamp(0.0, 1.0);
+                    px = tx - travel * (k * k * (3.0 - 2.0 * k));
+                }
+                fading_text(g, &label, px, cy, 11.5, hex(pal::INK), tx, tx + w);
+            }
+            Activity::Timer { remaining, total } => {
+                let r = 7.0;
+                let (cx, ccy) = (x0 + r, cy);
+                g.line_width(2.0);
+                g.line_cap_round();
+                g.stroke_style(rgba(255, 255, 255, 0.18));
+                g.begin_path();
+                g.circle(cx, ccy, r);
+                g.stroke();
+                let frac = clamp(remaining / total.max(1.0), 0.0, 1.0);
+                g.stroke_style(hex(pal::AMBER));
+                g.begin_path();
+                let a0 = -std::f32::consts::FRAC_PI_2;
+                g.arc(cx, ccy, r, a0, a0 + frac * std::f32::consts::TAU, false);
+                g.stroke();
+                text::draw(g, &format_clock(remaining), x0 + 2.0 * r + 8.0, cy, Face::Medium, 12.5, hex(pal::INK), Align::Left);
+            }
+            Activity::Download(d) => {
+                // A small arrow that slides down, then the file and what has arrived so far.
+                let bob = (n * 3.0).sin() * 1.5;
+                g.line_width(2.0);
+                g.line_cap_round();
+                g.line_join_round();
+                g.stroke_style(hex(pal::GREEN2));
+                g.begin_path();
+                g.move_to(x0 + 5.0, cy - 5.0 + bob);
+                g.line_to(x0 + 5.0, cy + 3.0 + bob);
+                g.move_to(x0 + 1.5, cy - 0.5 + bob);
+                g.line_to(x0 + 5.0, cy + 3.0 + bob);
+                g.line_to(x0 + 8.5, cy - 0.5 + bob);
+                g.stroke();
+                let tx = x0 + 18.0;
+                let size = format_bytes(d.bytes);
+                let sw = text::measure(&size, Face::Regular, 11.0);
+                fading_text(g, &d.name, tx, cy, 11.5, hex(pal::INK), tx, x1 - sw - 6.0);
+                text::draw(g, &size, x1, cy, Face::Regular, 11.0, hex(pal::DIM), Align::Right);
+            }
+        }
     }
 
     fn draw_mini_grid(&mut self, g: &mut Gfx, iw: f32, ih: f32) {

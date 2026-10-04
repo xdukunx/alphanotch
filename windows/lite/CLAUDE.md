@@ -44,3 +44,29 @@ Live testing next to a running Tauri app: start with `COUCOU_PIPE=coucou-lite-te
   "button held over the panel" drag catcher therefore paint alpha 1/255.
 - Bash heredocs on this machine collapse `\\` and truncate some long scripts: write patch scripts with the file tool.
 - Frame pacing: 16 ms during transitions, 33 ms for ambient motion (`Platform::set_frame_interval`).
+
+## Docked mode and the dashboard (2026-10-05)
+Added on top of upstream v0.1.6, for running Coucou inside a status bar (YASB) as a "dynamic island".
+- `stayVisible` (settings.json + Settings → General → "Stay on screen"): the compact bar never folds to hidden
+  (`Machine::stay_visible` in `fsm.rs`). Default off. Costs ~0.4 s CPU per 3 min with an activity showing.
+- `activity.rs`: live activities in the compact bar, one at a time: timer > media (system media session, with
+  artwork, seek and transport) > download (`.crdownload`/`.part` in Downloads). Timer is started with a pipe
+  event `{"hook_event_name":"CoucouTimer","minutes":25}` (0 cancels) or from the dashboard. Clicking the slot
+  toggles play/pause, or cancels the timer.
+- `dashboard.rs` (`View::Dashboard`, 262 px): greeting, Now Playing, timer presets, to-do (`todos.rs`, plain JSON in
+  `%APPDATA%\Coucou\todos.json`), agenda. It is the home view when nothing is running and `stayVisible` is on;
+  the 4th header tab always opens it. It redraws twice a second while open (`dash_t` in `app.rs`).
+- `gtasks.rs`: Google Tasks (two-way) and today's Google Calendar (read-only). The user brings their own
+  Desktop OAuth client: click the status line on the to-do card, it imports `client_secret*.json` from Downloads
+  into the Credential Manager (and deletes the file), then a loopback + PKCE sign-in. Keys `google-client` and
+  `google-refresh` are in the `secrets.rs` allow-list: **a key not in `KNOWN_KEYS` is refused silently**.
+  A token issued before the calendar scope was added gives 403: the status line then asks for a new sign-in.
+  Stars on to-dos are local only (Google Tasks has no such thing).
+
+### Pitfalls found while building this
+- BitmapTransform scales **then** crops: `Bounds` are in scaled pixels, or the decoder answers "parameter is incorrect".
+- Do not `clip` in per-frame paths: `fading_text` fades glyph alpha at the edges instead (a clip allocates a window-sized mask).
+- Windows keyboard focus is only taken for text fields (`set_activating`): the to-do field does it on click and
+  releases it on blur, fold and view change.
+- Built exe is copied to `%LOCALAPPDATA%\Coucou\` for autostart, together with `coucou-hook.exe` (the app looks
+  for the hook next to itself). Re-copy both after a rebuild.

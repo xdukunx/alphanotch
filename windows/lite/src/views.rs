@@ -119,6 +119,7 @@ impl App {
             View::Uploading => self.draw_uploading_fallback(g, v),
             View::Choose => self.draw_choose_fallback(g, v),
             View::Greeting => {}
+            View::Dashboard => self.draw_dashboard(g, v, n),
         }
         if !live {
             self.ui.input = saved;
@@ -134,6 +135,7 @@ impl App {
             (Icon::House, "tab-home", View::Overview),
             (Icon::Bubble, "tab-chat", View::Prompt),
             (Icon::Plus, "tab-drop", View::Upload),
+            (Icon::Stack, "tab-dash", View::Dashboard),
         ];
         let v = self.st.view;
         for (i, (icon, id, target)) in tabs.iter().enumerate() {

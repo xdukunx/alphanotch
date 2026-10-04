@@ -95,6 +95,17 @@ impl App {
         }
 
         let name = payload.get("hook_event_name").and_then(Value::as_str).unwrap_or("").to_string();
+        // `{"hook_event_name":"CoucouTimer","minutes":25}` starts a countdown in the bar; 0 cancels.
+        if name == "CoucouTimer" {
+            let minutes = payload.get("minutes").and_then(Value::as_f64).unwrap_or(0.0) as f32;
+            if minutes > 0.0 {
+                crate::activity::start_timer(minutes);
+            } else {
+                crate::activity::cancel_timer();
+            }
+            self.ensure_running();
+            return;
+        }
         let cwd = payload.get("cwd").and_then(Value::as_str).unwrap_or("").to_string();
         let raw = last_path_component(&cwd);
         let project = alias_project(if raw.is_empty() { "Session" } else { &raw });

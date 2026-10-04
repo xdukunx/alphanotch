@@ -301,7 +301,15 @@ impl State {
     }
 
     pub fn default_view(&self) -> View {
-        if self.tasks.is_empty() { View::Empty } else { View::Overview }
+        // Docked: the dashboard is home unless a session is actually doing something.
+        let active = self.tasks.iter().any(|t| t.state != BotState::Idle || !t.steps.is_empty());
+        if self.settings.stay_visible && !active {
+            View::Dashboard
+        } else if self.tasks.is_empty() {
+            View::Empty
+        } else {
+            View::Overview
+        }
     }
 
     pub fn integration(&self, id: &str) -> Option<&IntegrationInfo> {

@@ -6,13 +6,16 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod activity;
 mod anim;
 mod app;
 mod cards;
 mod claude;
 mod ctx;
+mod dashboard;
 mod files;
 mod fsm;
+mod gtasks;
 mod gfx;
 mod handlers;
 mod hooks;
@@ -33,6 +36,7 @@ mod snapshot;
 mod sound;
 mod state;
 mod text;
+mod todos;
 mod textfield;
 mod ticker;
 mod tray;
@@ -79,6 +83,8 @@ fn main() {
     }
 
     rt::init();
+    activity::start();
+    gtasks::start();
     let loaded = settings::load();
     let handle = ctx::AppHandle::new(loaded);
 
