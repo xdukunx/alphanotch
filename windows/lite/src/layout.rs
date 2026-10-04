@@ -104,7 +104,7 @@ pub fn layout(v: View) -> ViewLayout {
         View::Greeting => l(150.0, 320.0, Some(90.0), 0.0),
         // Home is short; Mochi sits in the header row beside the greeting.
         View::Dashboard => l(196.0, 286.0, Some(21.0), 26.0),
-        View::Stocks | View::Weather | View::Teleprompter => l(220.0, 34.0, Some(60.0), 0.0),
+        View::Stocks | View::Weather | View::Teleprompter => l(220.0, 286.0, Some(21.0), 26.0),
     }
 }
 

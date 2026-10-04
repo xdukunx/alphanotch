@@ -120,6 +120,8 @@ impl App {
     // ── Weather ───────────────────────────────────────────────────────────────
 
     pub fn draw_weather(&mut self, g: &mut Gfx, v: Rect) {
+        let place = weather::report().map(|r| r.place).unwrap_or_else(|| "memuat…".to_string());
+        self.dash_page_title(g, v, "Cuaca", &place);
         let Some(r) = weather::report() else {
             ui::card(g, v, Wash::None, false);
             text::draw(g, "Memuat cuaca…", v.cx(), v.cy() - 8.0, Face::Medium, 14.0, hex(pal::INK), Align::Center);
@@ -139,7 +141,7 @@ impl App {
         }
         weather_icon(g, weather::kind_of(r.now.code), r.now.is_day, left.x + 50.0, left.y + 66.0, 56.0);
         text::draw(g, &format!("{:.0}°", r.now.temp), left.x + 92.0, left.y + 58.0, Face::Bold, 34.0, hex(pal::INK), Align::Left);
-        text::draw(g, weather::label_of(r.now.code), left.x + 94.0, left.y + 86.0, Face::Medium, 12.5, hex(pal::INK), Align::Left);
+        crate::app::fading_text(g, weather::label_of(r.now.code), left.x + 92.0, left.y + 86.0, 11.5, hex(pal::INK), left.x + 92.0, left.x + left.w - 10.0);
         let details = [
             format!("Terasa {:.0}°", r.now.feels),
             format!("Lembap {}%", r.now.humidity),
@@ -172,6 +174,8 @@ impl App {
     // ── Stocks ────────────────────────────────────────────────────────────────
 
     pub fn draw_stocks(&mut self, g: &mut Gfx, v: Rect) {
+        let n = self.st.settings.stocks.len();
+        self.dash_page_title(g, v, "Saham", &format!("{n} di watchlist · IHSG"));
         stocks::touch();
         let quotes = stocks::quotes();
         let left = Rect::new(v.x, v.y, 250.0, v.h);
@@ -328,6 +332,7 @@ impl App {
     }
 
     pub fn draw_teleprompter(&mut self, g: &mut Gfx, v: Rect) {
+        self.dash_page_title(g, v, "Teleprompter", if self.tp_playing { "sedang berjalan" } else { "naskah di bawah kamera" });
         ui::card(g, v, Wash::None, false);
         let text_w = v.w - 72.0;
         // Reload when the file changed (checked about once a second, see dash_t) or the width did.

@@ -208,6 +208,14 @@ fn mmss(secs: f32) -> String {
 }
 
 impl App {
+    /// The header-row title beside Mochi on the pages that have no greeting: a name and one line of context.
+    pub fn dash_page_title(&self, g: &mut Gfx, v: Rect, title: &str, sub: &str) {
+        let gx = v.x + 304.0;
+        let gy = v.y - 42.0;
+        text::draw(g, title, gx, gy + 15.0, Face::Bold, 13.0, hex(pal::INK), Align::Left);
+        crate::app::fading_text(g, sub, gx, gy + 31.0, 10.0, hex(pal::DIM), gx, v.x + v.w - 56.0);
+    }
+
     pub fn draw_dashboard(&mut self, g: &mut Gfx, v: Rect, n: f32) {
         // The greeting lives in the header row, to the right of the tabs; Mochi sits just before it
         // (see layout). Two short lines: who and what day, then the weather.
