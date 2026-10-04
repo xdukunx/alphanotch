@@ -97,7 +97,7 @@ fn greeting() -> (String, String) {
 
 // ── Glyphs ────────────────────────────────────────────────────────────────────
 
-fn glyph_play(g: &mut Gfx, cx: f32, cy: f32, s: f32) {
+pub(crate) fn glyph_play(g: &mut Gfx, cx: f32, cy: f32, s: f32) {
     g.begin_path();
     g.move_to(cx - s * 0.38, cy - s * 0.5);
     g.line_to(cx + s * 0.52, cy);
@@ -106,7 +106,7 @@ fn glyph_play(g: &mut Gfx, cx: f32, cy: f32, s: f32) {
     g.fill();
 }
 
-fn glyph_pause(g: &mut Gfx, cx: f32, cy: f32, s: f32) {
+pub(crate) fn glyph_pause(g: &mut Gfx, cx: f32, cy: f32, s: f32) {
     g.fill_round_rect(cx - s * 0.42, cy - s * 0.5, s * 0.30, s, s * 0.08);
     g.fill_round_rect(cx + s * 0.12, cy - s * 0.5, s * 0.30, s, s * 0.08);
 }
@@ -160,6 +160,11 @@ impl App {
         let (hello, date) = greeting();
         text::draw(g, &hello, v.x + 60.0, v.y + 12.0, Face::Bold, 14.5, hex(pal::INK), Align::Left);
         text::draw(g, &date, v.x + 60.0, v.y + 29.0, Face::Regular, 11.0, hex(pal::DIM), Align::Left);
+        if let Some(w) = crate::weather::report() {
+            let dx = text::measure(&date, Face::Regular, 11.0);
+            let label = format!("·  {:.0}° {}", w.now.temp, crate::weather::label_of(w.now.code));
+            text::draw(g, &label, v.x + 60.0 + dx + 8.0, v.y + 29.0, Face::Regular, 11.0, hex(pal::DIM2), Align::Left);
+        }
 
         self.dash_next_event(g, v);
 

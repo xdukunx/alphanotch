@@ -23,10 +23,24 @@ pub struct Settings {
     /// ("antigravity", "opencode", …). Claude Code always has its own pill.
     #[serde(default)]
     pub agent_pills: Vec<String>,
+    /// City for the weather page (looked up once through Open-Meteo).
+    #[serde(default = "default_city")]
+    pub weather_city: String,
+    /// Watchlist for the stocks page. `^JKSE` is the IHSG; plain codes are Jakarta (BBCA → BBCA.JK).
+    #[serde(default = "default_stocks")]
+    pub stocks: Vec<String>,
     /// Claude model used by the chat. Changeable in the settings window.
     /// Defaulted explicitly so a settings.json written by an older build still loads.
     #[serde(default = "default_model")]
     pub model: String,
+}
+
+fn default_city() -> String {
+    "Surabaya".into()
+}
+
+fn default_stocks() -> Vec<String> {
+    ["^JKSE", "BBCA.JK", "BBRI.JK", "BMRI.JK", "TLKM.JK"].iter().map(|s| s.to_string()).collect()
 }
 
 fn default_model() -> String {
@@ -51,6 +65,8 @@ impl Default for Settings {
             hooks_installed: false,
             stay_visible: false,
             agent_pills: Vec::new(),
+            weather_city: default_city(),
+            stocks: default_stocks(),
             model: default_model(),
         }
     }

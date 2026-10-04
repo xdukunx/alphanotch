@@ -29,6 +29,9 @@ pub enum Icon {
     Star,
     Stack,
     Doc,
+    Chart,
+    Cloud,
+    Lines,
 }
 
 fn data(i: Icon) -> &'static str {
@@ -51,6 +54,9 @@ fn data(i: Icon) -> &'static str {
         Icon::Ellipsis => "M6 10.4a1.6 1.6 0 1 0 0 3.2 1.6 1.6 0 0 0 0-3.2zm6 0a1.6 1.6 0 1 0 0 3.2 1.6 1.6 0 0 0 0-3.2zm6 0a1.6 1.6 0 1 0 0 3.2 1.6 1.6 0 0 0 0-3.2z",
         Icon::Star => "M12 3.2l2.6 5.55 5.9.82-4.3 4.3 1.05 6.13L12 17.1l-5.25 2.9L7.8 13.87 3.5 9.57l5.9-.82L12 3.2z",
         Icon::Stack => "M5 8h14v11.5H5V8zm1.8-3h10.4v1.6H6.8V5zm1.6-2.6h7.2V4H8.4V2.4z",
+        Icon::Chart => "M4 20V11h3.6v9H4zm6.2 0V4h3.6v16h-3.6zM16.4 20v-6.5H20V20h-3.6z",
+        Icon::Cloud => "M7.2 18.5a4.2 4.2 0 0 1-.6-8.36A5.6 5.6 0 0 1 17.3 8.9a4.8 4.8 0 0 1 .6 9.6H7.2z",
+        Icon::Lines => "M4 5h16v2H4V5zm0 4.6h16v2H4v-2zm0 4.6h10v2H4v-2zm0 4.6h13v2H4v-2z",
         Icon::Doc => "M6.5 2.6h7l4 4v14.8h-11V2.6zm6.6 1.6v3.3h3.3l-3.3-3.3zM8.6 11h6.8v1.5H8.6V11zm0 3.4h6.8v1.5H8.6v-1.5z",
     }
 }

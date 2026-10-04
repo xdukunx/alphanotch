@@ -83,3 +83,12 @@ Added on top of upstream v0.1.6, for running Coucou inside a status bar (YASB) a
 - OpenCode: nothing installed yet (it was not on the machine). Plugin API: `~/.config/opencode/plugin/<name>.js`,
   events `session.idle`, `tool.execute.before/after`, `permission.asked`. Write it once OpenCode can be tried.
 - Dashboard right card: to-do always shown; the timer is one header button opening 5/15/25 + a gear for a custom length.
+
+### More dashboard pages (2026-10-05): Stocks, Weather, Teleprompter
+Header tabs 5-7 (`views.rs`), drawn by `pages.rs`; data in `stocks.rs` / `weather.rs`; both are background pollers started in `main.rs`.
+- Stocks: Yahoo Finance's public chart endpoint (`range=1d&interval=5m`), unofficial, no key, may throttle or change.
+  Watchlist = `stocks` in settings.json (default `^JKSE` = IHSG, BBCA/BBRI/BMRI/TLKM `.JK`); the add field normalises
+  `bbca` → `BBCA.JK`, `ihsg` → `^JKSE`. Polled every 60 s only while the page is open (`stocks::touch()` each frame), every 10 min otherwise.
+- Weather: Open-Meteo (geocoding by `weatherCity`, default Surabaya, then the forecast), every 20 min. Icons are drawn in code.
+- Teleprompter: the script is `%APPDATA%\Coucou\teleprompter.txt` (created with a placeholder; **Edit** opens it in Notepad and the page reloads on save).
+  Scrolls with the frame loop (`tp_step`), speed in px/s. Text fades at the edges instead of being clipped.

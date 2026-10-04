@@ -140,6 +140,15 @@ pub struct App {
     pub timer_menu: bool,
     pub timer_custom: bool,
     pub timer_custom_min: u32,
+    pub stock_sel: usize,
+    pub stock_input: crate::textfield::TextField,
+    pub tp_text: String,
+    pub tp_lines: Vec<String>,
+    pub tp_scroll: f32,
+    pub tp_speed: f32,
+    pub tp_playing: bool,
+    pub tp_width: f32,
+    pub tp_mtime: Option<std::time::SystemTime>,
     pub todo_input: crate::textfield::TextField,
     quit: bool,
 }
@@ -210,6 +219,15 @@ impl App {
             timer_menu: false,
             timer_custom: false,
             timer_custom_min: 30,
+            stock_sel: 0,
+            stock_input: crate::textfield::TextField::new("Tambah ticker (mis. BBCA)", false),
+            tp_text: String::new(),
+            tp_lines: Vec::new(),
+            tp_scroll: 0.0,
+            tp_speed: 36.0,
+            tp_playing: false,
+            tp_width: 0.0,
+            tp_mtime: None,
             todo_input: crate::textfield::TextField::new("Tambah tugas…", false),
             quit: false,
         };
@@ -416,7 +434,7 @@ impl App {
                 }
             }
             // The dashboard shows a live clock and track position: redraw twice a second.
-            if self.st.mode == Mode::Expanded && self.st.view == View::Dashboard && n - self.dash_t > 0.5 {
+            if self.st.mode == Mode::Expanded && matches!(self.st.view, View::Dashboard | View::Stocks | View::Weather) && n - self.dash_t > 0.5 {
                 self.dash_t = n;
                 self.render_now();
             }
@@ -467,6 +485,9 @@ impl App {
             t.mini.update(dt);
         }
         self.ticker.tick(n, self.st.focus_task());
+        if self.st.mode == Mode::Expanded && self.st.view == View::Teleprompter {
+            self.tp_step(dt);
+        }
         if self.upload.is_active() {
             self.step_sequence();
         }
@@ -495,6 +516,7 @@ impl App {
                 || self.ticker.animating()
                 || self.chat.sending
                 || activity_on
+                || (self.tp_playing && self.st.mode == Mode::Expanded && self.st.view == View::Teleprompter)
         };
         if !busy {
             self.running = false;
@@ -639,6 +661,7 @@ impl App {
             self.platform.set_activating(false);
             self.chat.input.focused = false;
             self.todo_input.focused = false;
+            self.stock_input.focused = false;
         }
         if mode != Mode::Expanded {
             self.engine.reset_morph();
@@ -708,6 +731,13 @@ impl App {
         if self.last_synced_view == Some(View::Dashboard) && v != View::Dashboard && self.todo_input.focused {
             self.todo_input.focused = false;
             self.platform.set_activating(false);
+        }
+        if self.last_synced_view == Some(View::Stocks) && v != View::Stocks && self.stock_input.focused {
+            self.stock_input.focused = false;
+            self.platform.set_activating(false);
+        }
+        if v != View::Teleprompter {
+            self.tp_playing = false;
         }
         self.last_synced_view = Some(v);
         if v == View::Prompt {
@@ -890,6 +920,9 @@ impl App {
         } else if self.st.view == View::Dashboard && self.todo_input.focused {
             self.todo_input.on_char(c);
             self.render_now();
+        } else if self.st.view == View::Stocks && self.stock_input.focused {
+            self.stock_input.on_char(c);
+            self.render_now();
         }
     }
 
@@ -903,6 +936,14 @@ impl App {
             let handled = self.chat.input.on_key(vk);
             if self.chat.input.take_submit() {
                 self.submit_chat();
+            }
+            self.render_now();
+            return handled;
+        }
+        if self.st.view == View::Stocks && self.stock_input.focused {
+            let handled = self.stock_input.on_key(vk);
+            if self.stock_input.take_submit() {
+                self.add_stock();
             }
             self.render_now();
             return handled;
@@ -921,6 +962,7 @@ impl App {
     pub fn on_focus_lost(&mut self) {
         self.chat.input.focused = false;
         self.todo_input.focused = false;
+        self.stock_input.focused = false;
     }
 
     /// Cursor in window-logical coordinates.
@@ -1117,6 +1159,8 @@ impl App {
         sound::set_volume(self.st.settings.sound_volume as f32);
         self.fsm.home_to_petit = self.st.settings.auto_close_interval as f32;
         self.fsm.set_stay_visible(self.st.settings.stay_visible);
+        crate::weather::set_city(&self.st.settings.weather_city);
+        crate::stocks::set_symbols(&self.st.settings.stocks);
         self.process_transitions();
         self.st.load_integration_tasks();
         self.refresh_flags();

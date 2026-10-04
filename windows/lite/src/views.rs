@@ -120,6 +120,9 @@ impl App {
             View::Choose => self.draw_choose_fallback(g, v),
             View::Greeting => {}
             View::Dashboard => self.draw_dashboard(g, v, n),
+            View::Stocks => self.draw_stocks(g, v),
+            View::Weather => self.draw_weather(g, v),
+            View::Teleprompter => self.draw_teleprompter(g, v),
         }
         if !live {
             self.ui.input = saved;
@@ -136,6 +139,9 @@ impl App {
             (Icon::Bubble, "tab-chat", View::Prompt),
             (Icon::Plus, "tab-drop", View::Upload),
             (Icon::Stack, "tab-dash", View::Dashboard),
+            (Icon::Chart, "tab-stocks", View::Stocks),
+            (Icon::Cloud, "tab-weather", View::Weather),
+            (Icon::Lines, "tab-prompter", View::Teleprompter),
         ];
         let v = self.st.view;
         for (i, (icon, id, target)) in tabs.iter().enumerate() {

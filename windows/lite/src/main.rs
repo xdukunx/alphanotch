@@ -41,8 +41,11 @@ mod todos;
 mod textfield;
 mod ticker;
 mod tray;
+mod pages;
+mod stocks;
 mod ui;
 mod util;
+mod weather;
 mod views;
 mod win_user;
 
@@ -95,6 +98,8 @@ fn main() {
     activity::start();
     gtasks::start();
     let loaded = settings::load();
+    weather::start(&loaded.weather_city);
+    stocks::start(&loaded.stocks);
     let handle = ctx::AppHandle::new(loaded);
 
     log::line(format!("--- Coucou Lite {} started ---", env!("CARGO_PKG_VERSION")));
