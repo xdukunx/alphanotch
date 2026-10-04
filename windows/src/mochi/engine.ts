@@ -6,6 +6,9 @@
 
 import { Ease, lerp, type EaseFn } from "../core/anim";
 import { Sound } from "../core/sound";
+import {
+  MEDAL_FOR_STATE, drawBack, drawCheeks, drawFront, facePlate, fillHelmet, fillPlate,
+} from "./character";
 import type { BotEmoteName, BotStateName } from "../core/layout";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -60,12 +63,10 @@ interface Particle {
 
 // ── Constants (MochiConst / PISTES.mochi) ─────────────────────────────────────
 
-const EYE_W = 0.25;
-const EYE_H = 0.27;
+const EYE_W = 0.2;
+const EYE_H = 0.34;
 const EYE_SP = 0.37;
 const EYE_P = -0.12;
-const BASE_TOP: RGB = [0.929, 0.929, 0.937]; // #EDEDEF
-const BASE_BOTTOM: RGB = [0.769, 0.773, 0.792]; // #C4C5CA
 const INK = "rgb(26,20,18)"; // #1A1412
 const MINI_INK = "rgb(16,19,26)"; // #10131A
 
@@ -89,7 +90,7 @@ const base = {
 };
 
 export const BOT_STATES: Record<BotStateName, BotStateCfg> = {
-  idle: { ...base, color: C.idle, tint: 0, eye: "pill", badge: null },
+  idle: { ...base, color: C.idle, tint: 0, eye: "pill", badge: null, tilt: -0.05 },
   working: { ...base, color: C.working, tint: 0.72, eye: "pill", badge: { kind: "dots", color: C.working } },
   thinking: { ...base, color: C.thinking, tint: 0.72, eye: "pill", badge: { kind: "dots", color: C.thinking }, look: [0.55, 0.55] },
   searching: { ...base, color: C.searching, tint: 0.72, eye: "pill", badge: { kind: "dots", color: C.searching }, scans: true },
@@ -176,6 +177,11 @@ export class BotEngine {
 
   // Targets
   tgYaw = 0; tgPitch = 0; tgTilt = 0; tgSy = 1; tgSx = 1; tgEs = 1;
+
+  // Crown medallions (the "dots"), tassel spring and headphone beat.
+  medalLit = [0, 0, 0, 0, 0];
+  swing = 0; swingVel = 0; beat = 0; wobble = 0;
+  private prevOx = 0; private prevYaw = 0;
 
   /** Extra canvas height above the body so hearts can fly out without clipping. */
   particleOverhang = 0;
@@ -430,7 +436,7 @@ export class BotEngine {
       this.particles.push({
         type,
         x: (Math.random() - 0.5) * 0.9 + (isZ ? 0.55 : 0),
-        y: -0.7 - Math.random() * 0.2,
+        y: (this.isMini ? -0.7 : -1.45) - Math.random() * 0.2,
         vx: (Math.random() - 0.5) * 0.35 + (isZ ? 0.18 : 0),
         vy: -(0.45 + Math.random() * 0.35),
         age: -i * 0.14,
@@ -459,6 +465,9 @@ export class BotEngine {
       this.particles.length > 0 ||
       this.cfg.bounces || this.cfg.scans || this.cfg.breathes || this.cfg.zz || this.cfg.sweat ||
       this.isMini ||
+      (this.state !== "idle" && this.state !== "sleeping") ||
+      Math.abs(this.swing) > 0.004 || Math.abs(this.swingVel) > 0.02 ||
+      this.medalLit.some((v, i) => Math.abs(v - this.medalTarget(i)) > 0.01) ||
       Math.abs(this.tgYaw - this.yaw) > 0.002 ||
       Math.abs(this.tgPitch - this.pitch) > 0.002 ||
       Math.abs(this.tgTilt - this.tilt) > 0.002 ||
@@ -590,6 +599,8 @@ export class BotEngine {
     for (const p of this.particles) p.age += dt;
     this.particles = this.particles.filter((p) => p.age < p.life);
 
+    this.updateCharacter(dt, n, t);
+
     // Mouth slot spring — ω₀ = 2π/0.25, ζ = 0.6
     const omega = (2 * Math.PI) / 0.25;
     const zeta = 0.6;
@@ -598,6 +609,39 @@ export class BotEngine {
     this.slotH = Math.max(0, this.slotH + this.slotHVel * dt);
 
     this.lastTime = n;
+  }
+
+  private medalTarget(i: number): number {
+    const spec = MEDAL_FOR_STATE[this.state] ?? MEDAL_FOR_STATE.idle;
+    if (this.state === "dizzy") return 0.5 + 0.5 * Math.sin(now() * 8 + i * 1.3);
+    return spec.slot === i ? 1 : spec.rest;
+  }
+
+  /** Medallion glow, tassel pendulum, headphone beat and crown jingle. */
+  private updateCharacter(dt: number, n: number, t: number) {
+    const kM = 1 - Math.pow(0.0006, dt);
+    for (let i = 0; i < 5; i++) this.medalLit[i] += (this.medalTarget(i) - this.medalLit[i]) * kM;
+
+    // Tassel: damped pendulum, kicked by sideways motion and head turns.
+    const drive = -(this.ox - this.prevOx) * 14 - (this.yaw - this.prevYaw) * 5 - this.tilt * 1.5;
+    this.prevOx = this.ox;
+    this.prevYaw = this.yaw;
+    const ω = 9;
+    const rest = -this.yaw * 0.25 + Math.sin(t * 1.7) * 0.03;
+    this.swingVel += (ω * ω * (rest - this.swing) - 2 * 0.28 * ω * this.swingVel + drive * 60) * dt;
+    this.swing += this.swingVel * dt;
+    this.swing = Math.max(-0.9, Math.min(0.9, this.swing));
+
+    // Headphones pump while Claude works or thinks.
+    const beating = this.state === "working" || this.state === "thinking" || this.state === "searching";
+    const bt = Math.pow(0.5 + 0.5 * Math.sin(t * (this.state === "thinking" ? 3.6 : 7.5)), 3);
+    this.beat += ((beating ? bt : 0) - this.beat) * (1 - Math.pow(0.0005, dt));
+
+    // Crown jingle when something needs the user.
+    const jingle = this.state === "approval" || this.state === "question";
+    const wt = jingle ? Math.sin(t * 14) * 0.07 * (0.6 + 0.4 * Math.sin(t * 2.2)) : 0;
+    this.wobble += (wt - this.wobble) * (1 - Math.pow(0.0003, dt));
+    void n;
   }
 
   private doMiniBehaviorLoop() {
@@ -642,8 +686,8 @@ export class BotEngine {
    */
   draw(x: CanvasRenderingContext2D, W: number, H: number) {
     const R = W * 0.3;
-    const rx = R * 1.14;
-    const ry = R * 0.88;
+    const rx = R * 1.06;
+    const ry = R * 1.0;
     const cx = W / 2 + this.ox * R;
     const cy = H / 2 + this.particleOverhang / 2 + this.oy * R + R * 0.06;
 
@@ -654,29 +698,41 @@ export class BotEngine {
     if (this.tilt !== 0) x.rotate(this.tilt);
     x.scale(this.sx, this.sy);
 
-    const body = this.bodyPath(rx, ry, R);
-    this.drawBody(x, body, R, rx, ry);
+    const dress = 1 - Math.min(1, this.morph * 2.2);
+    const small = R < 14;
+    const solid = this.bodyColor;
+    const t = now();
 
-    const blushVal = Math.max(this.blush, this.tint * 0.5) * (1 - this.morph);
-    if (blushVal > 0.01) {
-      x.save();
-      x.clip(body);
-      const yOffset = Math.sin(this.yaw) * rx * 0.8;
-      x.fillStyle = `rgba(255,120,150,${0.5 * blushVal})`;
-      for (const sd of [-1, 1]) {
-        x.beginPath();
-        x.ellipse(sd * rx * 0.55 + yOffset, ry * 0.2, R * 0.17, R * 0.1, 0, 0, Math.PI * 2);
-        x.fill();
-      }
-      x.restore();
+    if (!this.isMini && !small) {
+      drawBack(x, R, rx, ry, { vis: dress, beat: this.beat, yaw: this.yaw, solid });
     }
 
-    this.drawEyes(x, body, R, rx, ry);
+    const body = this.bodyPath(rx, ry, R);
+    fillHelmet(x, body, R, rx, ry, solid);
+
+    const plate = facePlate(R, this.yaw, this.pitch, this.morph);
+    fillPlate(x, plate, R, solid);
+
+    x.save();
+    x.clip(plate);
+    drawCheeks(x, R, this.yaw, Math.max(0.6, this.blush, this.tint * 0.5), this.morph);
+    x.restore();
+
+    this.drawEyes(x, plate, R, rx, ry);
     if (this.morph > 0.05) this.drawMouth(x, body, R);
+
+    // The crown is always there — idle, compact, even as a mailbox (it then
+    // perches on top of the box). Cap and ear cups come and go with `dress`.
+    drawFront(x, R, {
+      vis: dress, rx, beat: this.beat, lift: this.morph * 0.58,
+      yaw: this.yaw, pitch: this.pitch, swing: small ? 0 : this.swing,
+      lit: this.medalLit, glyph: (MEDAL_FOR_STATE[this.state] ?? MEDAL_FOR_STATE.idle).glyph,
+      color: this.col, t, cap: !small, mini: this.isMini, wobble: this.wobble,
+    });
 
     x.restore();
 
-    if (this.badge && this.badgeS > 0.01 && this.morph < 0.25) {
+    if (this.isMini && this.badge && this.badgeS > 0.01 && this.morph < 0.25) {
       this.drawBadge(x, this.badge, R, cx, cy);
     }
     this.drawParticles(x, R, cx, cy);
@@ -684,7 +740,7 @@ export class BotEngine {
 
   private bodyPath(rx: number, ry: number, R: number): Path2D {
     const n = 72;
-    const expN = 2.0 / 2.7;
+    const expN = 2.0 / 3.1;
     const tw = R * 1.0;
     const th = R * 0.94;
     const tr = R * 0.42;
@@ -708,42 +764,6 @@ export class BotEngine {
     }
     p.closePath();
     return p;
-  }
-
-  private drawBody(x: CanvasRenderingContext2D, body: Path2D, R: number, rx: number, ry: number) {
-    if (this.bodyColor) {
-      // Mini bots: flat solid fill — no gradient, no reflection, no highlight
-      x.fillStyle = rgba(this.bodyColor, 1);
-      x.fill(body);
-      return;
-    }
-    const g = x.createLinearGradient(rx * 0.7, -ry * 0.85, -rx * 0.8, ry * 0.9);
-    g.addColorStop(0, rgba(BASE_TOP));
-    g.addColorStop(1, rgba(BASE_BOTTOM));
-    x.fillStyle = g;
-    x.fill(body);
-
-    const effectiveTint = this.tint * (1 - this.morph);
-    if (effectiveTint > 0.01) {
-      const tg = x.createLinearGradient(0, ry, 0, -ry);
-      tg.addColorStop(0, rgba(this.col, 0.72 * effectiveTint));
-      tg.addColorStop(1, rgba(this.col, 0));
-      x.fillStyle = tg;
-      x.fill(body);
-    }
-
-    const sh = x.createRadialGradient(0, 0, R * 0.15, 0, 0, R * 1.25);
-    sh.addColorStop(0, "rgba(0,0,0,0)");
-    sh.addColorStop(0.6, "rgba(0,0,0,0)");
-    sh.addColorStop(1, "rgba(0,0,0,0.2)");
-    x.fillStyle = sh;
-    x.fill(body);
-
-    const hl = x.createRadialGradient(rx * 0.34, -ry * 0.46, 0, rx * 0.34, -ry * 0.46, R * 0.42);
-    hl.addColorStop(0, "rgba(255,255,255,0.55)");
-    hl.addColorStop(1, "rgba(255,255,255,0)");
-    x.fillStyle = hl;
-    x.fill(body);
   }
 
   private drawEyes(x: CanvasRenderingContext2D, body: Path2D, R: number, rx: number, ry: number) {
@@ -987,8 +1007,8 @@ export class BotEngine {
         g.addColorStop(0, rgba(mix3(this.bodyColor, [1, 1, 1], 0.35)));
         g.addColorStop(1, rgba(this.bodyColor));
       } else {
-        g.addColorStop(0, rgba(BASE_TOP));
-        g.addColorStop(1, rgba(BASE_BOTTOM));
+        g.addColorStop(0, "#FFFAEF");
+        g.addColorStop(1, "#EFE2C8");
       }
       x.beginPath();
       x.ellipse(0, 0, hew, heh, 0, 0, Math.PI * 2);

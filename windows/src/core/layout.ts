@@ -59,6 +59,9 @@ export const NOTCH_H = 32;
 export const COMPACT_W = 288; // NOTCH_W + 104
 export const EXPANDED_W = 640;
 
+/** Where the idle mascot sits (CSS px from the island's top-left). */
+export const COMPACT_BOT = { cx: 48, cy: 40, d: 58 };
+
 export const ROUNDED_CORNER = 14; // hidden / compact
 export const EXPANDED_CORNER = 22;
 
@@ -134,7 +137,9 @@ export function botPosition(
     case "hidden":
       return { cx: 46, cy: 16, diameter: 6, opacity: 0 };
     case "compact":
-      return { cx: 40, cy: 16, diameter: 20, opacity: 1 };
+      // Idle: the full mascot, perched on the bar and hanging below it, so the
+      // cap, tassel, ear cups and the medallion icons are all readable.
+      return { cx: COMPACT_BOT.cx, cy: COMPACT_BOT.cy, diameter: COMPACT_BOT.d, opacity: 1 };
     case "expanded": {
       const layout = VIEW_LAYOUTS[view];
       if (view === "uploading") {

@@ -3,6 +3,9 @@
 
 import { Sound } from "../core/sound";
 import { COMPACT_W, NOTCH_H, NOTCH_W } from "../core/layout";
+import {
+  drawBack, drawCheeks, drawFront, facePlate, fillHelmet, fillPlate, type RGB,
+} from "./character";
 
 // ── Timing (mirrors greeting-v2.html `T`) ─────────────────────────────────────
 
@@ -35,10 +38,10 @@ export const GREETING_END = T.end;
 
 const C0 = { x: 320, y: 90 };
 const HB = 58;
-const ASP = 1.34;
-const EAR_X = 40;
-const EAR_Y = 16;
-const EAR_HB = 17;
+const ASP = 1.08;
+const EAR_X = 48;
+const EAR_Y = 40;
+const EAR_HB = 58;
 const CARD = { x: 10, y: 36, w: 620, h: 104 };
 const CARD_R = 20;
 const SMALL_W = COMPACT_W;
@@ -270,8 +273,8 @@ function whiteFill(
   x0: number, y0: number, x1: number, y1: number,
 ) {
   const g = x.createLinearGradient(x0, y0, x1, y1);
-  g.addColorStop(0, "rgb(251,251,252)");
-  g.addColorStop(1, "rgb(231,233,236)");
+  g.addColorStop(0, "#FFFAEF");
+  g.addColorStop(1, "#EFE2C8");
   x.save();
   x.fillStyle = g;
   x.fill(path);
@@ -316,8 +319,8 @@ function drawHandR(x: CanvasRenderingContext2D, hw: number, hh: number, p: Pose)
   x.translate(rx, ry);
   x.rotate(ang);
   const g = x.createLinearGradient(L / 2, -T2 / 2, -L / 2, T2 / 2);
-  g.addColorStop(0, "rgb(251,251,252)");
-  g.addColorStop(1, "rgb(231,233,236)");
+  g.addColorStop(0, "#FFFAEF");
+  g.addColorStop(1, "#EFE2C8");
   rr(x, -L / 2, -T2 / 2, L, T2, T2 / 2);
   x.fillStyle = g;
   x.fill();
@@ -357,76 +360,65 @@ function drawMochi(x: CanvasRenderingContext2D, p: Pose) {
   drawHandL(x, hw, hh, p);
   drawHandR(x, hw, hh, p);
 
+  const R = hh;
+  const rx = hw;
+  const ry = hh;
+  const small = R < 14;
   const body = mochiPath(hw, hh);
-  whiteFill(x, body, hw * 0.6, -hh, -hw * 0.6, hh);
+  const lookYaw = p.lookX * 0.5;
+  const lookPitch = -p.lookY * 0.4;
+  const t = performance.now() / 1000;
 
-  if (p.tint > 0) {
-    const g = x.createLinearGradient(0, hh, 0, -hh * 0.1);
-    g.addColorStop(0, `rgba(127,180,234,${p.tint})`);
-    g.addColorStop(1, "rgba(127,180,234,0)");
-    x.save();
-    x.clip(body);
-    x.fillStyle = g;
-    x.fill(body);
-    x.restore();
-  }
+  if (!small) drawBack(x, R, rx, ry, { vis: 1, beat: 0, yaw: lookYaw, solid: null });
+  fillHelmet(x, body, R, rx, ry, null);
 
-  // Eyes
+  const plate = facePlate(R, lookYaw, lookPitch, 0);
+  fillPlate(x, plate, R, null);
   x.save();
-  x.clip(body);
-  x.fillStyle = "#16171A";
-  x.strokeStyle = "#16171A";
-  const er = p.hb * 0.06;
-  const sp = p.hb * 0.19;
-  const lx = p.lookX * hw * 0.42;
-  const ly = p.lookY * hh * 0.28 + hh * 0.12 + p.eyeRoll * hh * 1.25;
+  x.clip(plate);
+  drawCheeks(x, R, lookYaw, 0.6 + p.tint * 0.4, 0);
+
+  // Eyes — ink pills on the plate, same proportions as the live island.
+  x.fillStyle = "#1A1412";
+  x.strokeStyle = "#1A1412";
+  const ew = R * 0.11;
+  const eh = R * 0.15;
+  const sp = R * 0.42;
+  const lx = p.lookX * R * 0.16;
+  const ly = R * 0.12 + p.lookY * R * 0.2 + p.eyeRoll * R * 1.1;
   for (const sd of [-1, 1]) {
     x.save();
     x.translate(sd * sp + lx, ly);
     if (p.eye === "happy") {
-      x.lineWidth = er * 0.95;
+      x.lineWidth = ew * 1.1;
       x.lineCap = "round";
       x.beginPath();
-      x.arc(0, er * 0.6, er * 1.25, Math.PI * 1.15, Math.PI * 1.85);
+      x.arc(0, ew * 0.6, ew * 1.5, Math.PI * 1.15, Math.PI * 1.85);
       x.stroke();
     } else if (p.eye === "content") {
-      x.lineWidth = er * 0.95;
+      x.lineWidth = ew * 1.1;
       x.lineCap = "round";
       x.beginPath();
-      x.arc(0, -er * 0.5, er * 1.25, Math.PI * 0.15, Math.PI * 0.85);
+      x.arc(0, -ew * 0.5, ew * 1.5, Math.PI * 0.15, Math.PI * 0.85);
       x.stroke();
     } else {
-      x.scale(1, Math.max(0.12, p.open));
+      const hh2 = Math.max(ew * 0.5, eh * p.open);
       x.beginPath();
-      x.arc(0, 0, er, 0, Math.PI * 2);
+      x.roundRect(-ew, -hh2, ew * 2, hh2 * 2, ew);
       x.fill();
     }
     x.restore();
   }
   x.restore();
 
-  // Activity badge
-  if (p.badge > 0.01) {
-    const br = hh * 0.3;
-    x.save();
-    x.translate(-hw * 0.78, -hh * 0.72);
-    x.scale(p.badge, p.badge);
-    x.fillStyle = "#000";
-    x.beginPath();
-    x.arc(0, 0, br + hh * 0.07, 0, Math.PI * 2);
-    x.fill();
-    x.fillStyle = "#3BA0F5";
-    x.beginPath();
-    x.arc(0, 0, br, 0, Math.PI * 2);
-    x.fill();
-    x.fillStyle = "#0B1B3A";
-    for (const i of [-1, 0, 1]) {
-      x.beginPath();
-      x.arc(i * br * 0.5, 0, br * 0.17, 0, Math.PI * 2);
-      x.fill();
-    }
-    x.restore();
-  }
+  // Crown: the bolt medallion lights up with the activity badge, as before.
+  const blue: RGB = [0.231, 0.62, 1];
+  drawFront(x, R, {
+    vis: 1, rx, beat: 0, lift: 0, yaw: lookYaw, pitch: lookPitch,
+    swing: Math.sin(t * 2.2) * 0.06 + p.tilt * -2,
+    lit: [0, p.badge, 0, 0, 0], glyph: null, color: blue, t,
+    cap: !small, mini: false, wobble: 0,
+  });
 
   x.restore();
 }

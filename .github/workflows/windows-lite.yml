@@ -1,0 +1,39 @@
+name: Windows Lite
+
+# Builds the native, webview-free Windows build and keeps the zip as an artifact.
+# Like the Tauri workflow, nothing is published while the unsigned binaries are
+# still being flagged by Defender's machine-learning heuristics.
+
+on:
+  push:
+    tags:
+      - 'windows-lite-v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: windows
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            windows/target
+          key: windows-lite-cargo-${{ hashFiles('windows/Cargo.lock') }}
+          restore-keys: windows-lite-cargo-
+
+      - name: Pack
+        shell: pwsh
+        run: ./lite/scripts/pack.ps1
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Coucou-Lite
+          path: windows/release/Coucou-Lite-*.zip

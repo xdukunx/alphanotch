@@ -7,6 +7,9 @@
 
 import { State } from "../core/state";
 import {
+  drawBack, drawFront, drawCheeks, facePlate, fillHelmet, fillPlate, type RGB,
+} from "../mochi/character";
+import {
   USC, eIn, eInOut, eOut, lerp, progressAt,
   type UploadEyeShape, type UploadFrame,
 } from "./sequence";
@@ -165,7 +168,7 @@ export class UploadCanvas {
     if (f.barAlpha > 0 || f.barReveal > 0) this.drawProgressBar(ctx, f);
     if (f.chooseAlpha > 0) this.drawChoose(ctx, f);
 
-    this.drawMochi(ctx, f);
+    this.drawMochi(ctx, f, wallTime);
     if (f.fileVisible) this.drawFile(ctx, f);
   }
 
@@ -290,7 +293,7 @@ export class UploadCanvas {
 
   // ── Mochi ─────────────────────────────────────────────────────────────────
 
-  private drawMochi(ctx: CanvasRenderingContext2D, f: UploadFrame) {
+  private drawMochi(ctx: CanvasRenderingContext2D, f: UploadFrame, wallTime: number) {
     const R = f.d / 2 / 1.04;
     const mc = Math.max(0, Math.min(f.morph, 1));
 
@@ -300,26 +303,40 @@ export class UploadCanvas {
     ctx.scale(f.sx, f.sy);
 
     const { rx, ry } = bodyPath(ctx, f.morph, R);
+    const small = R < 14;
+    const dress = 1 - Math.min(1, mc * 2.2);
+    const yaw = f.lookX * 0.5;
+    const pitch = -f.lookY * 0.4;
+    const t = wallTime;
 
-    // Body.
-    const bg = ctx.createLinearGradient(rx * 0.7, -ry * 0.9, -rx * 0.8, ry * 0.9);
-    bg.addColorStop(0, "#EDEDEF");
-    bg.addColorStop(1, "#C4C5CA");
-    ctx.fillStyle = bg;
-    ctx.fill();
+    // The body path is rebuilt as a Path2D: the character kit fills and clips it.
+    const body = new Path2D();
+    {
+      const n = 2.15 + (5.5 - 2.15) * mc;
+      for (let i = 0; i <= 96; i++) {
+        const a = (i / 96) * Math.PI * 2;
+        const ca = Math.cos(a);
+        const sa = Math.sin(a);
+        const px = rx * Math.sign(ca) * Math.pow(Math.abs(ca), 2 / n);
+        const py = ry * Math.sign(sa) * Math.pow(Math.abs(sa), 2 / n);
+        if (i === 0) body.moveTo(px, py);
+        else body.lineTo(px, py);
+      }
+      body.closePath();
+    }
 
-    // Edge shadow.
-    const sg = ctx.createRadialGradient(0, 0, R * 0.2, 0, 0, R * 1.3);
-    sg.addColorStop(0, "rgba(0,0,0,0)");
-    sg.addColorStop(0.62, "rgba(0,0,0,0)");
-    sg.addColorStop(1, "rgba(0,0,0,0.12)");
-    ctx.fillStyle = sg;
-    ctx.fill();
+    if (!small) drawBack(ctx, R, rx, ry, { vis: dress, beat: 0, yaw, solid: null });
+    fillHelmet(ctx, body, R, rx, ry, null);
+    const plate = facePlate(R, yaw, pitch, mc);
+    fillPlate(ctx, plate, R, null);
+    ctx.save();
+    ctx.clip(plate);
+    drawCheeks(ctx, R, yaw, 0.6, mc);
+    ctx.restore();
 
     // The body path is reused as a clip for everything drawn inside it.
     ctx.save();
-    bodyPath(ctx, f.morph, R);
-    ctx.clip();
+    ctx.clip(body);
 
     // Top rim, once Mochi is box-shaped enough to have one.
     if (mc > 0.3) {
@@ -327,7 +344,7 @@ export class UploadCanvas {
       ctx.beginPath();
       ctx.moveTo(-rx * 0.72, -ry + 0.9);
       ctx.lineTo(rx * 0.72, -ry + 0.9);
-      ctx.strokeStyle = `rgba(255,255,255,${0.6 * a})`;
+      ctx.strokeStyle = `rgba(255,255,255,${0.45 * a})`;
       ctx.lineWidth = 1.2;
       ctx.lineCap = "round";
       ctx.stroke();
@@ -358,12 +375,12 @@ export class UploadCanvas {
     }
 
     // Eyes.
-    const ew = R * 0.25;
-    const eh = R * (0.62 - 0.16 * mc);
-    const ey = R * (0.02 + 0.28 * mc);
-    const sp = R * 0.3;
-    const lx = f.lookX * R * (0.34 - 0.08 * mc);
-    const ly = f.lookY * R * (0.16 - 0.09 * mc);
+    const ew = R * 0.2;
+    const eh = R * (0.34 - 0.08 * mc);
+    const ey = R * (0.12 + 0.2 * mc);
+    const sp = R * 0.42;
+    const lx = f.lookX * R * (0.2 - 0.06 * mc);
+    const ly = f.lookY * R * (0.1 - 0.05 * mc);
     for (const sd of [-1, 1]) {
       ctx.save();
       ctx.translate(sd * sp + lx, ey + ly);
@@ -372,6 +389,13 @@ export class UploadCanvas {
     }
 
     ctx.restore(); // body clip
+
+    const blue: RGB = [0.231, 0.62, 1];
+    drawFront(ctx, R, {
+      vis: dress, rx, beat: 0, lift: mc * 0.58, yaw, pitch, swing: Math.sin(t * 2.2) * 0.06,
+      lit: [0, 0, 0, 0, 0], glyph: null, color: blue, t,
+      cap: !small, mini: false, wobble: 0,
+    });
     ctx.restore(); // transform
   }
 

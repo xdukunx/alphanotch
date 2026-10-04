@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Coucou — character preview</title>
+    <style>
+      body { margin: 0; background: #0b0b0d; font: 12px system-ui; color: #ccc; }
+      #grid { display: grid; grid-template-columns: repeat(auto-fill, 190px); gap: 10px; padding: 16px; }
+      .cell { background: #16161a; border-radius: 14px; text-align: center; padding-bottom: 8px; cursor: pointer; }
+      canvas { display: block; margin: 0 auto; }
+    </style>
+  </head>
+  <body>
+    <div id="grid"></div>
+    <script type="module" src="./character-preview.ts"></script>
+  </body>
+</html>
