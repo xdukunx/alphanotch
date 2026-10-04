@@ -137,16 +137,16 @@ impl App {
             let pw = text::measure(&r.place, Face::Medium, 12.5);
             text::draw(g, "≈ dari IP", left.x + 18.0 + pw + 8.0, left.y + 24.5, Face::Regular, 9.5, hex(pal::DIM3), Align::Left);
         }
-        weather_icon(g, weather::kind_of(r.now.code), r.now.is_day, left.x + 52.0, left.y + 84.0, 66.0);
-        text::draw(g, &format!("{:.0}°", r.now.temp), left.x + 100.0, left.y + 74.0, Face::Bold, 38.0, hex(pal::INK), Align::Left);
-        text::draw(g, weather::label_of(r.now.code), left.x + 102.0, left.y + 106.0, Face::Medium, 13.0, hex(pal::INK), Align::Left);
+        weather_icon(g, weather::kind_of(r.now.code), r.now.is_day, left.x + 50.0, left.y + 66.0, 56.0);
+        text::draw(g, &format!("{:.0}°", r.now.temp), left.x + 92.0, left.y + 58.0, Face::Bold, 34.0, hex(pal::INK), Align::Left);
+        text::draw(g, weather::label_of(r.now.code), left.x + 94.0, left.y + 86.0, Face::Medium, 12.5, hex(pal::INK), Align::Left);
         let details = [
             format!("Terasa {:.0}°", r.now.feels),
             format!("Lembap {}%", r.now.humidity),
             format!("Angin {:.0} km/j", r.now.wind),
         ];
         for (i, d) in details.iter().enumerate() {
-            text::draw(g, d, left.x + 18.0, left.y + 142.0 + i as f32 * 18.0, Face::Regular, 11.5, hex(pal::DIM), Align::Left);
+            text::draw(g, d, left.x + 18.0, left.y + 118.0 + i as f32 * 18.0, Face::Regular, 11.0, hex(pal::DIM), Align::Left);
         }
 
         // Week.
@@ -158,13 +158,13 @@ impl App {
             let today = i == 0;
             if today {
                 g.fill_style(rgba(255, 255, 255, 0.06));
-                g.fill_round_rect(cx - colw / 2.0 + 2.0, right.y + 40.0, colw - 4.0, right.h - 56.0, 14.0);
+                g.fill_round_rect(cx - colw / 2.0 + 2.0, right.y + 34.0, colw - 4.0, right.h - 46.0, 14.0);
             }
-            text::draw(g, if today { "Hari ini" } else { weather::WEEKDAYS[d.weekday % 7] }, cx, right.y + 60.0, Face::Medium, 11.5, hex(pal::INK), Align::Center);
-            weather_icon(g, weather::kind_of(d.code), true, cx, right.y + 100.0, 34.0);
-            text::draw(g, &format!("{:.0}°", d.max), cx, right.y + 140.0, Face::Bold, 13.0, hex(pal::INK), Align::Center);
-            text::draw(g, &format!("{:.0}°", d.min), cx, right.y + 158.0, Face::Regular, 12.0, hex(pal::DIM), Align::Center);
-            text::draw(g, &format!("{}%", d.rain), cx, right.y + 182.0, Face::Regular, 10.5, hex("#38BDF8"), Align::Center);
+            text::draw(g, if today { "Hari ini" } else { weather::WEEKDAYS[d.weekday % 7] }, cx, right.y + 52.0, Face::Medium, 11.0, hex(pal::INK), Align::Center);
+            weather_icon(g, weather::kind_of(d.code), true, cx, right.y + 82.0, 30.0);
+            text::draw(g, &format!("{:.0}°", d.max), cx, right.y + 112.0, Face::Bold, 12.5, hex(pal::INK), Align::Center);
+            text::draw(g, &format!("{:.0}°", d.min), cx, right.y + 128.0, Face::Regular, 11.5, hex(pal::DIM), Align::Center);
+            text::draw(g, &format!("{}%", d.rain), cx, right.y + 148.0, Face::Regular, 10.0, hex("#38BDF8"), Align::Center);
         }
     }
 
@@ -211,7 +211,7 @@ impl App {
         }
 
         // Right: watchlist rows and the add field.
-        let rows_max = 5usize;
+        let rows_max = (((right.h - 12.0 - 44.0) / 30.0).floor() as usize).clamp(2, 6);
         let mut y = right.y + 12.0;
         let mut act: Option<(usize, bool)> = None; // (index, remove)
         for (i, sym) in order.iter().enumerate().take(rows_max) {

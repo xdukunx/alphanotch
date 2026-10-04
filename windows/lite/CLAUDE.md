@@ -106,3 +106,9 @@ Header tabs 5-7 (`views.rs`), drawn by `pages.rs`; data in `stocks.rs` / `weathe
 title/artist, one row of controls: shuffle, previous, play disc, next, repeat. Shuffle/repeat are read from and written to the system media session
 (`Media::shuffle/repeat/can_shuffle/can_repeat`, `Transport::Shuffle/Repeat`); a player that does not expose them (often a browser tab) shows them dimmed and they do nothing.
 No heart button: the system media session has no "like".
+
+### Compact island (2026-10-05)
+The expanded island was too tall for a screen's centre. Home is now **212 px** (was 300), Stocks/Weather/Teleprompter **240 px**. The greeting moved into the header row
+(Mochi, 26 px, sits in the header at x=286; greeting text at x=304, two lines: name, then date and weather); the cards start straight under the header. The
+player card is 160 px tall (cover 92 px, ring 106 px); the right column shows **one** event under "Hari ini" (+N lagi) and 2 task rows; opening the timer menu folds
+"Hari ini" to make room. The Stocks list adapts to the room (`rows_max`), Weather is laid out for 188 px of content.

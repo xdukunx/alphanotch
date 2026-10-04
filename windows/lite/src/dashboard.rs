@@ -208,21 +208,21 @@ fn mmss(secs: f32) -> String {
 
 impl App {
     pub fn draw_dashboard(&mut self, g: &mut Gfx, v: Rect, n: f32) {
-        // Greeting row (Mochi sits at the left, see layout).
+        // The greeting lives in the header row, to the right of the tabs; Mochi sits just before it
+        // (see layout). Two short lines: who and what day, then the weather.
         let (hello, date) = greeting();
-        text::draw(g, &hello, v.x + 60.0, v.y + 12.0, Face::Bold, 14.5, hex(pal::INK), Align::Left);
-        text::draw(g, &date, v.x + 60.0, v.y + 29.0, Face::Regular, 11.0, hex(pal::DIM), Align::Left);
+        let gx = v.x + 304.0;
+        let gy = v.y - 42.0;
+        text::draw(g, &hello, gx, gy + 15.0, Face::Bold, 13.0, hex(pal::INK), Align::Left);
+        let mut line2 = date.clone();
         if let Some(w) = crate::weather::report() {
-            let dx = text::measure(&date, Face::Regular, 11.0);
-            let label = format!("·  {:.0}° {}", w.now.temp, crate::weather::label_of(w.now.code));
-            text::draw(g, &label, v.x + 60.0 + dx + 8.0, v.y + 29.0, Face::Regular, 11.0, hex(pal::DIM2), Align::Left);
+            line2 = format!("{date}  ·  {:.0}° {}", w.now.temp, crate::weather::label_of(w.now.code));
         }
+        crate::app::fading_text(g, &line2, gx, gy + 31.0, 10.0, hex(pal::DIM), gx, v.x + v.w - 62.0);
 
-        let top = v.y + 44.0;
-        let h = (v.h - 44.0).max(0.0);
-        let left = Rect::new(v.x, top, LEFT_W, h);
+        let left = Rect::new(v.x, v.y, LEFT_W, v.h.max(0.0));
         // The right column has no card: text sits straight on the island, as in OmniNotch.
-        let col = Rect::new(v.x + LEFT_W + 20.0, top + 2.0, v.w - LEFT_W - 20.0 - 6.0, h - 2.0);
+        let col = Rect::new(v.x + LEFT_W + 20.0, v.y + 2.0, v.w - LEFT_W - 20.0 - 6.0, (v.h - 2.0).max(0.0));
         crate::ui::card(g, left, crate::layout::Wash::None, false);
 
         self.dash_now_playing(g, left, n);
@@ -232,11 +232,11 @@ impl App {
     fn dash_now_playing(&mut self, g: &mut Gfx, r: Rect, n: f32) {
         let _ = n;
         // Round cover with a progress ring around it, on the left.
-        let ring_c = (r.x + 88.0, r.cy() + 2.0);
-        let cover_r = 55.0;
-        let ring_r = 63.0;
-        let col = r.x + 176.0;
-        let colw = r.w - 176.0 - 18.0;
+        let ring_c = (r.x + 78.0, r.cy());
+        let cover_r = 46.0;
+        let ring_r = 53.0;
+        let col = r.x + 152.0;
+        let colw = r.w - 152.0 - 18.0;
 
         let Some(m) = activity::media() else {
             g.fill_style(rgba(255, 255, 255, 0.06));
@@ -307,18 +307,18 @@ impl App {
 
         // Title, artist, where it plays from.
         if !m.source.is_empty() {
-            text::draw(g, &m.source.to_uppercase(), col, r.y + 30.0, Face::Medium, 9.5, rgba(255, 255, 255, 0.45), Align::Left);
+            text::draw(g, &m.source.to_uppercase(), col, r.y + 24.0, Face::Medium, 9.0, rgba(255, 255, 255, 0.45), Align::Left);
         }
-        fading_text(g, &m.title, col, r.y + 58.0, 17.0, hex(pal::INK), col, col + colw);
+        fading_text(g, &m.title, col, r.y + 48.0, 16.0, hex(pal::INK), col, col + colw);
         if !m.artist.is_empty() {
-            fading_text(g, &m.artist, col, r.y + 80.0, 12.0, rgba(255, 255, 255, 0.6), col, col + colw);
+            fading_text(g, &m.artist, col, r.y + 68.0, 11.5, rgba(255, 255, 255, 0.6), col, col + colw);
         }
         if m.duration > 0.0 {
-            text::draw(g, &mmss(m.duration), col + colw, r.y + 30.0, Face::Regular, 10.0, rgba(255, 255, 255, 0.4), Align::Right);
+            text::draw(g, &mmss(m.duration), col + colw, r.y + 24.0, Face::Regular, 9.5, rgba(255, 255, 255, 0.4), Align::Right);
         }
 
         // One row of controls: shuffle, previous, play, next, repeat.
-        let cy = r.y + 132.0;
+        let cy = r.y + 114.0;
         let step = colw / 5.0;
         let xs: Vec<f32> = (0..5).map(|i| col + step * (i as f32 + 0.5)).collect();
         for (idx, (id, kind)) in [("dash-shuffle", 0), ("dash-prev", 1), ("dash-play", 2), ("dash-next", 3), ("dash-repeat", 4)].into_iter().enumerate() {
@@ -327,7 +327,7 @@ impl App {
             let (clicked, hover, pressed) = self.ui.click_region(id_of(id, 92), hit);
             match kind {
                 2 => {
-                    let rad = if pressed { 17.0 } else if hover { 20.0 } else { 19.0 };
+                    let rad = if pressed { 16.0 } else if hover { 19.0 } else { 18.0 };
                     g.fill_style(hex("#F5F6F8"));
                     g.begin_path();
                     g.circle(cx, cy, rad);
@@ -366,11 +366,11 @@ impl App {
         let needs = crate::gtasks::calendar_needs_login();
         let connected = gstatus == crate::gtasks::Status::Linked && !needs;
         let events = upcoming(&crate::gtasks::events());
-        let shown = events.len().min(2);
+        let shown = events.len().min(1);
         let auto_open = connected && !events.is_empty();
-        let open = self.today_force.unwrap_or(auto_open);
+        let open = !self.timer_menu && self.today_force.unwrap_or(auto_open);
         // The body is: the events, or one line saying why there are none / how to connect.
-        let target = if !open { 0.0 } else if connected && !events.is_empty() { shown as f32 * 32.0 } else { 26.0 };
+        let target = if !open { 0.0 } else if connected && !events.is_empty() { shown as f32 * 30.0 } else { 24.0 };
         self.today_target = target;
         if (self.today_h - target).abs() > 0.3 {
             self.ensure_running();
@@ -428,8 +428,8 @@ impl App {
             } else if events.is_empty() {
                 text::draw(g, "Tidak ada agenda lagi hari ini", c.x, c.y + 38.0, Face::Regular, 11.5, hex(pal::DIM2), Align::Left);
             } else {
-                for (i, e) in events.iter().take(2).enumerate() {
-                    let y = c.y + 38.0 + i as f32 * 32.0;
+                for (i, e) in events.iter().take(1).enumerate() {
+                    let y = c.y + 38.0 + i as f32 * 30.0;
                     if y + 17.0 > c.y + 28.0 + self.today_h + 8.0 {
                         break;
                     }
@@ -443,8 +443,8 @@ impl App {
                     };
                     text::draw(g, &when, c.x + 12.0, y + 12.0, Face::Regular, 10.5, hex(pal::DIM), Align::Left);
                 }
-                if events.len() > 2 {
-                    text::draw(g, &format!("+{} lagi", events.len() - 2), c.x + c.w, c.y + 12.0, Face::Regular, 10.0, hex(pal::DIM3), Align::Right);
+                if events.len() > 1 {
+                    text::draw(g, &format!("+{} lagi", events.len() - 1), c.x + c.w, c.y + 12.0, Face::Regular, 10.0, hex(pal::DIM3), Align::Right);
                 }
             }
             g.restore();
@@ -563,8 +563,8 @@ impl App {
     fn dash_todos(&mut self, g: &mut Gfx, r: Rect, status_r: Rect) {
         // Rows.
         let order = crate::todos::order(&self.todos);
-        let field_h = 24.0;
-        let rows = (((r.h - field_h - 8.0) / 21.0).floor().max(0.0) as usize).min(7);
+        let field_h = 22.0;
+        let rows = (((r.h - field_h - 6.0) / 20.0).floor().max(0.0) as usize).min(7);
         // Mouse wheel over the rows scrolls the list.
         let list_area = Rect::new(r.x, r.y, r.w, (r.h - field_h - 6.0).max(0.0));
         let (mx0, my0) = self.ui.input.mouse;
@@ -602,7 +602,7 @@ impl App {
             } else if s_click {
                 act = Some((i, true));
             }
-            y += 21.0;
+            y += 20.0;
         }
         if order.is_empty() && rows > 0 {
             text::draw(g, "Belum ada tugas", r.x + 2.0, r.y + 10.0, Face::Regular, 11.0, hex(pal::DIM3), Align::Left);
@@ -628,8 +628,8 @@ impl App {
         // Add field, at the bottom.
         let fb = Rect::new(r.x, r.y + r.h - field_h, r.w, field_h);
         g.fill_style(rgba(255, 255, 255, if self.todo_input.focused { 0.11 } else { 0.06 }));
-        g.fill_round_rect(fb.x, fb.y, fb.w, fb.h, 12.0);
-        let field = Rect::new(fb.x + 10.0, fb.y + 3.0, fb.w - 20.0, 18.0);
+        g.fill_round_rect(fb.x, fb.y, fb.w, fb.h, 11.0);
+        let field = Rect::new(fb.x + 10.0, fb.y + 2.0, fb.w - 20.0, 18.0);
         let (mx, my) = self.ui.input.mouse;
         let over = field.contains(mx, my);
         if self.ui.input.pressed {
