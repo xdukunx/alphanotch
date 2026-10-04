@@ -14,16 +14,20 @@
 <body>
 <p><a href="index.html">&larr; AlphaNotch</a></p>
 <h1>Privacy Policy</h1>
-<p class="muted">Last updated: October 4, 2026</p>
+<p class="muted">Last updated: October 5, 2026</p>
 
 <p>AlphaNotch is a personal desktop application for Windows. This policy explains what it does with your data.</p>
 
 <h2>What AlphaNotch accesses</h2>
-<p>If you choose to connect your Google account, AlphaNotch asks for one permission: to view and manage your Google Tasks (<code>https://www.googleapis.com/auth/tasks</code>). It uses it only to read your task lists and to create, edit, complete and delete tasks that you change inside the app, so the to-do card on your desktop matches your Google Tasks.</p>
+<p>If you choose to connect your Google account, AlphaNotch asks for two permissions:</p>
+<ul>
+  <li><strong>Google Tasks</strong> (<code>https://www.googleapis.com/auth/tasks</code>): to read your task list and to create or complete tasks that you add or tick inside the app, so the to-do card on your desktop matches your Google Tasks.</li>
+  <li><strong>Google Calendar, read-only</strong> (<code>https://www.googleapis.com/auth/calendar.readonly</code>): to read today's events from your primary calendar and show them in the agenda on your desktop. AlphaNotch never creates, edits or deletes calendar events.</li>
+</ul>
 
 <h2>Where your data goes</h2>
 <ul>
-  <li>Your tasks are fetched directly from Google to your own computer. AlphaNotch has no server and the developer never receives your data.</li>
+  <li>Your tasks and today's calendar events are fetched directly from Google to your own computer. AlphaNotch has no server and the developer never receives your data.</li>
   <li>The sign-in token is stored on your computer in the Windows Credential Manager. It is never written to a plain file and never sent anywhere except to Google.</li>
   <li>AlphaNotch does not collect analytics or telemetry, does not sell data and does not share data with third parties.</li>
 </ul>
