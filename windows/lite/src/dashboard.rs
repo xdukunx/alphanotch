@@ -2,12 +2,7 @@
 // Greeting, Now Playing (artwork, seek bar, transport), a timer with presets and a
 // few system gauges. Everything here is read from the system or from `activity`.
 
-use std::cell::Cell;
-
 use tiny_skia::Color;
-use windows::Win32::System::Power::{GetSystemPowerStatus, SYSTEM_POWER_STATUS};
-use windows::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
-use windows::Win32::System::Threading::GetSystemTimes;
 
 use crate::activity::{self, Transport};
 use crate::anim::clamp;
@@ -17,55 +12,6 @@ use crate::text::{self, Align, Face};
 use crate::ui::{id_of, pal, Rect};
 
 const LEFT_W: f32 = 296.0;
-
-// ── System gauges ─────────────────────────────────────────────────────────────
-
-thread_local! {
-    static CPU_PREV: Cell<(u64, u64)> = const { Cell::new((0, 0)) };
-    static CPU_LAST: Cell<f32> = const { Cell::new(0.0) };
-}
-
-fn ft(f: windows::Win32::Foundation::FILETIME) -> u64 {
-    ((f.dwHighDateTime as u64) << 32) | f.dwLowDateTime as u64
-}
-
-/// CPU load since the previous call, 0…1. Called at about 2 Hz while the dashboard is open.
-fn cpu_load() -> f32 {
-    let (mut idle, mut kernel, mut user) = Default::default();
-    unsafe {
-        if GetSystemTimes(Some(&mut idle), Some(&mut kernel), Some(&mut user)).is_err() {
-            return CPU_LAST.get();
-        }
-    }
-    let (i, total) = (ft(idle), ft(kernel) + ft(user));
-    let (pi, pt) = CPU_PREV.get();
-    CPU_PREV.set((i, total));
-    if pt == 0 || total <= pt {
-        return CPU_LAST.get();
-    }
-    let load = 1.0 - (i - pi) as f32 / (total - pt) as f32;
-    CPU_LAST.set(load.clamp(0.0, 1.0));
-    CPU_LAST.get()
-}
-
-fn mem_load() -> f32 {
-    let mut m = MEMORYSTATUSEX { dwLength: std::mem::size_of::<MEMORYSTATUSEX>() as u32, ..Default::default() };
-    unsafe {
-        if GlobalMemoryStatusEx(&mut m).is_ok() {
-            return m.dwMemoryLoad as f32 / 100.0;
-        }
-    }
-    0.0
-}
-
-/// (percent, charging) or None on a desktop without a battery.
-fn battery() -> Option<(u8, bool)> {
-    let mut s = SYSTEM_POWER_STATUS::default();
-    unsafe {
-        GetSystemPowerStatus(&mut s).ok()?;
-    }
-    (s.BatteryLifePercent <= 100).then_some((s.BatteryLifePercent, s.ACLineStatus == 1))
-}
 
 // ── Greeting ──────────────────────────────────────────────────────────────────
 
@@ -130,23 +76,6 @@ fn upcoming(all: &[crate::gtasks::Event]) -> Vec<crate::gtasks::Event> {
     let t = unsafe { GetLocalTime() };
     let now = format!("{:02}:{:02}", t.wHour, t.wMinute);
     all.iter().filter(|e| e.start == "Seharian" || e.end.as_deref().map(|end| end > now.as_str()).unwrap_or(true)).cloned().collect()
-}
-
-/// Cuts `s` with an ellipsis so it fits `max_w`.
-fn ellipsize(s: &str, face: Face, size: f32, max_w: f32) -> String {
-    if text::measure(s, face, size) <= max_w {
-        return s.to_string();
-    }
-    let mut out = String::new();
-    for c in s.chars() {
-        let mut next = out.clone();
-        next.push(c);
-        if text::measure(&format!("{next}…"), face, size) > max_w {
-            break;
-        }
-        out = next;
-    }
-    format!("{out}…")
 }
 
 /// Two crossing arrows.

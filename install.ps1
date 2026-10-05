@@ -249,7 +249,8 @@ function Show-Plan($a, $p) {
     if ($p.YasbUpgrade) { & $line ('Meng-upgrade YASB dari v{0} ke versi terbaru (perlu 2.0.7+ untuk bar "adaptive island").' -f $a.YasbVersion) }
     if ($p.Rust) { & $line 'Memasang Rust (winget Rustlang.Rustup), dibutuhkan untuk membangun Coucou Lite.' }
     if ($p.Msvc) { & $line 'Memasang Visual Studio Build Tools + C++ (besar: +-3-5 GB, ada prompt UAC).' }
-    & $line ('Mengunduh source dari github.com/{0} ({1}) dan MEMBANGUN Coucou Lite di PC ini (+-5-10 menit).' -f $Repo, $Branch)
+    if ($SourceDir) { & $line ('Memakai source lokal ({0}) dan MEMBANGUN Coucou Lite di PC ini.' -f $SourceDir) }
+    else { & $line ('Mengunduh source dari github.com/{0} ({1}) dan MEMBANGUN Coucou Lite di PC ini (+-5-10 menit).' -f $Repo, $Branch) }
     & $line ('Memasang ke {0}.' -f $InstallDir)
     if (-not $NoSettings) { & $line 'Menulis pengaturan awal Coucou (tetap di layar, pill agent: sesuai yang terdeteksi).' }
     if (-not $NoAutostart) { & $line 'Mengaktifkan autostart Coucou saat login.' }
@@ -260,7 +261,7 @@ function Show-Plan($a, $p) {
         'skip' { & $line 'YASB dilewati.' }
     }
     foreach ($h in $p.Hooks) { & $line ('Menawarkan hook Coucou untuk {0} (ditampilkan dulu, backup dibuat, hook lain tidak disentuh).' -f $h) }
-    & $line 'Menjalankan Coucou.'
+    if (-not $NoStart) { & $line 'Menjalankan Coucou.' }
     Write-Host ''
     Say ('    Log lengkap: ' + $LogFile) DarkGray
     Say '    Pencabutan kapan saja: uninstall.ps1 (di repo yang sama).' DarkGray

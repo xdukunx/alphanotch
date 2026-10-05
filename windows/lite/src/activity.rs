@@ -208,10 +208,6 @@ pub fn transport(cmd: Transport) {
     });
 }
 
-pub fn toggle_media() {
-    transport(Transport::PlayPause);
-}
-
 pub fn start() {
     if STARTED.swap(true, Ordering::SeqCst) {
         return;
