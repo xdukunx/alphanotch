@@ -1,0 +1,212 @@
+# AlphaNotch YASB layout: an "adaptive island" bar. The centre is left empty on purpose:
+# the Coucou island sits there. Left: home, desktops, bluetooth, volume, battery, audio bars.
+# Right: clock, notifications, power. Needs YASB 2.0.7 or newer (style: adaptive).
+watch_stylesheet: true
+watch_config: true
+debug: false
+bars:
+  primary-bar:
+    enabled: true
+    screens: ["*"]
+    class_name: "yasb-bar"
+    style: "adaptive"
+    alignment:
+      position: "top"
+      center: false
+    animation:
+      enabled: true
+      duration: 1000
+    blur_effect:
+      enabled: false
+      acrylic: true
+      dark_mode: true
+      round_corners: true
+      border_color: None
+    window_flags:
+      windows_app_bar: true
+    dimensions:
+      width: "100%"
+      height: 32
+    padding:
+      top: 0
+      left: 0
+      bottom: 0
+      right: 0
+    widgets:
+      left: [
+        "home",
+        "windows_desktops",
+        "bluetooth",
+        "volume",
+        "battery",
+        "audio_visualizer",
+      ]
+      center: []
+      right: [
+          "clock",
+          "notifications",
+          "power_menu",
+        ]
+widgets:
+  home:
+    type: "yasb.home.HomeWidget"
+    options:
+      label: "<span>\udb81\udf17</span>"
+      menu_list:
+        - { title: "User Home", path: "~" }
+        - { title: "Download", path: "~\\Downloads" }
+        - { title: "Documents", path: "~\\Documents" }
+        - { title: "Pictures", path: "~\\Pictures" }
+      system_menu: true
+      power_menu: true
+      blur: true
+      border_color: "None"
+      round_corners_type: "small"
+      container_padding:
+        top: 0
+        left: 12
+        bottom: 0
+        right: 12
+  windows_desktops:
+    type: "yasb.windows_desktops.WorkspaceWidget"
+    options:
+      label_workspace_btn: "\udb81\udc3e"
+      label_workspace_active_btn: "\udb81\udc3e"
+  bluetooth:
+    type: "yasb.bluetooth.BluetoothWidget"
+    options:
+      label: ""
+      label_alt: ""
+      label_no_device: "No devices"
+      tooltip: true
+  volume:
+    type: "yasb.volume.VolumeWidget"
+    options:
+      label: "<span>{icon}</span>"
+      label_alt: "<span>{icon}</span> {level}"
+      tooltip: false
+      volume_icons:
+        - "\ueee8"
+        - "\uf026"
+        - "\uf027"
+        - "\uf027"
+        - "\uf028"
+      callbacks:
+        on_left: "toggle_volume_menu"
+        on_right: "none"
+      audio_menu:
+        blur: True
+        round_corners: True
+        round_corners_type: "small"
+        border_color: "None"
+        alignment: "center"
+        direction: "down"
+        distance: 6
+      container_padding:
+        top: 0
+        left: 8
+        bottom: 0
+        right: 8
+  battery:
+    type: "yasb.battery.BatteryWidget"
+    options:
+      label: "<span>{icon}</span> {percent}%"
+      update_interval: 5000
+      time_remaining_natural: False
+      hide_unsupported: True
+      charging_options:
+        icon_format: "{charging_icon}"
+        blink_charging_icon: true
+        blink_interval: 500
+      status_thresholds:
+        critical: 10
+        low: 25
+        medium: 75
+        high: 95
+        full: 100
+      status_icons:
+        icon_charging: "\uf0e7"
+        icon_critical: "\uf244"
+        icon_low: "\uf243"
+        icon_medium: "\uf242"
+        icon_high: "\uf241"
+        icon_full: "\uf240"
+      label_shadow:
+        enabled: true
+        color: "black"
+        radius: 3
+        offset: [1, 1]
+      container_padding:
+        top: 0
+        left: 8
+        bottom: 0
+        right: 8
+  audio_visualizer:
+    type: "yasb.audio_visualizer.AudioVisualizerWidget"
+    options:
+      style: "bars"
+      height: 18
+      bars:
+        count: 14
+        width: 3
+        gap: 3
+      mirror: true
+      smoothness: 60
+      hide_idle: false
+  clock:
+    type: "yasb.clock.ClockWidget"
+    options:
+      label: "<span>\uf017</span> {%a, %d/%m/%y %H:%M}"
+      label_alt: "{%A, %d %B %Y %H:%M}"
+      callbacks:
+        on_left: "toggle_calendar"
+      calendar:
+        blur: True
+        round_corners: True
+        round_corners_type: "small"
+        border_color: "None"
+        alignment: "center"
+        direction: "down"
+        distance: 6
+      container_padding:
+        top: 0
+        left: 8
+        bottom: 0
+        right: 8
+  notifications:
+    type: "yasb.notifications.NotificationsWidget"
+    options:
+      label: "<span>\uf476</span> {count}"
+      label_alt: "{count} notifications"
+      hide_empty: true
+      tooltip: false
+      callbacks:
+        on_left: "toggle_notification"
+        on_right: "do_nothing"
+        on_middle: "toggle_label"
+      container_padding:
+        top: 0
+        left: 8
+        bottom: 0
+        right: 8
+  power_menu:
+    type: "yasb.power_menu.PowerMenuWidget"
+    options:
+      label: "\uf011"
+      uptime: True
+      blur: False
+      blur_background: True
+      animation_duration: 200
+      button_row: 5
+      buttons:
+        shutdown: ["\uf011", "Shut Down"]
+        restart: ["\uead2", "Restart"]
+        signout: ["\udb80\udf43", "Sign out"]
+        hibernate: ["\uf28e", "Hibernate"]
+        sleep: ["\u23fe", "Sleep"]
+        cancel: ["", "Cancel"]
+      container_padding:
+        top: 0
+        left: 8
+        bottom: 0
+        right: 8

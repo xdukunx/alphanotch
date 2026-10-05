@@ -78,7 +78,7 @@ Added on top of upstream v0.1.6, for running Coucou inside a status bar (YASB) a
 - `agenthooks.rs`: `coucou-lite.exe --agent-hooks <claude|antigravity> <status|preview|install|uninstall>
   [--fingerprint <fp>] [--out <file>]`. `preview` prints the diff + a fingerprint, `install` refuses without that
   fingerprint, takes a dated backup, never touches other tools' entries (Antigravity's hooks.json also holds
-  other apps' blocks, e.g. `catjang`). The exe has no console: use `--out`.
+  other apps' blocks, e.g. another companion app's). The exe has no console: use `--out`.
 - Antigravity lifecycle events `PreInvocation`/`PostInvocation` map to UserPromptSubmit/PostToolUse (as the Mac relay does).
 - OpenCode: nothing installed yet (it was not on the machine). Plugin API: `~/.config/opencode/plugin/<name>.js`,
   events `session.idle`, `tool.execute.before/after`, `permission.asked`. Write it once OpenCode can be tried.
@@ -125,3 +125,14 @@ and the heights in `layout.rs` (`layout()`), and `LEFT_W` in `dashboard.rs`.
   and never more than once per 16 ms; the 30 Hz poll flushes the last skipped one (`move_dirty`). New widgets must go through `click_region` (or `note_region`) or their hover will not redraw.
 - Do not keep the frame loop alive for something that moves slowly: the progress ring is redrawn by the 2 Hz `dash_t` tick. The compact bar's equaliser runs at 15 fps (66 ms interval).
 - Static art goes through `Gfx::cached_layer` (the cover, the ring track, glows). Measured per frame at 7 ms before: Mochi 1.7, player 3.0 -> 1.7, column 1.2, header 0.4, card 0.5.
+
+### Installer (2026-10-05)
+`install.ps1` / `uninstall.ps1` at the repo root; user docs in `INSTALL-WINDOWS.md`; licensing notes in `NOTICE-FORK.md`; the YASB layout template in `yasb/`
+(`config.yaml` + `styles.css`, generated from the maintainer's own setup with the personal widgets removed; needs YASB 2.0.7+ for `style: adaptive`).
+- Flow: **analyse** (YASB version/config, font, Rust, MSVC Build Tools, Claude Code, Antigravity, OpenCode, disk) -> **plan** -> ask once (and the display name) -> install
+  only what is missing -> build **from source on the user's PC** (no prebuilt binary: `LICENSE-ASSETS.md` forbids redistributing builds with the Mochi assets) -> copy to
+  `%LOCALAPPDATA%\Coucou`, settings, Run-key autostart, YASB layout (old config backed up), hooks through `--agent-hooks` (preview + fingerprint + backup).
+- It must stay **ASCII only** and PowerShell 5.1 compatible (`irm | iex` mangles anything else). `-DryRun` is the safe way to test the analysis. Sandbox test of the build/copy path:
+  `install.ps1 -Yes -Yasb skip -NoHooks -NoAutostart -NoStart -NoSettings -InstallDir $env:TEMP\an-test -SourceDir <checkout>`.
+- Not exercised on a clean PC: the winget paths that install YASB, the Nerd Font, Rust and the VS Build Tools.
+- `displayName` in settings.json is the name the greeting uses (the installer asks for it); empty = the Windows account name.

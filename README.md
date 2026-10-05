@@ -1,3 +1,7 @@
+> **Windows (AlphaNotch fork)**: one-command install of Coucou Lite + the YASB "adaptive island" bar:
+> [INSTALL-WINDOWS.md](INSTALL-WINDOWS.md). This is an unofficial personal fork; read [NOTICE-FORK.md](NOTICE-FORK.md)
+> about what is and is not licensed for redistribution. The text below is the upstream README.
+
 <div align="center">
 
 <img src="NotchBuddy/Assets.xcassets/AppIcon.appiconset/icon_256x256.png" width="96" alt="Coucou icon">

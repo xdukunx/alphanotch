@@ -23,6 +23,9 @@ pub struct Settings {
     /// ("antigravity", "opencode", …). Claude Code always has its own pill.
     #[serde(default)]
     pub agent_pills: Vec<String>,
+    /// The name the greeting uses ("Selamat malam, <name>"). Empty = the Windows account name.
+    #[serde(default)]
+    pub display_name: String,
     /// "auto" (default) estimates the place from the IP address; or a city name, e.g. "Surabaya".
     #[serde(default = "default_city")]
     pub weather_city: String,
@@ -65,6 +68,7 @@ impl Default for Settings {
             hooks_installed: false,
             stay_visible: false,
             agent_pills: Vec::new(),
+            display_name: String::new(),
             weather_city: default_city(),
             stocks: default_stocks(),
             model: default_model(),

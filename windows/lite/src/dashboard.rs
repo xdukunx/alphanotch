@@ -69,7 +69,7 @@ fn battery() -> Option<(u8, bool)> {
 
 // ── Greeting ──────────────────────────────────────────────────────────────────
 
-fn greeting() -> (String, String, String) {
+fn greeting(display_name: &str) -> (String, String, String) {
     use windows::Win32::System::SystemInformation::GetLocalTime;
     let t = unsafe { GetLocalTime() };
     let hello = match t.wHour {
@@ -78,7 +78,7 @@ fn greeting() -> (String, String, String) {
         15..=17 => "Selamat sore",
         _ => "Selamat malam",
     };
-    let name = std::env::var("USERNAME").unwrap_or_default();
+    let name = if display_name.trim().is_empty() { std::env::var("USERNAME").unwrap_or_default() } else { display_name.trim().to_string() };
     let days = ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"];
     let months = [
         "Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober",
@@ -219,7 +219,7 @@ impl App {
     pub fn draw_dashboard(&mut self, g: &mut Gfx, v: Rect, n: f32) {
         // The greeting lives in the header row, to the right of the tabs; Mochi sits just before it
         // (see layout). Two short lines: who and what day, then the weather.
-        let (hello, _long, date) = greeting();
+        let (hello, _long, date) = greeting(&self.st.settings.display_name);
         let gx = v.x + 304.0;
         let gy = v.y - 42.0;
         text::draw(g, &hello, gx, gy + 15.0, Face::Bold, 13.0, hex(pal::INK), Align::Left);
