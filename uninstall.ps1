@@ -1,16 +1,16 @@
 <#
 .SYNOPSIS
-  Removes what install.ps1 added: Coucou Lite, its autostart, its hooks, and (optionally) the YASB layout.
+  Removes what install.ps1 added: AlphaNotch, its autostart, its hooks, and (optionally) the YASB layout.
 
 .DESCRIPTION
     irm https://raw.githubusercontent.com/xdukunx/alphanotch/main/uninstall.ps1 | iex
 
   It asks before each part. YASB itself is never uninstalled. Hooks are removed with the same
-  preview + backup flow used to add them, and only Coucou's own entries are touched.
+  preview + backup flow used to add them, and only AlphaNotch's own entries are touched.
 
 .PARAMETER Yes         Do not ask; remove everything this installer added.
 .PARAMETER KeepData    Keep %APPDATA%\Coucou (settings, to-dos, teleprompter script).
-.PARAMETER InstallDir  Where Coucou Lite was installed (default %LOCALAPPDATA%\Coucou).
+.PARAMETER InstallDir  Where AlphaNotch was installed (default %LOCALAPPDATA%\Coucou).
 #>
 [CmdletBinding()]
 param(
@@ -47,8 +47,8 @@ try {
             $tmp = Join-Path $env:TEMP ('alphanotch-un-' + $agent + '.txt')
             Start-Process -FilePath $exe -ArgumentList @('--agent-hooks', $agent, 'status', '--out', ('"' + $tmp + '"')) -Wait -NoNewWindow
             if ((Test-Path $tmp) -and (Select-String -Path $tmp -Pattern 'installed: true' -SimpleMatch -Quiet)) {
-                Step ('Hook Coucou di ' + $agent)
-                if (Ask ('Hapus hook Coucou dari ' + $agent + '? (backup dibuat, entri lain tidak disentuh)') $true) {
+                Step ('Hook AlphaNotch di ' + $agent)
+                if (Ask ('Hapus hook AlphaNotch dari ' + $agent + '? (backup dibuat, entri lain tidak disentuh)') $true) {
                     $prev = Join-Path $env:TEMP ('alphanotch-un-' + $agent + '-prev.txt')
                     Start-Process -FilePath $exe -ArgumentList @('--agent-hooks', $agent, 'preview', '--out', ('"' + $prev + '"')) -Wait -NoNewWindow
                     $fp = (Get-Content $prev | Where-Object { $_ -match '^fingerprint:\s*(\S+)' } | ForEach-Object { $Matches[1] } | Select-Object -First 1)
@@ -63,8 +63,8 @@ try {
     }
 
     # 2. the app
-    Step 'Coucou Lite'
-    if (Ask 'Hentikan dan hapus Coucou Lite beserta autostart-nya?' $true) {
+    Step 'AlphaNotch'
+    if (Ask 'Hentikan dan hapus AlphaNotch beserta autostart-nya?' $true) {
         Get-Process coucou-lite -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe } | Stop-Process -Force -ErrorAction SilentlyContinue
         Start-Sleep -Milliseconds 800
         Remove-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'Coucou' -ErrorAction SilentlyContinue
@@ -80,7 +80,7 @@ try {
     # 3. data
     $data = Join-Path $env:APPDATA 'Coucou'
     if ((Test-Path $data) -and -not $KeepData) {
-        Step 'Data Coucou'
+        Step 'Data AlphaNotch'
         if (Ask ('Hapus pengaturan, daftar tugas, dan naskah teleprompter di ' + $data + '?') $false) {
             Remove-Item $data -Recurse -Force
             Say '    data dihapus (token Google di Credential Manager tidak ikut terhapus: hapus entri "fr.louisraille.coucou" bila perlu).'

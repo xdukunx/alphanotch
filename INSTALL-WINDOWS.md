@@ -1,6 +1,6 @@
 # AlphaNotch for Windows: one-command install
 
-A notch-style island (Coucou Lite, native, no WebView) plus a YASB "adaptive island" status bar.
+A notch-style island (a personal customisation of Coucou: native, no WebView) plus a YASB "adaptive island" status bar.
 The island shows now playing, a timer, to-dos, today's agenda, stocks, weather, a teleprompter,
 and what your AI coding agents (Claude Code, Antigravity, OpenCode) are doing.
 
@@ -26,9 +26,9 @@ Want to look first? Dry run: it only analyses your PC and prints the plan, and c
    personal YASB config, whether to replace it with the AlphaNotch layout (yours is backed up first).
 3. Installs only what is missing:
    - YASB (or upgrades it: the adaptive bar needs 2.0.7+) and the Nerd Font, with winget
-   - Rust and Visual Studio Build Tools (C++), because **Coucou Lite is built on your PC from source**
+   - Rust and Visual Studio Build Tools (C++), because **AlphaNotch is built on your PC from source**
      (several GB and 5-10 minutes the first time; later runs are much faster)
-4. Installs Coucou Lite to `%LOCALAPPDATA%\Coucou`, writes starter settings, and **starts it at every login**.
+4. Installs AlphaNotch to `%LOCALAPPDATA%\Coucou`, writes starter settings, and **starts it at every login**.
 5. Applies the YASB layout and enables YASB autostart (unless you said keep).
 6. Offers to add Coucou's hooks to **Claude Code** and **Antigravity** (it shows how many lines it adds, takes a
    dated backup, never touches another tool's hooks).
@@ -51,8 +51,8 @@ Run through a script block to pass options, e.g.:
 | `-Name "Budi"` | the name the island greets you with |
 | `-Yasb auto\|apply\|keep\|skip` | `apply` installs/updates YASB and the layout; `keep` leaves YASB's config alone; `skip` ignores YASB |
 | `-NoHooks` | do not touch Claude Code / Antigravity |
-| `-NoAutostart` | do not start Coucou at login |
-| `-NoStart` | do not start Coucou at the end |
+| `-NoAutostart` | do not start AlphaNotch at login |
+| `-NoStart` | do not start AlphaNotch at the end |
 | `-NoSettings` | do not write `%APPDATA%\Coucou\settings.json` |
 | `-Branch`, `-Repo`, `-SourceDir`, `-InstallDir` | where to get the source and where to install it |
 

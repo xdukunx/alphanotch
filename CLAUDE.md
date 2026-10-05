@@ -1,3 +1,9 @@
+# This repository is AlphaNotch
+
+A personal Windows customisation of Coucou (upstream guide below). The app is `windows/lite` (read its `CLAUDE.md`), the installer is `install.ps1`, the YASB layout is `yasb/`. Internal names (`coucou-lite.exe`, `%APPDATA%\Coucou`, the pipe, the registry value, the hook marker `coucou-hook`) are contract values and keep the Coucou name; only text the user sees says AlphaNotch. Do not distribute prebuilt binaries (see `NOTICE-FORK.md`).
+
+---
+
 # Coucou — guide for AI coding agents
 
 Coucou is a native macOS app (`NotchBuddy/`); `windows/` is the Tauri version for Windows and Linux. Mochi, a small animated character living in the MacBook notch, shows AI coding agent sessions (Claude Code, Gemini CLI, Antigravity and more) and a few integrations, and lets the user approve, answer, chat and drop files from the notch.

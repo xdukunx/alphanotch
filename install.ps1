@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  AlphaNotch installer for Windows 10/11: Coucou Lite (the notch island) + the YASB "adaptive island" bar.
+  AlphaNotch installer for Windows 10/11: a notch-style island (a customised Coucou) + the YASB "adaptive island" bar.
 
 .DESCRIPTION
   One command, run in PowerShell:
@@ -12,11 +12,11 @@
 
   What it can do, depending on what it finds:
     - install or upgrade YASB (winget, AmN.yasb) and the JetBrainsMono Nerd Font it uses
-    - install the Rust toolchain + Visual Studio Build Tools if they are missing (needed to BUILD Coucou Lite)
-    - download the source from GitHub and build Coucou Lite on THIS PC (no prebuilt binary is downloaded)
+    - install the Rust toolchain + Visual Studio Build Tools if they are missing (needed to BUILD AlphaNotch)
+    - download the source from GitHub and build AlphaNotch on THIS PC (no prebuilt binary is downloaded)
     - install it to %LOCALAPPDATA%\Coucou and start it at every login
     - apply the AlphaNotch YASB layout (your old YASB config is backed up first)
-    - add Coucou's hooks to Claude Code / Antigravity (shows what changes, backs up first, never touches other tools' hooks)
+    - add AlphaNotch's hooks to Claude Code / Antigravity (shows what changes, backs up first, never touches other tools' hooks)
 
   With parameters (use a script block):
     & ([scriptblock]::Create((irm https://raw.githubusercontent.com/xdukunx/alphanotch/main/install.ps1))) -DryRun
@@ -25,11 +25,11 @@
 .PARAMETER Yes          Do not ask; accept the plan.
 .PARAMETER Yasb         auto (default) | apply | keep | skip. apply = install/upgrade YASB and apply the layout; keep = leave YASB's config alone.
 .PARAMETER NoHooks      Do not touch Claude Code / Antigravity hooks.
-.PARAMETER NoAutostart  Do not start Coucou at login.
-.PARAMETER NoStart      Do not start Coucou at the end.
+.PARAMETER NoAutostart  Do not start AlphaNotch at login.
+.PARAMETER NoStart      Do not start AlphaNotch at the end.
 .PARAMETER NoSettings   Do not write %APPDATA%\Coucou\settings.json.
 .PARAMETER Name         The name the island greets you with. Asked during install when not given.
-.PARAMETER InstallDir   Where Coucou Lite goes (default %LOCALAPPDATA%\Coucou).
+.PARAMETER InstallDir   Where AlphaNotch goes (default %LOCALAPPDATA%\Coucou).
 .PARAMETER SourceDir    Use this local checkout (the folder that contains "windows" and "yasb") instead of downloading.
 .PARAMETER Branch       Branch to download (default main).
 #>
@@ -189,7 +189,7 @@ function Show-Analysis($a) {
         @('Font JetBrainsMono Nerd', $(if ($a.Font) { 'ada' } else { 'belum ada' })),
         @('Rust (cargo)', $(if ($a.Cargo) { 'ada' } else { 'belum ada' })),
         @('Visual Studio Build Tools (C++)', $(if ($a.Msvc) { 'ada' } else { 'belum ada' })),
-        @('Coucou Lite', $(if ($a.CoucouInstalled) { 'sudah terpasang (akan diperbarui)' } else { 'belum terpasang' })),
+        @('AlphaNotch', $(if ($a.CoucouInstalled) { 'sudah terpasang (akan diperbarui)' } else { 'belum terpasang' })),
         @('Claude Code / Desktop', $(if ($a.Claude) { 'terdeteksi' } else { 'tidak terdeteksi' })),
         @('Antigravity', $(if ($a.Antigravity) { 'terdeteksi' } else { 'tidak terdeteksi' })),
         @('OpenCode', $(if ($a.OpenCode) { 'terdeteksi' } else { 'tidak terdeteksi' }))
@@ -247,21 +247,21 @@ function Show-Plan($a, $p) {
     if ($p.Font) { & $line 'Memasang font JetBrainsMono Nerd Font (untuk ikon bar).' }
     if ($p.YasbInstall) { & $line 'Memasang YASB (winget AmN.yasb).' }
     if ($p.YasbUpgrade) { & $line ('Meng-upgrade YASB dari v{0} ke versi terbaru (perlu 2.0.7+ untuk bar "adaptive island").' -f $a.YasbVersion) }
-    if ($p.Rust) { & $line 'Memasang Rust (winget Rustlang.Rustup), dibutuhkan untuk membangun Coucou Lite.' }
+    if ($p.Rust) { & $line 'Memasang Rust (winget Rustlang.Rustup), dibutuhkan untuk membangun AlphaNotch.' }
     if ($p.Msvc) { & $line 'Memasang Visual Studio Build Tools + C++ (besar: +-3-5 GB, ada prompt UAC).' }
-    if ($SourceDir) { & $line ('Memakai source lokal ({0}) dan MEMBANGUN Coucou Lite di PC ini.' -f $SourceDir) }
-    else { & $line ('Mengunduh source dari github.com/{0} ({1}) dan MEMBANGUN Coucou Lite di PC ini (+-5-10 menit).' -f $Repo, $Branch) }
+    if ($SourceDir) { & $line ('Memakai source lokal ({0}) dan MEMBANGUN AlphaNotch di PC ini.' -f $SourceDir) }
+    else { & $line ('Mengunduh source dari github.com/{0} ({1}) dan MEMBANGUN AlphaNotch di PC ini (+-5-10 menit).' -f $Repo, $Branch) }
     & $line ('Memasang ke {0}.' -f $InstallDir)
-    if (-not $NoSettings) { & $line 'Menulis pengaturan awal Coucou (tetap di layar, pill agent: sesuai yang terdeteksi).' }
-    if (-not $NoAutostart) { & $line 'Mengaktifkan autostart Coucou saat login.' }
+    if (-not $NoSettings) { & $line 'Menulis pengaturan awal AlphaNotch (tetap di layar, pill agent: sesuai yang terdeteksi).' }
+    if (-not $NoAutostart) { & $line 'Mengaktifkan autostart AlphaNotch saat login.' }
     switch ($p.YasbMode) {
         'apply' { & $line 'Menerapkan tema YASB "adaptive island" (konfigurasi lama dibackup dulu), lalu autostart YASB.' }
         'ask' { & $line 'Menanyakan apakah tema YASB "adaptive island" diterapkan (konfigurasi YASB-mu sekarang akan dibackup).' }
         'keep' { & $line 'YASB dibiarkan apa adanya (konfigurasi tidak disentuh).' }
         'skip' { & $line 'YASB dilewati.' }
     }
-    foreach ($h in $p.Hooks) { & $line ('Menawarkan hook Coucou untuk {0} (ditampilkan dulu, backup dibuat, hook lain tidak disentuh).' -f $h) }
-    if (-not $NoStart) { & $line 'Menjalankan Coucou.' }
+    foreach ($h in $p.Hooks) { & $line ('Menawarkan hook AlphaNotch untuk {0} (ditampilkan dulu, backup dibuat, hook lain tidak disentuh).' -f $h) }
+    if (-not $NoStart) { & $line 'Menjalankan AlphaNotch.' }
     Write-Host ''
     Say ('    Log lengkap: ' + $LogFile) DarkGray
     Say '    Pencabutan kapan saja: uninstall.ps1 (di repo yang sama).' DarkGray
@@ -339,7 +339,7 @@ function Get-Source {
 }
 
 function Build-Coucou($src) {
-    Step 'Membangun Coucou Lite (beberapa menit; jangan ditutup)'
+    Step 'Membangun AlphaNotch (beberapa menit; jangan ditutup)'
     $cargo = Find-Cargo
     if (-not $cargo) { throw 'cargo tidak ditemukan.' }
     $env:CARGO_TARGET_DIR = Join-Path $env:LOCALAPPDATA 'AlphaNotch\target'
@@ -365,7 +365,7 @@ function Install-Files($built) {
 }
 
 function Write-Settings($p) {
-    Step 'Pengaturan Coucou'
+    Step 'Pengaturan AlphaNotch'
     $dir = Join-Path $env:APPDATA 'Coucou'
     $path = Join-Path $dir 'settings.json'
     New-Item -ItemType Directory -Path $dir -Force | Out-Null
@@ -401,10 +401,10 @@ function Write-Settings($p) {
 }
 
 function Set-Autostart {
-    Step 'Autostart Coucou'
+    Step 'Autostart AlphaNotch'
     $key = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
     Set-ItemProperty -Path $key -Name 'Coucou' -Value ('"' + (Join-Path $InstallDir 'coucou-lite.exe') + '"')
-    Ok 'Coucou akan jalan otomatis saat login'
+    Ok 'AlphaNotch akan jalan otomatis saat login'
 }
 
 function Apply-YasbLayout($src, $a) {
@@ -438,7 +438,7 @@ function Install-Hooks($agent, $exe) {
     $err = $txt | Where-Object { $_ -match '^error:' }
     if ($err -or -not $fp) { Warn ($agent + ': ' + ($err -join ' ') + ' (dilewati)'); return }
     Say ('    ' + $agent + ': akan MENAMBAH sekitar ' + $added + ' baris di ' + $file + ' (backup dibuat; entri alat lain tidak disentuh).')
-    if (-not (Ask ('Pasang hook Coucou untuk ' + $agent + '?') $true)) { Say '    dilewati.'; return }
+    if (-not (Ask ('Pasang hook AlphaNotch untuk ' + $agent + '?') $true)) { Say '    dilewati.'; return }
     $out2 = Join-Path $env:TEMP ('alphanotch-hook-' + $agent + '-install.txt')
     Start-Process -FilePath $exe -ArgumentList @('--agent-hooks', $agent, 'install', '--fingerprint', $fp, '--out', ('"' + $out2 + '"')) -Wait -NoNewWindow
     if (Test-Path $out2) { Get-Content $out2 | ForEach-Object { Say ('    ' + $_) } }
@@ -448,7 +448,7 @@ function Install-Hooks($agent, $exe) {
 
 try {
     Say ''
-    Say '  AlphaNotch installer  (Coucou Lite + YASB adaptive island)' Cyan
+    Say '  AlphaNotch installer  (notch island + YASB adaptive island)' Cyan
     Say '  Menganalisis dulu, mengubah sesudah kamu setuju.' DarkGray
 
     $a = Analyse
@@ -497,14 +497,14 @@ try {
     }
 
     if (-not $NoStart) {
-        Step 'Menjalankan Coucou'
+        Step 'Menjalankan AlphaNotch'
         Start-Process -FilePath $exe
         Start-Sleep -Seconds 4
-        if (Get-Process coucou-lite -ErrorAction SilentlyContinue) { Ok 'Coucou berjalan (island ada di tengah atas layar)' } else { Warn ('Coucou tidak terlihat berjalan. Cek log: ' + (Join-Path $env:LOCALAPPDATA 'Coucou\coucou.log')) }
+        if (Get-Process coucou-lite -ErrorAction SilentlyContinue) { Ok 'AlphaNotch berjalan (island ada di tengah atas layar)' } else { Warn ('AlphaNotch tidak terlihat berjalan. Cek log: ' + (Join-Path $env:LOCALAPPDATA 'Coucou\coucou.log')) }
     }
 
     Step 'Selesai'
-    Say ('    Coucou Lite : ' + $InstallDir)
+    Say ('    AlphaNotch  : ' + $InstallDir)
     Say '    Dashboard   : arahkan kursor ke tengah atas layar lalu klik; menu tab ada di atas island.'
     Say '    Opsional    : hubungkan Google Tasks/Calendar lewat docs/GOOGLE-SETUP.md (butuh OAuth client milikmu sendiri).'
     Say '    Mencabut    : jalankan uninstall.ps1 dari repo ini.'

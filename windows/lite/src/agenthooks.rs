@@ -111,8 +111,8 @@ fn agy_read(path: &PathBuf) -> Result<Value, String> {
             }
             match serde_json::from_slice::<Value>(text) {
                 Ok(v) if v.is_object() => Ok(v),
-                Ok(_) => Err(format!("{} isn't a JSON object, so Coucou won't touch it.", path.display())),
-                Err(e) => Err(format!("{} isn't valid JSON ({e}); Coucou won't overwrite it.", path.display())),
+                Ok(_) => Err(format!("{} isn't a JSON object, so AlphaNotch won't touch it.", path.display())),
+                Err(e) => Err(format!("{} isn't valid JSON ({e}); AlphaNotch won't overwrite it.", path.display())),
             }
         }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(json!({})),

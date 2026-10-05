@@ -95,7 +95,7 @@ impl Tray {
                 hIcon: icon,
                 ..Default::default()
             };
-            for (i, c) in "Coucou".encode_utf16().enumerate() {
+            for (i, c) in "AlphaNotch".encode_utf16().enumerate() {
                 nid.szTip[i] = c;
             }
             let _ = Shell_NotifyIconW(NIM_ADD, &nid);
@@ -118,7 +118,7 @@ impl Tray {
             let add = |id: usize, text: PCWSTR, flags| {
                 let _ = AppendMenuW(menu, flags, id, text);
             };
-            add(1, w!("Open Coucou"), MF_STRING);
+            add(1, w!("Open AlphaNotch"), MF_STRING);
             let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
             add(2, w!("Settings…"), MF_STRING);
             add(3, w!("Pause"), if paused { MF_STRING | MF_CHECKED } else { MF_STRING });

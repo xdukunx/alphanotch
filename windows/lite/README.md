@@ -1,3 +1,5 @@
+> In this repository (**AlphaNotch**) this crate is the whole app. Text below is the original Coucou Lite description.
+
 # Coucou Lite
 
 The same Mochi, the same island, **without a webview**. One small Win32 window drawn

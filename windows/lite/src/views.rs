@@ -413,7 +413,7 @@ impl App {
         let title = task.and_then(|t| t.steps.last().cloned()).unwrap_or_else(|| "Claude needs an answer.".into());
         let title = text::ellipsize(&title, Face::Medium, 15.0, w);
         t(g, &title, x, top + 16.0 + 5.0 + 10.0, Face::Medium, 15.0, hex(pal::INK));
-        t(g, "Answer in your terminal — Coucou can't reply for you yet.", x, top + 16.0 + 20.0 + 10.0 + 9.0, Face::Regular, 13.0, hex(pal::DIM));
+        t(g, "Answer in your terminal — AlphaNotch can't reply for you yet.", x, top + 16.0 + 20.0 + 10.0 + 9.0, Face::Regular, 13.0, hex(pal::DIM));
     }
 
     // ── Error ─────────────────────────────────────────────────────────────────

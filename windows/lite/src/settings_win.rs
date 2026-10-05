@@ -151,7 +151,7 @@ fn create() {
         let created = CreateWindowExW(
             Default::default(),
             class,
-            w!("Settings — Coucou"),
+            w!("Settings — AlphaNotch"),
             WS_OVERLAPPEDWINDOW,
             CW_USEDEFAULT, CW_USEDEFAULT, 620, 760,
             None, None, Some(hinst.into()), None,
@@ -333,7 +333,7 @@ impl Win {
         let cw = (lw - 2.0 * m).max(380.0);
         let mut y = 22.0;
 
-        text::draw(g, "Coucou", m, y + 12.0, Face::Bold, 20.0, hex(pal::INK), Align::Left);
+        text::draw(g, "AlphaNotch", m, y + 12.0, Face::Bold, 20.0, hex(pal::INK), Align::Left);
         text::draw(g, concat!("Lite ", env!("CARGO_PKG_VERSION")), m + 78.0, y + 15.0, Face::Regular, 11.0, hex(pal::DIM3), Align::Left);
         y += 40.0;
 
@@ -423,7 +423,7 @@ impl Win {
         match &self.mode {
             HooksMode::Normal => {
                 let hint = if installed {
-                    "Coucou is hooked into your Claude Code sessions. Tool calls, questions and permission requests show up in the island, and you can answer them there."
+                    "AlphaNotch is hooked into your Claude Code sessions. Tool calls, questions and permission requests show up in the island, and you can answer them there."
                 } else {
                     "Install the hooks to see your Claude Code sessions in the island and approve permissions without leaving what you are doing."
                 };
@@ -433,7 +433,7 @@ impl Win {
                 Self::kv(g, x, y, w, "Relay", hpath, Some(ready));
                 y += 28.0;
                 if !ready {
-                    y += Self::notice(g, x, y, w, "coucou-hook.exe is not in place yet. Restart Coucou; if it still fails, build it with `cargo build -p coucou-hook`.", false, true) + 10.0;
+                    y += Self::notice(g, x, y, w, "coucou-hook.exe is not in place yet. Restart AlphaNotch; if it still fails, build it with `cargo build -p coucou-hook`.", false, true) + 10.0;
                 }
                 let label = if installed { "Reinstall hooks…" } else { "Install hooks…" };
                 let (clicked, bw) = if live {
@@ -460,7 +460,7 @@ impl Win {
                 let hint = if install {
                     "This is exactly what will change in your settings.json. Your own hooks are left untouched."
                 } else {
-                    "This removes Coucou's entries only. Your own hooks are left untouched."
+                    "This removes AlphaNotch's entries only. Your own hooks are left untouched."
                 };
                 y += Self::para(g, x, y, w, hint) + 8.0;
                 // Diff box.
