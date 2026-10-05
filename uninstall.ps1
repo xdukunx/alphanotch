@@ -3,7 +3,7 @@
   Removes what install.ps1 added: Coucou Lite, its autostart, its hooks, and (optionally) the YASB layout.
 
 .DESCRIPTION
-    irm https://raw.githubusercontent.com/xdukunx/coucou-lite/lite-native/uninstall.ps1 | iex
+    irm https://raw.githubusercontent.com/xdukunx/alphanotch/main/uninstall.ps1 | iex
 
   It asks before each part. YASB itself is never uninstalled. Hooks are removed with the same
   preview + backup flow used to add them, and only Coucou's own entries are touched.

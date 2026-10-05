@@ -5,7 +5,7 @@
 .DESCRIPTION
   One command, run in PowerShell:
 
-    irm https://raw.githubusercontent.com/xdukunx/coucou-lite/lite-native/install.ps1 | iex
+    irm https://raw.githubusercontent.com/xdukunx/alphanotch/main/install.ps1 | iex
 
   It FIRST analyses your PC (YASB, fonts, Rust/Visual Studio Build Tools, Claude Code, Antigravity, OpenCode...),
   shows the plan, and only then asks once before changing anything. Nothing is hidden: the whole script is this file.
@@ -19,7 +19,7 @@
     - add Coucou's hooks to Claude Code / Antigravity (shows what changes, backs up first, never touches other tools' hooks)
 
   With parameters (use a script block):
-    & ([scriptblock]::Create((irm https://raw.githubusercontent.com/xdukunx/coucou-lite/lite-native/install.ps1))) -DryRun
+    & ([scriptblock]::Create((irm https://raw.githubusercontent.com/xdukunx/alphanotch/main/install.ps1))) -DryRun
 
 .PARAMETER DryRun       Analyse and print the plan, change nothing.
 .PARAMETER Yes          Do not ask; accept the plan.
@@ -31,7 +31,7 @@
 .PARAMETER Name         The name the island greets you with. Asked during install when not given.
 .PARAMETER InstallDir   Where Coucou Lite goes (default %LOCALAPPDATA%\Coucou).
 .PARAMETER SourceDir    Use this local checkout (the folder that contains "windows" and "yasb") instead of downloading.
-.PARAMETER Branch       Branch to download (default lite-native).
+.PARAMETER Branch       Branch to download (default main).
 #>
 [CmdletBinding()]
 param(
@@ -45,8 +45,8 @@ param(
     [string]$Name = '',
     [string]$InstallDir = (Join-Path $env:LOCALAPPDATA 'Coucou'),
     [string]$SourceDir = '',
-    [string]$Branch = 'lite-native',
-    [string]$Repo = 'xdukunx/coucou-lite'
+    [string]$Branch = 'main',
+    [string]$Repo = 'xdukunx/alphanotch'
 )
 
 $ErrorActionPreference = 'Stop'

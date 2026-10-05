@@ -9,13 +9,13 @@ and what your AI coding agents (Claude Code, Antigravity, OpenCode) are doing.
 Open **PowerShell** (a normal one, not "as administrator") and run:
 
 ```powershell
-irm https://raw.githubusercontent.com/xdukunx/coucou-lite/lite-native/install.ps1 | iex
+irm https://raw.githubusercontent.com/xdukunx/alphanotch/main/install.ps1 | iex
 ```
 
 Want to look first? Dry run: it only analyses your PC and prints the plan, and changes nothing.
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/xdukunx/coucou-lite/lite-native/install.ps1))) -DryRun
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/xdukunx/alphanotch/main/install.ps1))) -DryRun
 ```
 
 ## What it does
@@ -41,7 +41,7 @@ No prebuilt binary is downloaded. Everything it does is in [`install.ps1`](insta
 Run through a script block to pass options, e.g.:
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/xdukunx/coucou-lite/lite-native/install.ps1))) -Yes -Name "Budi" -Yasb keep
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/xdukunx/alphanotch/main/install.ps1))) -Yes -Name "Budi" -Yasb keep
 ```
 
 | Option | Meaning |
@@ -71,7 +71,7 @@ the small arrow at the bottom folds it back.
 ## Uninstall
 
 ```powershell
-irm https://raw.githubusercontent.com/xdukunx/coucou-lite/lite-native/uninstall.ps1 | iex
+irm https://raw.githubusercontent.com/xdukunx/alphanotch/main/uninstall.ps1 | iex
 ```
 
 It asks before each part: hooks (removed with a backup), the app and its autostart, your data, and the YASB layout
