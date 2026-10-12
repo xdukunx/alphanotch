@@ -403,8 +403,21 @@ function Write-Settings($p) {
 function Set-Autostart {
     Step 'Autostart AlphaNotch'
     $key = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
-    Set-ItemProperty -Path $key -Name 'Coucou' -Value ('"' + (Join-Path $InstallDir 'coucou-lite.exe') + '"')
-    Ok 'AlphaNotch akan jalan otomatis saat login'
+    # A tiny hidden watchdog instead of a bare Run entry: it starts the island at login and
+    # again whenever it has died (a Scheduled Task could not launch it on the maintainer's PC).
+    $guard = Join-Path $InstallDir 'keepalive.ps1'
+    $lines = @(
+        '$exe = Join-Path $PSScriptRoot ''coucou-lite.exe''',
+        'while ($true) {',
+        '    if (-not (Get-Process -Name coucou-lite -ErrorAction SilentlyContinue)) { Start-Process $exe }',
+        '    Start-Sleep -Seconds 20',
+        '}'
+    )
+    Set-Content -Path $guard -Value $lines -Encoding ASCII
+    $cmd = 'powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + $guard + '"'
+    Set-ItemProperty -Path $key -Name 'AlphaNotchKeepalive' -Value $cmd
+    Remove-ItemProperty -Path $key -Name 'Coucou' -ErrorAction SilentlyContinue
+    Ok 'AlphaNotch akan jalan otomatis saat login dan hidup lagi kalau mati (keepalive.ps1)'
 }
 
 function Apply-YasbLayout($src, $a) {

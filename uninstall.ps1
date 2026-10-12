@@ -65,10 +65,16 @@ try {
     # 2. the app
     Step 'AlphaNotch'
     if (Ask 'Hentikan dan hapus AlphaNotch beserta autostart-nya?' $true) {
+        # the watchdog first, or it would start the app again
+        Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" -ErrorAction SilentlyContinue |
+            Where-Object { $_.CommandLine -match 'keepalive\.ps1' } |
+            ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
         Get-Process coucou-lite -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe } | Stop-Process -Force -ErrorAction SilentlyContinue
         Start-Sleep -Milliseconds 800
-        Remove-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'Coucou' -ErrorAction SilentlyContinue
-        foreach ($f in 'coucou-lite.exe', 'coucou-hook.exe', 'bin\coucou-hook.exe') {
+        $run = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+        Remove-ItemProperty -Path $run -Name 'Coucou' -ErrorAction SilentlyContinue
+        Remove-ItemProperty -Path $run -Name 'AlphaNotchKeepalive' -ErrorAction SilentlyContinue
+        foreach ($f in 'coucou-lite.exe', 'coucou-hook.exe', 'bin\coucou-hook.exe', 'keepalive.ps1') {
             $p = Join-Path $InstallDir $f
             if (Test-Path $p) { Remove-Item $p -Force }
         }

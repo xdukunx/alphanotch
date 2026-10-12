@@ -136,3 +136,5 @@ and the heights in `layout.rs` (`layout()`), and `LEFT_W` in `dashboard.rs`.
   `install.ps1 -Yes -Yasb skip -NoHooks -NoAutostart -NoStart -NoSettings -InstallDir $env:TEMP\an-test -SourceDir <checkout>`.
 - Not exercised on a clean PC: the winget paths that install YASB, the Nerd Font, Rust and the VS Build Tools.
 - `displayName` in settings.json is the name the greeting uses (the installer asks for it); empty = the Windows account name.
+
+- Autostart (2026-10-12): the installer writes keepalive.ps1 next to the exe and a Run entry AlphaNotchKeepalive (hidden PowerShell loop, every 20 s starts the island if it is not running). A Scheduled Task was tried first and could not launch the exe on the maintainer's PC (0x80070002). Tray Quit therefore brings it back within 20 s; uninstall.ps1 stops the watchdog first.
