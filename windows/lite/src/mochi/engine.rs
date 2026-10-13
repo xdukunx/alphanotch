@@ -149,7 +149,7 @@ struct StateCfg {
 
 #[derive(Clone, Copy, PartialEq)]
 enum PKind {
-    Heart, Star, Spark, Sweat, Z,
+    Heart, Star, Spark, Sweat, Z, Note,
 }
 
 struct Particle {
@@ -255,6 +255,12 @@ pub fn hex_to_rgb(h: &str) -> Rgb {
 
 pub struct BotEngine {
     pub is_mini: bool,
+    /// Music is playing: Mochi dances while he has nothing else to report.
+    pub dancing: bool,
+    /// Beats per second of the dance (a little different per track).
+    pub dance_bps: f32,
+    dance_k: f32,
+    dance_phase: f32,
     /// Solid body colour for mini bots / integration pills (None = Mochi plum).
     pub body_color: Option<Rgb>,
 
@@ -346,6 +352,7 @@ impl BotEngine {
             tweens: HashMap::new(), particles: Vec::new(), delayed: Vec::new(),
             look_x: 0.0, look_y: 0.0,
             t0: n, next_blink: n + 1.8, wave_until: 0.0, wave_start: 0.0, greet_token: 0,
+            dancing: false, dance_bps: 2.0, dance_k: 0.0, dance_phase: 0.0,
             last_ambient: 0.0, slap_times: Vec::new(), mini_look: (0.0, 0.0), mini_look_next: 0.0,
             rng: 0x9E37_79B9_7F4A_7C15 ^ (n.to_bits() as u64),
             dizzy_triggered: false, sounds: Vec::new(),
@@ -654,6 +661,8 @@ impl BotEngine {
             || !self.delayed.is_empty()
             || cfg.bounces || cfg.scans || cfg.breathes || cfg.zz || cfg.sweat
             || self.is_mini
+            || self.dance_k > 0.005
+            || (self.dancing && !self.is_mini && self.state == BotState::Idle)
             || (self.state != BotState::Idle && self.state != BotState::Sleeping)
             || self.medal_lit.iter().enumerate().any(|(i, v)| (v - self.medal_target(i)).abs() > 0.01)
             || (self.tg_yaw - self.yaw).abs() > 0.002
@@ -756,7 +765,23 @@ impl BotEngine {
             self.tg_tilt = -0.06 + (TAU * 1.2 * wt).sin() * 0.07;
         }
 
-        let bounce = if self.cfg.bounces { -(t * 5.2).sin().abs() * 0.07 } else { 0.0 };
+        // Dancing to the music: a hop on every beat, a sway every two, a squash at the bottom.
+        let want_dance = self.dancing && !self.is_mini && self.state == BotState::Idle;
+        self.dance_k += ((if want_dance { 1.0 } else { 0.0 }) - self.dance_k) * (1.0 - 0.003f32.powf(dt));
+        if self.dance_k > 0.005 {
+            self.dance_phase += dt * PI * self.dance_bps;
+        }
+        let dk = self.dance_k;
+        let mut hop = 0.0;
+        if dk > 0.01 {
+            self.tg_tilt += dk * 0.13 * (self.dance_phase * 0.5).sin();
+            hop = -self.dance_phase.sin().abs() * 0.09 * dk;
+            if dk > 0.4 {
+                self.eye_override = Some(EyeShape::Happy);
+                self.eye_override_until = n + 0.25;
+            }
+        }
+        let bounce = (if self.cfg.bounces { -(t * 5.2).sin().abs() * 0.07 } else { 0.0 }) + hop;
         let k_gen = 1.0 - 0.0008f32.powf(dt);
         if !self.locked(Prop::Oy) {
             self.oy += (bounce - self.oy) * k_gen;
@@ -772,6 +797,12 @@ impl BotEngine {
         } else {
             self.tg_sy = 1.0;
             self.tg_sx = 1.0;
+        }
+
+        if dk > 0.01 {
+            let p = self.dance_phase.sin().abs();
+            self.tg_sy = 1.0 + dk * 0.06 * (p - 0.5);
+            self.tg_sx = 1.0 - dk * 0.035 * (p - 0.5);
         }
 
         if self.is_mini && n > self.mini_next_behavior {
@@ -812,6 +843,9 @@ impl BotEngine {
             }
             if !self.is_mini && self.cfg.sweat && self.rnd() < 0.5 {
                 self.emit(PKind::Sweat, 1);
+            }
+            if self.dance_k > 0.5 && !self.is_mini {
+                self.emit(PKind::Note, 1);
             }
         }
 
@@ -939,9 +973,10 @@ impl BotEngine {
         }
 
         // Headphones pump while Claude works or thinks.
-        let beating = matches!(self.state, BotState::Working | BotState::Thinking | BotState::Searching);
+        let dancing = self.dance_k > 0.1;
+        let beating = dancing || matches!(self.state, BotState::Working | BotState::Thinking | BotState::Searching);
         let rate = if self.state == BotState::Thinking { 3.6 } else { 7.5 };
-        let bt = (0.5 + 0.5 * (t * rate).sin()).powi(3);
+        let bt = if dancing { self.dance_phase.sin().abs().powi(3) } else { (0.5 + 0.5 * (t * rate).sin()).powi(3) };
         self.beat += ((if beating { bt } else { 0.0 }) - self.beat) * (1.0 - 0.0005f32.powf(dt));
 
         // Crown jingle when something needs the user.
@@ -1374,6 +1409,10 @@ impl BotEngine {
                 PKind::Z => {
                     text::draw(g, "z", 0.0, 0.0, Face::Bold, sz * 1.9, rgb(209, 219, 235), Align::Center);
                 }
+                PKind::Note => {
+                    g.rotate((p.age * 3.0).sin() * 0.25);
+                    text::draw(g, "\u{266A}", 0.0, 0.0, Face::Bold, sz * 2.4, rgb(143, 211, 255), Align::Center);
+                }
             }
             g.restore();
         }
@@ -1436,4 +1475,45 @@ fn rr_point(ca: f32, sa: f32, w: f32, h: f32, cr: f32) -> (f32, f32) {
         }
     }
     (kx * w, ky * h)
+}
+
+#[cfg(test)]
+mod dance_tests {
+    use super::*;
+
+    #[test]
+    fn music_makes_mochi_hop_and_the_dance_stops_with_it() {
+        let mut e = BotEngine::new();
+        e.dancing = true;
+        let (mut lo, mut hi) = (0.0f32, 0.0f32);
+        let (mut tmin, mut tmax) = (0.0f32, 0.0f32);
+        for _ in 0..300 {
+            e.update(1.0 / 60.0);
+            lo = lo.min(e.oy);
+            hi = hi.max(e.oy);
+            tmin = tmin.min(e.tilt);
+            tmax = tmax.max(e.tilt);
+        }
+        assert!(hi - lo > 0.04, "he must hop on the beat (oy range {})", hi - lo);
+        assert!(tmax - tmin > 0.08, "and sway (tilt range {})", tmax - tmin);
+        assert!(e.dance_k > 0.9);
+        assert!(e.busy(), "the frame loop has to stay awake while he dances");
+
+        e.dancing = false;
+        for _ in 0..900 {
+            e.update(1.0 / 60.0);
+        }
+        assert!(e.dance_k < 0.005, "the dance fades out when the music stops");
+    }
+
+    #[test]
+    fn he_does_not_dance_over_a_permission_request() {
+        let mut e = BotEngine::new();
+        e.dancing = true;
+        e.set_state(BotState::Approval, true);
+        for _ in 0..240 {
+            e.update(1.0 / 60.0);
+        }
+        assert!(e.dance_k < 0.01, "status first, dancing second");
+    }
 }

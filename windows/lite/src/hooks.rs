@@ -35,6 +35,9 @@ pub const HOOK_EVENTS: &[(&str, u64)] = &[
     ("SubagentStop", 10),
 ];
 
+/// Timeout of the dedicated `AskUserQuestion` hook: a person has to read and answer.
+const ASK_TIMEOUT: u64 = 130;
+
 /// Marker that identifies a Coucou entry inside settings.json.
 const MARKER: &str = "coucou-hook";
 
@@ -45,6 +48,8 @@ pub struct HookStatus {
     pub settings_path: String,
     pub hook_path: String,
     pub hook_ready: bool,
+    /// The dedicated hook that lets the island answer Claude's questions is present.
+    pub ask_ready: bool,
 }
 
 #[derive(Serialize)]
@@ -116,6 +121,12 @@ fn hook_command(event: &str) -> String {
     format!("\"{exe}\" {event}")
 }
 
+/// `"exe" --ask`: matched on AskUserQuestion by Claude Code.
+fn ask_command() -> String {
+    let exe = settings::hook_exe_path().to_string_lossy().replace('\\', "/");
+    format!("\"{exe}\" --ask")
+}
+
 fn entry_is_ours(entry: &Value) -> bool {
     entry
         .get("hooks")
@@ -154,6 +165,16 @@ fn merged(existing: &Value) -> Value {
                 "timeout": timeout,
             }]
         }));
+        if *event == "PreToolUse" {
+            list.push(json!({
+                "matcher": "AskUserQuestion",
+                "hooks": [{
+                    "type": "command",
+                    "command": ask_command(),
+                    "timeout": ASK_TIMEOUT,
+                }]
+            }));
+        }
         hooks.insert((*event).to_string(), Value::Array(list));
     }
 
@@ -242,8 +263,26 @@ pub fn status() -> HookStatus {
                 .any(entry_is_ours)
         })
         .unwrap_or(false);
+    let ask_ready = current
+        .get("hooks")
+        .and_then(|h| h.get("PreToolUse"))
+        .and_then(Value::as_array)
+        .map(|list| {
+            list.iter().filter(|e| entry_is_ours(e)).any(|e| {
+                e.get("hooks")
+                    .and_then(Value::as_array)
+                    .map(|hs| {
+                        hs.iter().any(|h| {
+                            h.get("command").and_then(Value::as_str).map(|c| c.ends_with("--ask")).unwrap_or(false)
+                        })
+                    })
+                    .unwrap_or(false)
+            })
+        })
+        .unwrap_or(false);
     let hook_path = settings::hook_exe_path();
     HookStatus {
+        ask_ready,
         installed,
         settings_path: settings_path().to_string_lossy().to_string(),
         hook_ready: hook_path.exists(),
@@ -466,6 +505,18 @@ mod tests {
         assert_eq!(parse_settings(b"", WHERE).unwrap(), json!({}));
         assert_eq!(parse_settings(b"  
 	 ", WHERE).unwrap(), json!({}));
+    }
+
+    #[test]
+    fn the_ask_hook_is_matched_on_the_question_tool_and_never_duplicated() {
+        let after = merged(&serde_json::json!({}));
+        let pre = after["hooks"]["PreToolUse"].as_array().unwrap();
+        let ask = pre.iter().find(|e| e["matcher"] == "AskUserQuestion").expect("ask entry");
+        let cmd = ask["hooks"][0]["command"].as_str().unwrap();
+        assert!(cmd.ends_with(" --ask") && cmd.contains("coucou-hook"), "{cmd}");
+        assert_eq!(ask["hooks"][0]["timeout"], 130);
+        let twice = merged(&after);
+        assert_eq!(twice["hooks"]["PreToolUse"].as_array().unwrap().len(), pre.len());
     }
 
     #[test]

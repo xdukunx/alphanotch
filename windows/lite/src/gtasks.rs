@@ -58,10 +58,115 @@ struct Shared {
     ops: Vec<Op>,
     access: Option<(String, Instant)>,
     list: Option<String>,
+    /// The last thing worth telling the user (import result, why a login failed…).
+    note: String,
 }
 
-static S: Mutex<Shared> = Mutex::new(Shared { events: Vec::new(), cal_denied: false, status: Status::NoClient, remote: None, ops: Vec::new(), access: None, list: None });
+static S: Mutex<Shared> = Mutex::new(Shared { events: Vec::new(), cal_denied: false, status: Status::NoClient, remote: None, ops: Vec::new(), access: None, list: None, note: String::new() });
 static KICK: Notify = Notify::const_new();
+/// Wakes a sign-in that is waiting for the browser so it can be cancelled or restarted.
+static CANCEL: Notify = Notify::const_new();
+
+fn set_note(s: impl Into<String>) {
+    if let Ok(mut st) = S.lock() {
+        st.note = s.into();
+    }
+}
+
+/// The last result worth showing next to the status (empty when there is none).
+pub fn note() -> String {
+    S.lock().map(|s| s.note.clone()).unwrap_or_default()
+}
+
+fn friendly(e: &str) -> String {
+    match e {
+        "login timed out" => "Waktu login habis (4 menit). Klik Masuk Google lagi.".into(),
+        "access_denied" => "Ditolak Google. Status aplikasi harus In production, atau emailmu harus terdaftar sebagai Test user.".into(),
+        "admin_policy_enforced" => "Akun ini diblokir administrator domain. Pakai akun Gmail pribadi.".into(),
+        "invalid_client" | "deleted_client" => "Client OAuth tidak valid atau sudah dihapus. Ganti client dengan JSON baru.".into(),
+        "cancelled" => "Login dibatalkan.".into(),
+        other => other.to_string(),
+    }
+}
+
+/// Stops a sign-in that is waiting for the browser.
+pub fn cancel_login() {
+    if status() == Status::LoggingIn {
+        CANCEL.notify_waiters();
+        set_note("Login dibatalkan.");
+        refresh_status();
+    }
+}
+
+/// Signs in again from scratch: forgets the token (keeps the client) and opens the browser.
+pub fn relogin() {
+    if !secrets::present(KEY_CLIENT) {
+        return;
+    }
+    CANCEL.notify_waiters();
+    let _ = secrets::clear(KEY_REFRESH);
+    if let Ok(mut s) = S.lock() {
+        s.access = None;
+        s.cal_denied = false;
+        s.events.clear();
+    }
+    start_login();
+}
+
+/// Forgets the token. The client stays, so signing in again is one click.
+pub fn disconnect() {
+    CANCEL.notify_waiters();
+    let _ = secrets::clear(KEY_REFRESH);
+    if let Ok(mut s) = S.lock() {
+        s.access = None;
+        s.cal_denied = false;
+        s.events.clear();
+    }
+    set_note("Terputus dari Google.");
+    refresh_status();
+}
+
+/// Forgets the OAuth client too, so a different one can be imported.
+pub fn reset_client() {
+    disconnect();
+    let _ = secrets::clear(KEY_CLIENT);
+    set_note("Client dihapus. Unduh client_secret_*.json yang baru lalu klik Impor.");
+    refresh_status();
+}
+
+pub fn sync_now() {
+    KICK.notify_one();
+}
+
+/// Reads the newest `client_secret*.json` from Downloads (the Settings "Impor" button).
+pub fn import_client_now() {
+    import_client();
+}
+
+fn start_login() {
+    set_status(Status::LoggingIn);
+    set_note("");
+    crate::rt::spawn(async {
+        let r = tokio::select! {
+            r = login() => Some(r),
+            _ = CANCEL.notified() => None,
+        };
+        match r {
+            Some(Ok(())) => {
+                set_note("Terhubung.");
+                set_status(Status::Linked);
+                KICK.notify_one();
+            }
+            Some(Err(e)) => {
+                log::line(format!("google login: {e}"));
+                set_note(friendly(&e));
+                refresh_status();
+            }
+            // Cancelled or restarted: whoever did that already set the status.
+            None => {}
+        }
+    });
+}
 
 fn set_status(st: Status) {
     if let Ok(mut s) = S.lock() {
@@ -146,21 +251,7 @@ pub fn connect() {
     log::line(format!("google tasks: connect clicked, status {:?}", status()));
     match status() {
         Status::NoClient => import_client(),
-        Status::NeedsLogin => {
-            set_status(Status::LoggingIn);
-            crate::rt::spawn(async {
-                match login().await {
-                    Ok(()) => {
-                        set_status(Status::Linked);
-                        KICK.notify_one();
-                    }
-                    Err(e) => {
-                        log::line(format!("google login: {e}"));
-                        refresh_status();
-                    }
-                }
-            });
-        }
+        Status::NeedsLogin => start_login(),
         Status::Linked | Status::Error(_) => {
             if calendar_needs_login() {
                 // The old token has no calendar permission: sign in again to grant it.
@@ -180,7 +271,11 @@ pub fn connect() {
                 refresh_status();
             }
         }
-        Status::LoggingIn => {}
+        // A second click used to be ignored for the whole four minutes the first one waited.
+        Status::LoggingIn => {
+            CANCEL.notify_waiters();
+            start_login();
+        }
     }
 }
 
@@ -200,6 +295,7 @@ fn import_client() {
     }
     let Some((_, path)) = best else {
         log::line("google import: no client_secret*.json in Downloads");
+        set_note("Tidak ada client_secret*.json di folder Downloads.");
         return;
     };
     let parsed = std::fs::read_to_string(&path).ok().and_then(|s| serde_json::from_str::<Value>(&s).ok());
@@ -212,11 +308,15 @@ fn import_client() {
                 Ok(()) => {
                     let _ = std::fs::remove_file(&path);
                     log::line("google import: client stored in the Credential Manager, file removed");
+                    set_note("Client diimpor (file di Downloads dihapus). Sekarang klik Masuk Google.");
                 }
                 Err(e) => log::line(format!("google import: could not store the client: {e}")),
             }
         }
-        None => log::line("google import: the file is not a Desktop OAuth client"),
+        None => {
+            log::line("google import: the file is not a Desktop OAuth client");
+            set_note("File itu bukan client OAuth bertipe Desktop app.");
+        }
     }
     refresh_status();
 }
@@ -244,33 +344,34 @@ async fn login() -> Result<(), String> {
     );
     crate::views::open_url(&url);
 
-    let (mut sock, _) = tokio::time::timeout(Duration::from_secs(240), listener.accept())
-        .await
-        .map_err(|_| "login timed out".to_string())?
-        .map_err(|e| e.to_string())?;
-    let mut buf = vec![0u8; 4096];
-    let n = tokio::time::timeout(Duration::from_secs(10), sock.read(&mut buf))
-        .await
-        .map_err(|_| "no request".to_string())?
-        .map_err(|e| e.to_string())?;
-    let req = String::from_utf8_lossy(&buf[..n]).to_string();
-    let query = req.lines().next().and_then(|l| l.split_whitespace().nth(1)).and_then(|p| p.split_once('?')).map(|(_, q)| q.to_string()).unwrap_or_default();
-    let param = |k: &str| query.split('&').find_map(|kv| kv.split_once('=').filter(|(a, _)| *a == k).map(|(_, v)| dec(v)));
+    let code = tokio::time::timeout(Duration::from_secs(240), async {
+        for _ in 0..10 {
+            let (mut sock, _) = listener.accept().await.map_err(|e| e.to_string())?;
+            let mut buf = vec![0u8; 8192];
+            let n = tokio::time::timeout(Duration::from_secs(5), sock.read(&mut buf)).await.ok().and_then(|r| r.ok()).unwrap_or(0);
+            let req = String::from_utf8_lossy(&buf[..n]).to_string();
+            let query = req.lines().next().and_then(|l| l.split_whitespace().nth(1)).and_then(|p| p.split_once('?')).map(|(_, q)| q.to_string()).unwrap_or_default();
+            let param = |k: &str| query.split('&').find_map(|kv| kv.split_once('=').filter(|(a, _)| *a == k).map(|(_, v)| dec(v)));
 
-    let ok = param("state").as_deref() == Some(state.as_str()) && param("code").is_some();
-    let page = if ok {
-        "<html><body style=\"font:16px system-ui;background:#111;color:#eee;display:grid;place-items:center;height:100vh\"><div>AlphaNotch is connected to Google Tasks. You can close this tab.</div></body></html>"
-    } else {
-        "<html><body style=\"font:16px system-ui;background:#111;color:#eee;display:grid;place-items:center;height:100vh\"><div>Sign-in was cancelled. You can close this tab.</div></body></html>"
-    };
-    let resp = format!("HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", page.len(), page);
-    let _ = sock.write_all(resp.as_bytes()).await;
-    let _ = sock.shutdown().await;
-    if !ok {
-        return Err("cancelled".into());
-    }
-
-    let code = param("code").unwrap_or_default();
+            let styled = |msg: &str| format!("<html><body style=\"font:16px system-ui;background:#111;color:#eee;display:grid;place-items:center;height:100vh\"><div>{msg}</div></body></html>");
+            let (page, outcome): (String, Option<Result<String, String>>) = if let Some(e) = param("error") {
+                (styled("Login dibatalkan. Kamu bisa menutup tab ini."), Some(Err(e)))
+            } else if param("state").as_deref() == Some(state.as_str()) && param("code").is_some() {
+                (styled("AlphaNotch sudah terhubung ke Google. Kamu bisa menutup tab ini."), Some(Ok(param("code").unwrap_or_default())))
+            } else {
+                (styled("Menunggu login…"), None)
+            };
+            let resp = format!("HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", page.len(), page);
+            let _ = sock.write_all(resp.as_bytes()).await;
+            let _ = sock.shutdown().await;
+            if let Some(r) = outcome {
+                return r;
+            }
+        }
+        Err("no sign-in callback received".to_string())
+    })
+    .await
+    .map_err(|_| "login timed out".to_string())??;
     let body = format!(
         "client_id={}&client_secret={}&code={}&code_verifier={}&grant_type=authorization_code&redirect_uri={}",
         enc(&id), enc(&secret), enc(&code), enc(&verifier), enc(&redirect)

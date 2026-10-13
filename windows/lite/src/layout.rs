@@ -40,6 +40,8 @@ pub enum View {
     Stocks,
     Weather,
     Teleprompter,
+    /// The diff of one file edit, opened from the session ticker.
+    Diff,
 }
 
 /// The window is a fixed 720×320 (largest view); the island is drawn inside it,
@@ -90,7 +92,8 @@ pub fn layout(v: View) -> ViewLayout {
         View::Overview => l(160.0, 68.0, None, 58.0),
         View::Empty => l(160.0, 70.0, None, 62.0),
         View::Approval => l(160.0, 62.0, None, 56.0),
-        View::Question => l(160.0, 62.0, None, 56.0),
+        View::Question => l(224.0, 62.0, None, 56.0),
+        View::Diff => l(252.0, 62.0, None, 56.0),
         View::Error => l(160.0, 62.0, None, 58.0),
         View::Finished => l(160.0, 62.0, None, 58.0),
         View::Confused => l(160.0, 76.0, None, 66.0),

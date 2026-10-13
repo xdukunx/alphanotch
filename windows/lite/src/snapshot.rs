@@ -204,6 +204,39 @@ fn views(dir: &str, want: &dyn Fn(&str) -> bool) {
     scene!("question", Mode::Expanded, View::Question, |app| {
         hook(&mut app, json!({"hook_event_name":"Notification","cwd":"C:/p/coucou","message":"Should I keep the Tauri build too?"}));
     }, 1.5);
+    scene!("ask", Mode::Expanded, View::Question, |app| {
+        hook(&mut app, json!({"hook_event_name":"PreToolUse","coucou_kind":"ask_user_question","request_id":"q-1","cwd":"C:/p/coucou",
+            "tool_name":"AskUserQuestion","tool_input":{"questions":[
+                {"header":"Build","question":"Which build should I keep: the Tauri one, the native lite one, or both of them side by side?",
+                 "multiSelect":false,"options":[
+                    {"label":"Native lite","description":"Smallest and fastest"},
+                    {"label":"Tauri","description":"Has the web look"},
+                    {"label":"Both","description":"Keep both builds around"}]},
+                {"header":"Ship","question":"Release it now?","multiSelect":false,"options":[{"label":"Yes","description":""},{"label":"Later","description":""}]}]}}));
+        app.debug_show(Mode::Expanded, View::Question);
+    }, 1.5);
+    scene!("diff", Mode::Expanded, View::Diff, |app| {
+        hook(&mut app, json!({"hook_event_name":"PreToolUse","cwd":"C:/p/coucou","tool_name":"Edit",
+            "tool_input":{"file_path":"C:/p/coucou/src/app.rs"},
+            "coucou_diff":{"file":"C:/p/coucou/src/app.rs","added":3,"removed":2,"lines":[
+                " fn on_key(&mut self, vk: u32) -> bool {",
+                "-    if vk == 27 {",
+                "-        self.collapse();",
+                "+    if vk == VK_ESCAPE.0 as u32 && !self.st.is_pinned {",
+                "+        self.collapse();",
+                "+        return true;",
+                "     }",
+                "@@",
+                " }"]}}));
+        app.open_diff(app.st.focus_task().map(|t| t.steps.len() - 1).unwrap_or(0));
+    }, 1.5);
+    scene!("overview_diff", Mode::Expanded, View::Overview, |app| {
+        hook(&mut app, json!({"hook_event_name":"UserPromptSubmit","cwd":"C:/p/coucou","prompt":"Fix the escape key"}));
+        hook(&mut app, json!({"hook_event_name":"PreToolUse","cwd":"C:/p/coucou","tool_name":"Edit",
+            "tool_input":{"file_path":"C:/p/coucou/src/app.rs"},
+            "coucou_diff":{"file":"C:/p/coucou/src/app.rs","added":12,"removed":4,"lines":["+x","-y"]}}));
+        app.debug_show(Mode::Expanded, View::Overview);
+    }, 2.0);
     scene!("error", Mode::Expanded, View::Error, |app| {
         hook(&mut app, json!({"hook_event_name":"PreToolUse","cwd":"C:/p/coucou","tool_name":"Bash","tool_input":{"command":"cargo test"}}));
         hook(&mut app, json!({"hook_event_name":"StopFailure","cwd":"C:/p/coucou"}));

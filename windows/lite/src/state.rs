@@ -23,6 +23,16 @@ pub enum Source {
     Agent,
 }
 
+/// The line diff of one file edit, computed by coucou-hook before the edit ran.
+#[derive(Clone, Debug)]
+pub struct StepDiff {
+    pub file: String,
+    pub added: u32,
+    pub removed: u32,
+    /// `" ctx"`, `"+added"`, `"-removed"` or `"@@"`.
+    pub lines: Vec<String>,
+}
+
 pub struct Task {
     pub id: &'static str,
     pub name: String,
@@ -30,6 +40,8 @@ pub struct Task {
     pub state: BotState,
     pub step_index: usize,
     pub steps: Vec<String>,
+    /// Parallel to `steps`; kept in step by `append_step*`, read tolerantly.
+    pub diffs: Vec<Option<StepDiff>>,
     pub source: Source,
     pub pill_badge: Option<PillBadge>,
     pub session_cwd: Option<String>,
@@ -49,11 +61,18 @@ impl Task {
             state: BotState::Idle,
             step_index: 0,
             steps: Vec::new(),
+            diffs: Vec::new(),
             source,
             pill_badge: None,
             session_cwd: None,
             mini,
         }
+    }
+}
+
+impl Task {
+    pub fn diff_counts(&self, i: usize) -> Option<(u32, u32)> {
+        self.diffs.get(i)?.as_ref().map(|d| (d.added, d.removed))
     }
 }
 
@@ -134,6 +153,32 @@ pub struct ApprovalInfo {
     pub command: String,
 }
 
+#[derive(Clone, Debug)]
+pub struct AskOption {
+    pub label: String,
+    pub description: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct AskQuestion {
+    pub header: String,
+    pub question: String,
+    pub options: Vec<AskOption>,
+    pub multi: bool,
+}
+
+/// A question Claude asked that the island is holding open for an answer.
+#[derive(Clone, Debug)]
+pub struct PendingQuestion {
+    pub request_id: String,
+    pub questions: Vec<AskQuestion>,
+    pub index: usize,
+    /// `(question text, answer)` for the questions already answered.
+    pub answers: Vec<(String, String)>,
+    /// Multi-select: which options of the current question are ticked.
+    pub picked: Vec<bool>,
+}
+
 #[derive(Clone, Copy, PartialEq)]
 pub enum Role {
     User,
@@ -183,6 +228,7 @@ pub struct State {
     pub note_message: Option<String>,
     pub chat_history: Vec<ChatMessage>,
     pub pending_approval: Option<ApprovalInfo>,
+    pub pending_question: Option<PendingQuestion>,
     pub integrations: HashMap<&'static str, IntegrationInfo>,
 
     pub settings: Settings,
@@ -209,6 +255,7 @@ impl State {
             note_message: None,
             chat_history: Vec::new(),
             pending_approval: None,
+            pending_question: None,
             integrations: HashMap::new(),
             hooks_installed: settings.hooks_installed,
             settings,
@@ -258,10 +305,23 @@ impl State {
     }
 
     pub fn append_step(&mut self, id: &str, step: String) {
+        self.push_step(id, step, None);
+    }
+
+    /// A step that edited a file: the ticker shows +N −M and the diff can be opened.
+    pub fn append_step_diff(&mut self, id: &str, step: String, diff: StepDiff) {
+        self.push_step(id, step, Some(diff));
+    }
+
+    fn push_step(&mut self, id: &str, step: String, diff: Option<StepDiff>) {
         if let Some(t) = self.task_mut(id) {
+            // Steps are also cleared or replaced wholesale elsewhere; realign first.
+            t.diffs.resize(t.steps.len(), None);
             t.steps.push(step);
+            t.diffs.push(diff);
             if t.steps.len() > 20 {
                 t.steps.remove(0);
+                t.diffs.remove(0);
             }
             t.step_index = t.steps.len() - 1;
         }

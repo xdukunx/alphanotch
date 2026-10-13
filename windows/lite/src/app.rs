@@ -40,6 +40,7 @@ fn pre_progress() -> f32 {
 pub enum Timer {
     ConfusedRecovery,
     ApprovalTimeout,
+    QuestionTimeout,
     TaskIdle(&'static str),
     RemoveTask(&'static str),
     IntegrationClear(&'static str),
@@ -232,6 +233,11 @@ pub struct App {
     pub tp_width: f32,
     pub tp_mtime: Option<std::time::SystemTime>,
     pub todo_input: crate::textfield::TextField,
+    /// "Or type your own answer" in the question card.
+    pub ask_input: crate::textfield::TextField,
+    /// The diff shown by `View::Diff`, and its scroll offset.
+    pub diff_view: Option<crate::state::StepDiff>,
+    pub diff_scroll: f32,
     quit: bool,
 }
 
@@ -319,6 +325,9 @@ impl App {
             tp_width: 0.0,
             tp_mtime: None,
             todo_input: crate::textfield::TextField::new("Tambah tugas…", false),
+            ask_input: crate::textfield::TextField::new("Atau ketik jawabanmu…", false),
+            diff_view: None,
+            diff_scroll: 0.0,
             quit: false,
         };
         app.refresh_flags();
@@ -420,6 +429,7 @@ impl App {
                 self.engine.trigger_emote(Emote::Happy, 1.8);
             }
             Timer::ApprovalTimeout => self.approval_timeout(),
+            Timer::QuestionTimeout => self.question_timeout(),
             Timer::TaskIdle(id) => {
                 self.st.update_task(id, BotState::Idle);
                 self.st.set_pill_badge(id, None);
@@ -490,6 +500,14 @@ impl App {
         self.run_timers();
         self.fsm.tick(n);
         self.process_transitions();
+
+        // Always on top: re-assert it whenever something has got above us.
+        self.platform.keep_on_top();
+
+        // Music started while the loop was asleep: Mochi wants to dance.
+        if !self.running && self.st.mode != Mode::Hidden && crate::activity::is_playing() {
+            self.ensure_running();
+        }
 
         if self.st.mode != Mode::Hidden {
             let (cx, cy) = self.platform.cursor_logical();
@@ -642,6 +660,15 @@ impl App {
     }
 
     fn update_engine(&mut self, dt: f32) {
+        let playing = crate::activity::is_playing();
+        self.engine.dancing = playing;
+        if playing {
+            // A different tempo per track (1.7 – 2.3 beats a second), so they do not all look alike.
+            if let Some(m) = crate::activity::media() {
+                let h = m.title.bytes().fold(7u32, |a, b| a.wrapping_mul(31).wrapping_add(b as u32));
+                self.engine.dance_bps = 1.7 + (h % 7) as f32 * 0.1;
+            }
+        }
         let focus = self.st.focus_task();
         self.engine.body_color = match focus {
             Some(t) if t.id != CLAUDE_ID => Some(crate::mochi::engine::hex_to_rgb(t.color)),
@@ -777,6 +804,7 @@ impl App {
             self.chat.input.focused = false;
             self.todo_input.focused = false;
             self.stock_input.focused = false;
+            self.ask_input.focused = false;
         }
         if mode != Mode::Expanded {
             self.engine.reset_morph();
@@ -845,6 +873,10 @@ impl App {
         let was_chat = self.last_synced_view == Some(View::Prompt);
         if self.last_synced_view == Some(View::Dashboard) && v != View::Dashboard && self.todo_input.focused {
             self.todo_input.focused = false;
+            self.platform.set_activating(false);
+        }
+        if self.last_synced_view == Some(View::Question) && v != View::Question && self.ask_input.focused {
+            self.ask_input.focused = false;
             self.platform.set_activating(false);
         }
         if self.last_synced_view == Some(View::Stocks) && v != View::Stocks && self.stock_input.focused {
@@ -1023,6 +1055,9 @@ impl App {
         if self.st.view == View::Prompt && self.chat.input.focused {
             self.chat.input.on_char(c);
             self.render_now();
+        } else if self.st.view == View::Question && self.ask_input.focused {
+            self.ask_input.on_char(c);
+            self.render_now();
         } else if self.st.view == View::Dashboard && self.todo_input.focused {
             self.todo_input.on_char(c);
             self.render_now();
@@ -1042,6 +1077,14 @@ impl App {
             let handled = self.chat.input.on_key(vk);
             if self.chat.input.take_submit() {
                 self.submit_chat();
+            }
+            self.render_now();
+            return handled;
+        }
+        if self.st.view == View::Question && self.ask_input.focused {
+            let handled = self.ask_input.on_key(vk);
+            if self.ask_input.take_submit() {
+                self.submit_question_text();
             }
             self.render_now();
             return handled;
@@ -1069,6 +1112,7 @@ impl App {
         self.chat.input.focused = false;
         self.todo_input.focused = false;
         self.stock_input.focused = false;
+        self.ask_input.focused = false;
     }
 
     /// Cursor in window-logical coordinates.

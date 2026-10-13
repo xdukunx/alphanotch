@@ -23,6 +23,8 @@ pub const HEIGHT: f32 = 44.0;
 #[derive(Clone, Default)]
 struct Row {
     text: String,
+    /// `(+added, −removed)` when this step edited a file.
+    diff: Option<(u32, u32)>,
     y: f32,
     phase: f32,
     opacity: f32,
@@ -32,7 +34,7 @@ pub struct Ticker {
     a: Row,
     b: Row,
     c: Row,
-    queue: Vec<String>,
+    queue: Vec<(String, Option<(u32, u32)>)>,
     start: Option<f32>,
     display_index: i32,
 }
@@ -75,7 +77,8 @@ impl Ticker {
             if self.queue.is_empty() {
                 return;
             }
-            self.c.text = self.queue[0].clone();
+            self.c.text = self.queue[0].0.clone();
+            self.c.diff = self.queue[0].1;
             place(&mut self.c, ROW_H * 2.0, 0.0, 0.0);
             self.start = Some(now);
         }
@@ -92,7 +95,9 @@ impl Ticker {
         }
         // Commit: texts move, rows stay put — no reordering, no overlap.
         self.a.text = self.b.text.clone();
+        self.a.diff = self.b.diff;
         self.b.text = self.c.text.clone();
+        self.b.diff = self.c.diff;
         if !self.queue.is_empty() {
             self.queue.remove(0);
         }
@@ -108,10 +113,13 @@ impl Ticker {
         };
         let idx = task.map(|t| t.step_index.min(steps.len() - 1) as i32).unwrap_or(-1);
 
+        let dc = |i: usize| task.and_then(|t| t.diff_counts(i));
         let seed = |me: &mut Ticker, idx: i32| {
             me.display_index = idx;
             me.a.text = if idx > 0 { steps[idx as usize - 1].clone() } else { "…".into() };
+            me.a.diff = if idx > 0 { dc(idx as usize - 1) } else { None };
             me.b.text = steps[idx.max(0) as usize].clone();
+            me.b.diff = dc(idx.max(0) as usize);
             me.rest();
         };
 
@@ -128,7 +136,7 @@ impl Ticker {
             return;
         }
         for i in (self.display_index + 1)..=idx {
-            self.queue.push(steps[i as usize].clone());
+            self.queue.push((steps[i as usize].clone(), dc(i as usize)));
         }
         self.display_index = idx;
         if self.queue.len() > MAX_QUEUE {
@@ -199,7 +207,8 @@ fn draw_row(g: &mut Gfx, row: &Row, x: f32, y: f32, w: f32, now: f32) {
     }
 
     let tx = 18.0;
-    let max_w = (w - 18.0) / scale;
+    let reserve = if row.diff.is_some() { 76.0 } else { 0.0 };
+    let max_w = (w - 18.0) / scale - reserve;
     let line = text::ellipsize(&row.text, Face::Medium, 13.0, max_w);
 
     let shimmer_a = clamp(1.0 - row.phase * 1.6, 0.0, 1.0);
@@ -236,6 +245,14 @@ fn draw_row(g: &mut Gfx, row: &Row, x: f32, y: f32, w: f32, now: f32) {
         g.mul_alpha(dim_a);
         text::draw(g, &line, tx, 0.0, Face::Medium, 13.0, with_alpha(hex("#6B7079"), 1.0), Align::Left);
         g.restore();
+    }
+    // +N −M after the step, in the same two colours as the diff view.
+    if let Some((add, rem)) = row.diff {
+        let mut cx = tx + text::measure(&line, Face::Medium, 13.0) + 8.0;
+        let a = format!("+{add}");
+        text::draw(g, &a, cx, 0.0, Face::Medium, 11.5, hex(pal::GREEN), Align::Left);
+        cx += text::measure(&a, Face::Medium, 11.5) + 5.0;
+        text::draw(g, &format!("\u{2212}{rem}"), cx, 0.0, Face::Medium, 11.5, hex(pal::RED), Align::Left);
     }
     let _ = rgba(0, 0, 0, 0.0);
     g.restore();

@@ -27,8 +27,9 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     VK_SHIFT,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, GetCursorPos, GetWindowLongPtrW, KillTimer, LoadCursorW,
-    RegisterClassExW, SetForegroundWindow, SetTimer, SetWindowLongPtrW, ShowWindow, UpdateLayeredWindow,
+    CreateWindowExW, DefWindowProcW, GetCursorPos, GetWindow, GetWindowLongPtrW, KillTimer, LoadCursorW,
+    RegisterClassExW, SetForegroundWindow, SetTimer, SetWindowLongPtrW, SetWindowPos, ShowWindow,
+    UpdateLayeredWindow, GW_HWNDPREV, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
     CS_DBLCLKS, GWL_EXSTYLE, IDC_ARROW, SW_SHOWNOACTIVATE, ULW_ALPHA, WM_CHAR, WM_DESTROY,
     WM_DISPLAYCHANGE, WM_KEYDOWN, WM_KILLFOCUS, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE,
     WM_MOUSEWHEEL, WM_RBUTTONDOWN, WM_SYSKEYDOWN, WM_TIMER, WNDCLASSEXW, WS_EX_LAYERED,
@@ -187,6 +188,26 @@ impl Platform {
             poll_timer: false,
             headless: true,
             last_rows: 0,
+        }
+    }
+
+    /// WS_EX_TOPMOST is set once at creation, and another topmost window (the YASB
+    /// bar, an app that raised itself) can end up above it — after which it sinks
+    /// and never comes back. Whatever sits above us in the z-order is the signal:
+    /// raise again, without activating, only when that is the case.
+    pub fn keep_on_top(&self) {
+        if self.headless || self.hwnd.0.is_null() {
+            return;
+        }
+        unsafe {
+            if GetWindow(self.hwnd, GW_HWNDPREV).is_ok() {
+                let _ = SetWindowPos(
+                    self.hwnd,
+                    Some(HWND_TOPMOST),
+                    0, 0, 0, 0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+                );
+            }
         }
     }
 

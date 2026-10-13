@@ -95,6 +95,8 @@ struct Win {
     mode: HooksMode,
     settings: Settings,
     drag_slider: bool,
+    /// Time of the first click on "Ganti client": a second one within 4 s confirms.
+    reset_armed: f32,
     timer: bool,
 }
 
@@ -188,6 +190,7 @@ fn create() {
             mode: HooksMode::Normal,
             settings: Settings::default(),
             drag_slider: false,
+            reset_armed: -100.0,
             timer: false,
         };
         win.build_fields();
@@ -293,7 +296,8 @@ impl Win {
         self.gfx = g;
         self.blit();
 
-        let any_focus = self.focused.is_some();
+        // While a sign-in waits for the browser the status line has to keep up.
+        let any_focus = self.focused.is_some() || crate::gtasks::status() == crate::gtasks::Status::LoggingIn;
         self.set_timer(any_focus);
     }
 
@@ -340,6 +344,7 @@ impl Win {
         y = self.claude_code(g, m, y, cw);
         y = self.claude_api(g, m, y, cw);
         y = self.integrations(g, m, y, cw);
+        y = self.google(g, m, y, cw);
         y = self.general(g, m, y, cw);
 
         text::draw(g, "No telemetry. Network requests only go to the services you configure yourself.", m, y + 8.0, Face::Regular, 11.0, hex(pal::DIM3), Align::Left);
@@ -434,6 +439,9 @@ impl Win {
                 y += 28.0;
                 if !ready {
                     y += Self::notice(g, x, y, w, "coucou-hook.exe is not in place yet. Restart AlphaNotch; if it still fails, build it with `cargo build -p coucou-hook`.", false, true) + 10.0;
+                }
+                if installed && ready && !self.status.ask_ready {
+                    y += Self::notice(g, x, y, w, "Pasang ulang hooks (Reinstall) agar pertanyaan Claude bisa dijawab dari island.", false, true) + 10.0;
                 }
                 let label = if installed { "Reinstall hooks…" } else { "Install hooks…" };
                 let (clicked, bw) = if live {
@@ -738,6 +746,116 @@ impl Win {
     }
 
     // ── General ───────────────────────────────────────────────────────────────
+
+    // ── Google (Tugas & Hari ini) ─────────────────────────────────────────────
+
+    fn google(&mut self, g: &mut Gfx, m: f32, y0: f32, cw: f32) -> f32 {
+        use crate::gtasks::{self, Status};
+        let pad = 18.0;
+        let (ix, iw) = (m + pad, cw - 2.0 * pad);
+        let st = gtasks::status();
+        let note = gtasks::note();
+        let hint = match st {
+            Status::NoClient => "Unduh client OAuth bertipe Desktop app (client_secret_….json) ke folder Downloads, lalu klik Impor. Aktifkan Tasks API dan Calendar API, dan set Audience ke In production.",
+            Status::NeedsLogin => "Client sudah ada. Klik Masuk Google, pilih akunmu, lalu di layar \"belum diverifikasi\" pilih Advanced → Continue.",
+            Status::LoggingIn => "Selesaikan login di browser. Kalau tab-nya hilang, klik Buka browser lagi; Batalkan kalau mau mulai dari awal.",
+            Status::Linked => "Tugas dan agenda hari ini disinkronkan dari akun Google-mu.",
+            Status::Error(_) => "Sinkronisasi gagal. Coba lagi, atau masuk ulang kalau masalahnya izin.",
+        };
+        let hint_lines = text::wrap(hint, Face::Regular, 12.0, iw).len() as f32;
+        let h = 28.0 + 24.0 + (if note.is_empty() { 0.0 } else { 22.0 }) + hint_lines * 17.0 + 12.0 + 40.0;
+        Self::card(g, m, y0, cw, h + 2.0 * pad);
+
+        let mut y = y0 + pad;
+        Self::title(g, ix, y + 9.0, Some(matches!(st, Status::Linked)), "Google · Tugas & Hari ini");
+        y += 28.0;
+
+        let (line, col) = match &st {
+            Status::NoClient => ("Belum ada client OAuth".to_string(), pal::AMBER),
+            Status::NeedsLogin => ("Belum masuk".to_string(), pal::AMBER),
+            Status::LoggingIn => ("Menunggu login di browser…".to_string(), pal::DIM),
+            Status::Linked => ("Terhubung".to_string(), pal::GREEN2),
+            Status::Error(e) => (format!("Gagal: {e}"), pal::RED_TEXT),
+        };
+        let line = text::ellipsize(&line, Face::Medium, 12.5, iw);
+        text::draw(g, &line, ix, y + 8.0, Face::Medium, 12.5, hex(col), Align::Left);
+        y += 24.0;
+        if !note.is_empty() {
+            let n = text::ellipsize(&note, Face::Regular, 11.5, iw);
+            text::draw(g, &n, ix, y + 8.0, Face::Regular, 11.5, hex(pal::INK2), Align::Left);
+            y += 22.0;
+        }
+        y += Self::para(g, ix, y, iw, hint) + 12.0;
+
+        let armed = crate::anim::now() - self.reset_armed < 4.0;
+        let reset_label = if armed { "Yakin? Klik lagi untuk menghapus" } else { "Ganti client" };
+        let mut x = ix;
+        let mut btn = |me: &mut Self, g: &mut Gfx, label: &str, primary: bool| -> bool {
+            let (c, w) = me.ui.button(g, x, y, label, primary, None);
+            x += w + 8.0;
+            c
+        };
+        match st {
+            Status::NoClient => {
+                if btn(self, g, "Impor client JSON", true) {
+                    gtasks::import_client_now();
+                }
+            }
+            Status::NeedsLogin => {
+                if btn(self, g, "Masuk Google", true) {
+                    gtasks::connect();
+                }
+                if btn(self, g, reset_label, false) {
+                    if armed {
+                        self.reset_armed = -100.0;
+                        gtasks::reset_client();
+                    } else {
+                        self.reset_armed = crate::anim::now();
+                    }
+                }
+            }
+            Status::LoggingIn => {
+                if btn(self, g, "Batalkan", true) {
+                    gtasks::cancel_login();
+                }
+                if btn(self, g, "Buka browser lagi", false) {
+                    gtasks::connect();
+                }
+            }
+            Status::Linked => {
+                if btn(self, g, "Sinkronkan sekarang", true) {
+                    gtasks::sync_now();
+                }
+                if btn(self, g, "Masuk ulang", false) {
+                    gtasks::relogin();
+                }
+                if btn(self, g, "Putuskan", false) {
+                    gtasks::disconnect();
+                }
+                if btn(self, g, reset_label, false) {
+                    if armed {
+                        self.reset_armed = -100.0;
+                        gtasks::reset_client();
+                    } else {
+                        self.reset_armed = crate::anim::now();
+                    }
+                }
+            }
+            Status::Error(_) => {
+                if btn(self, g, "Coba lagi", true) {
+                    gtasks::sync_now();
+                    gtasks::connect();
+                }
+                if btn(self, g, "Masuk ulang", false) {
+                    gtasks::relogin();
+                }
+                if btn(self, g, "Putuskan", false) {
+                    gtasks::disconnect();
+                }
+            }
+        }
+        y0 + h + 2.0 * pad + 16.0
+    }
 
     fn general(&mut self, g: &mut Gfx, m: f32, y0: f32, cw: f32) -> f32 {
         let pad = 18.0;

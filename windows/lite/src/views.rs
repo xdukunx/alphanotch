@@ -111,6 +111,7 @@ impl App {
             View::Empty => self.draw_empty(g, v),
             View::Approval => self.draw_approval(g, v),
             View::Question => self.draw_question(g, v),
+            View::Diff => self.draw_diff(g, v),
             View::Error => self.draw_error(g, v),
             View::Finished => self.draw_finished(g, v),
             View::Confused => self.draw_confused(g, v),
@@ -206,6 +207,7 @@ impl App {
         let id = task.id;
         let session_active = (id == CLAUDE_ID || task.source == Source::Agent)
             && (task.state != BotState::Idle || !task.steps.is_empty());
+        let diff_step = task.diffs.iter().rposition(|d| d.is_some());
         let mut jump_visible = true;
 
         if session_active {
@@ -235,6 +237,15 @@ impl App {
                 text::draw(g, &c, left.x + left.w - 36.0, cy, Face::Regular, 11.0, hex(pal::DIM3), Align::Right);
             }
             self.ticker.draw(g, left.x + 108.0, left.y + 28.0, left.w - 108.0 - 12.0, n);
+            // The latest edit's diff is one click away, on the ticker or on the chip.
+            if let Some(di) = diff_step {
+                let (open, _) = self.ui.link(g, left.x + 108.0 + 18.0, left.y + left.h - 18.0, "Lihat diff", hex("#7EE2B8"));
+                let r = Rect::new(left.x + 108.0, left.y + 28.0, left.w - 108.0 - 40.0, 44.0);
+                let (clicked, _, _) = self.ui.click_region(id_of("ticker-diff", 83), r);
+                if open || clicked {
+                    self.open_diff(di);
+                }
+            }
         } else {
             jump_visible = !self.detail_open;
             self.draw_integration_card(g, left);
@@ -370,34 +381,73 @@ impl App {
         ui::card(g, v, Wash::Amber, false);
         let x = v.x + 116.0;
         let w = v.w - 116.0 - 16.0;
-        let top = stack_top(v, &[16.0, 29.0, 30.0], 5.0);
-        agent_who(g, x, top + 8.0, self.st.focus_task(), "needs permission", w);
 
-        // The whole point of approving here rather than in the terminal: this
-        // line is the command, the file path or the URL being authorised.
-        let command = self
-            .st
-            .pending_approval
-            .as_ref()
-            .map(|p| if p.command.is_empty() { p.tool.clone() } else { p.command.clone() })
-            .unwrap_or_else(|| "…".into());
-        let cy = top + 16.0 + 5.0;
-        g.fill_style(rgba(255, 255, 255, 0.07));
-        g.fill_round_rect(x, cy, w, 29.0, 10.0);
-        g.stroke_style(rgba(255, 255, 255, 0.06));
-        g.line_width(1.0);
-        g.round_rect(x + 0.5, cy + 0.5, w - 1.0, 28.0, 9.5);
-        g.stroke();
-        let line = text::ellipsize(&command.replace('\n', " "), Face::Mono, 12.0, w - 20.0);
-        t(g, &line, x + 10.0, cy + 14.5, Face::Mono, 12.0, hex("#E8E9EC"));
+        let (tool, detail) = match self.st.pending_approval.as_ref() {
+            Some(p) => {
+                let d = p.command.strip_prefix(&format!("{} · ", p.tool)).unwrap_or(&p.command).to_string();
+                (p.tool.clone(), d)
+            }
+            None => ("…".to_string(), String::new()),
+        };
+        let name = self.session_name(22);
+        let expanded = self.detail_open;
 
-        let by = cy + 29.0 + 5.0;
-        let (deny, dw) = self.ui.button(g, x, by, "Deny", false, Some("N"));
-        let (allow, _) = self.ui.button(g, x + dw + 8.0, by, "Allow", true, Some("Y"));
+        // Headline in plain words; the exact command is one tap away, never gone: approving
+        // blind is the thing this card exists to prevent.
+        let head = format!("Claude Code sesi “{name}” minta izin");
+        let detail_lines: Vec<String> = if expanded {
+            text::wrap(&detail.replace('\n', " "), Face::Mono, 11.0, w - 8.0).into_iter().take(3).collect()
+        } else {
+            Vec::new()
+        };
+        let body_h = if expanded { detail_lines.len().max(1) as f32 * 14.0 } else { 18.0 + 4.0 + 14.0 };
+        let top = stack_top(v, &[20.0, body_h, 30.0], 6.0);
+
+        t(g, &text::ellipsize(&head, Face::Medium, 14.0, w), x, top + 10.0, Face::Medium, 14.0, hex(pal::INK));
+        let mut y = top + 20.0 + 6.0;
+        if expanded {
+            for (i, l) in detail_lines.iter().enumerate() {
+                t(g, l, x, y + 7.0 + i as f32 * 14.0, Face::Mono, 11.0, hex("#E8E9EC"));
+            }
+        } else {
+            t(g, &text::ellipsize(&approval_summary(&tool, &detail), Face::Regular, 13.0, w), x, y + 9.0, Face::Regular, 13.0, hex(pal::DIM));
+            y += 22.0;
+            let r = Rect::new(x - 4.0, y - 2.0, w, 18.0);
+            let (clicked, hover, _) = self.ui.click_region(id_of("approval-detail", 61), r);
+            let line = text::ellipsize(&detail.replace('\n', " "), Face::Mono, 11.0, w - 24.0);
+            let col = if hover { hex("#E8E9EC") } else { hex(pal::DIM3) };
+            t(g, &line, x, y + 7.0, Face::Mono, 11.0, col);
+            let lw = text::measure(&line, Face::Mono, 11.0);
+            crate::icons::stroke(g, Icon::ChevronRight, x + lw + 12.0, y + 7.0, 8.0, 2.2, col);
+            if clicked {
+                self.detail_open = true;
+            }
+        }
+        if expanded {
+            let r = Rect::new(x - 4.0, top + 20.0, w, body_h + 8.0);
+            let (clicked, _, _) = self.ui.click_region(id_of("approval-detail-close", 67), r);
+            if clicked {
+                self.detail_open = false;
+            }
+        }
+
+        let by = top + 20.0 + 6.0 + body_h + 6.0;
+        let (deny, dw) = self.ui.button(g, x, by, "Tolak", false, Some("N"));
+        let (allow, _) = self.ui.button(g, x + dw + 8.0, by, "Izinkan", true, Some("Y"));
         if deny {
             self.decide(false);
         } else if allow {
             self.decide(true);
+        }
+    }
+
+    /// The focused session's project name, shortened for a headline.
+    fn session_name(&self, max: usize) -> String {
+        let n = self.st.focus_task().map(|t| t.name.clone()).unwrap_or_else(|| "ini".into());
+        if n.chars().count() > max {
+            n.chars().take(max - 1).collect::<String>() + "…"
+        } else {
+            n
         }
     }
 
@@ -407,13 +457,181 @@ impl App {
         ui::card(g, v, Wash::Cyan, false);
         let x = v.x + 116.0;
         let w = v.w - 116.0 - 16.0;
-        let top = stack_top(v, &[16.0, 20.0, 18.0], 5.0);
-        let task = self.st.focus_task();
-        agent_who(g, x, top + 8.0, task, "Claude Code is asking a question", w);
-        let title = task.and_then(|t| t.steps.last().cloned()).unwrap_or_else(|| "Claude needs an answer.".into());
-        let title = text::ellipsize(&title, Face::Medium, 15.0, w);
-        t(g, &title, x, top + 16.0 + 5.0 + 10.0, Face::Medium, 15.0, hex(pal::INK));
-        t(g, "Answer in your terminal — AlphaNotch can't reply for you yet.", x, top + 16.0 + 20.0 + 10.0 + 9.0, Face::Regular, 13.0, hex(pal::DIM));
+        if let Some(p) = self.st.pending_question.clone() {
+            if let Some(q) = p.questions.get(p.index).cloned() {
+                self.draw_ask(g, v, x, w, &p, &q);
+                return;
+            }
+        }
+        let top = stack_top(v, &[20.0, 18.0, 18.0], 6.0);
+        let head = format!("Claude Code sesi “{}” butuh jawabanmu", self.session_name(22));
+        t(g, &text::ellipsize(&head, Face::Medium, 14.0, w), x, top + 10.0, Face::Medium, 14.0, hex(pal::INK));
+        let q = self.st.focus_task().and_then(|t| t.steps.last().cloned()).unwrap_or_else(|| "Ada pertanyaan untukmu.".into());
+        t(g, &text::ellipsize(&q.replace('\n', " "), Face::Regular, 13.0, w), x, top + 20.0 + 6.0 + 9.0, Face::Regular, 13.0, hex(pal::DIM));
+        t(g, "Jawab di terminal.", x, top + 20.0 + 6.0 + 18.0 + 6.0 + 9.0, Face::Regular, 12.0, hex(pal::DIM3));
+    }
+
+    /// The interactive question: options as chips, an own-answer field, "Di terminal".
+    fn draw_ask(&mut self, g: &mut Gfx, v: Rect, x: f32, w: f32, p: &crate::state::PendingQuestion, q: &crate::state::AskQuestion) {
+        let mut y = v.y + 12.0;
+        let head = format!("Claude Code sesi “{}” bertanya", self.session_name(18));
+        let room = w - if p.questions.len() > 1 { 40.0 } else { 0.0 };
+        t(g, &text::ellipsize(&head, Face::Medium, 14.0, room), x, y + 10.0, Face::Medium, 14.0, hex(pal::INK));
+        if p.questions.len() > 1 {
+            let c = format!("{}/{}", p.index + 1, p.questions.len());
+            text::draw(g, &c, x + w, y + 10.0, Face::Regular, 11.0, hex(pal::DIM3), Align::Right);
+        }
+        y += 22.0;
+        let lines: Vec<String> = text::wrap(&q.question.replace('\n', " "), Face::Regular, 13.0, w).into_iter().take(2).collect();
+        for l in &lines {
+            t(g, l, x, y + 8.0, Face::Regular, 13.0, hex(pal::DIM));
+            y += 16.0;
+        }
+        y += 6.0;
+
+        // Options.
+        let cw = (w - 6.0) / 2.0;
+        let mut hit = None;
+        for (i, o) in q.options.iter().enumerate() {
+            let r = Rect::new(x + (i % 2) as f32 * (cw + 6.0), y + (i / 2) as f32 * 32.0, cw, 26.0);
+            let (clicked, hover, pressed) = self.ui.click_region(id_of(&format!("ask-opt-{i}"), 71), r);
+            let on = p.picked.get(i).copied().unwrap_or(false);
+            g.save();
+            let k = if pressed { 0.97 } else { 1.0 };
+            g.translate(r.cx(), r.cy());
+            g.scale_xy(k, k);
+            g.translate(-r.cx(), -r.cy());
+            g.fill_style(if on { rgba(34, 211, 238, 0.3) } else { rgba(255, 255, 255, if hover { 0.16 } else { 0.09 }) });
+            g.fill_round_rect(r.x, r.y, r.w, r.h, 13.0);
+            if on {
+                g.stroke_style(rgba(34, 211, 238, 0.8));
+                g.line_width(1.0);
+                g.round_rect(r.x + 0.5, r.y + 0.5, r.w - 1.0, r.h - 1.0, 12.5);
+                g.stroke();
+            }
+            let lab = text::ellipsize(&o.label, Face::Medium, 12.0, r.w - 20.0);
+            let lw = t(g, &lab, r.x + 10.0, r.cy(), Face::Medium, 12.0, hex(pal::INK));
+            let left = r.w - 20.0 - lw - 8.0;
+            if !o.description.is_empty() && left > 40.0 {
+                let d = text::ellipsize(&o.description.replace('\n', " "), Face::Regular, 10.5, left);
+                t(g, &d, r.x + 10.0 + lw + 8.0, r.cy(), Face::Regular, 10.5, hex(pal::DIM3));
+            }
+            g.restore();
+            if clicked {
+                hit = Some(i);
+            }
+        }
+        y += q.options.len().div_ceil(2) as f32 * 32.0 + 4.0;
+
+        // Own answer + send + hand back.
+        let kw = text::measure("Kirim", Face::Medium, 12.5) + 26.0;
+        let tw = text::measure("Di terminal", Face::Medium, 12.5) + 26.0;
+        let field = Rect::new(x, y, w - kw - tw - 16.0, 30.0);
+        g.fill_style(rgba(255, 255, 255, 0.07));
+        g.fill_round_rect(field.x, field.y, field.w, field.h, 15.0);
+        let inner = Rect::new(field.x + 12.0, field.y + 4.0, field.w - 24.0, 22.0);
+        if self.ui.input.pressed && field.contains(self.ui.input.mouse.0, self.ui.input.mouse.1) {
+            self.ask_input.focused = true;
+            self.platform.set_activating(true);
+            let extend = crate::platform::shift_down();
+            self.ask_input.click_at(self.ui.input.mouse.0, 13.0, extend);
+        } else if self.ui.input.pressed && self.ask_input.focused {
+            self.ask_input.focused = false;
+            self.platform.set_activating(false);
+        }
+        self.ui.note_region(id_of("ask-field", 113), field);
+        if field.contains(self.ui.input.mouse.0, self.ui.input.mouse.1) {
+            self.ui.hovering_text = true;
+        }
+        self.ask_input.draw(g, inner, 13.0, pal::INK);
+        let (send, _) = self.ui.button(g, x + field.w + 8.0, y, "Kirim", true, None);
+        let (back, _) = self.ui.button(g, x + field.w + 8.0 + kw + 8.0, y, "Di terminal", false, None);
+
+        if let Some(i) = hit {
+            if q.multi {
+                self.toggle_option(i);
+            } else if let Some(o) = q.options.get(i) {
+                self.answer_question(o.label.clone());
+            }
+        } else if send {
+            self.submit_question_text();
+        } else if back {
+            self.hand_back_question();
+        }
+    }
+
+    // ── Diff ──────────────────────────────────────────────────────────────────
+
+    fn draw_diff(&mut self, g: &mut Gfx, v: Rect) {
+        ui::card(g, v, Wash::Indigo, false);
+        let x = v.x + 116.0;
+        let w = v.w - 116.0 - 16.0;
+        let Some(d) = self.diff_view.as_ref() else { return };
+        let file = d.file.rsplit(['\\', '/']).next().unwrap_or(&d.file).to_string();
+        let (added, removed) = (d.added, d.removed);
+
+        let hy = v.y + 12.0;
+        let close = "Tutup";
+        let cw = text::measure(close, Face::Medium, 11.0);
+        let a = format!("+{added}");
+        let r = format!("\u{2212}{removed}");
+        let (aw, rw) = (text::measure(&a, Face::Medium, 12.0), text::measure(&r, Face::Medium, 12.0));
+        let counts_w = aw + 6.0 + rw;
+        let name = text::ellipsize(&file, Face::Mono, 12.0, w - counts_w - cw - 28.0);
+        let nw = t(g, &name, x, hy + 10.0, Face::Mono, 12.0, hex(pal::INK));
+        let cx = x + nw + 12.0;
+        text::draw(g, &a, cx, hy + 10.0, Face::Medium, 12.0, hex(pal::GREEN), Align::Left);
+        text::draw(g, &r, cx + aw + 6.0, hy + 10.0, Face::Medium, 12.0, hex(pal::RED), Align::Left);
+        let (close_clicked, _) = self.ui.link(g, x + w - cw, hy + 10.0, close, hex(pal::DIM2));
+
+        // The lines, clipped to their area and scrollable.
+        let area = Rect::new(x - 4.0, hy + 28.0, w + 8.0, (v.y + v.h - 10.0 - (hy + 28.0)).max(0.0));
+        let lh = 15.0;
+        let n = d.lines.len() as f32;
+        let max_scroll = (n * lh - area.h).max(0.0);
+        if area.contains(self.ui.input.mouse.0, self.ui.input.mouse.1) && self.ui.input.wheel != 0.0 {
+            self.diff_scroll -= self.ui.input.wheel * 36.0;
+        }
+        self.diff_scroll = self.diff_scroll.clamp(0.0, max_scroll);
+        let scroll = self.diff_scroll;
+        g.save();
+        g.clip_rect_xywh(area.x, area.y, area.w, area.h);
+        for (i, l) in d.lines.iter().enumerate() {
+            let ly = area.y + i as f32 * lh - scroll;
+            if ly + lh < area.y || ly > area.y + area.h {
+                continue;
+            }
+            let (kind, body) = match l.chars().next() {
+                Some(c @ ('+' | '-' | ' ')) => (c, &l[1..]),
+                _ => ('@', l.as_str()),
+            };
+            let (bg, fg) = match kind {
+                '+' => (Some(rgba(52, 211, 153, 0.14)), hex("#7EE2B8")),
+                '-' => (Some(rgba(244, 80, 94, 0.16)), hex("#FF8A95")),
+                '@' => (None, hex(pal::DIM3)),
+                _ => (None, hex(pal::DIM)),
+            };
+            if let Some(bg) = bg {
+                g.fill_style(bg);
+                g.fill_rect(area.x, ly, area.w, lh);
+            }
+            let sign = match kind {
+                '+' => "+",
+                '-' => "\u{2212}",
+                _ => " ",
+            };
+            if kind != '@' {
+                t(g, sign, area.x + 4.0, ly + lh / 2.0, Face::Mono, 11.0, fg);
+            }
+            let shown = text::ellipsize(&body.replace('\t', "    "), Face::Mono, 11.0, area.w - 24.0);
+            t(g, &shown, area.x + if kind == '@' { 4.0 } else { 16.0 }, ly + lh / 2.0, Face::Mono, 11.0, fg);
+        }
+        g.restore();
+        if close_clicked {
+            self.diff_view = None;
+            let v = self.st.default_view();
+            self.set_view(v);
+        }
     }
 
     // ── Error ─────────────────────────────────────────────────────────────────
@@ -430,7 +648,12 @@ impl App {
         };
         let top = stack_top(v, &[16.0, 20.0, 16.0, 30.0], 5.0);
         agent_who(g, x, top + 8.0, task, if n8n { "n8n" } else { agent_label }, w);
-        let title = if n8n { "Workflow stopped." } else { "Session stopped on an error." };
+        let title_owned = if n8n {
+            "Workflow berhenti.".to_string()
+        } else {
+            format!("Claude Code sesi “{}” berhenti karena error", self.session_name(18))
+        };
+        let title = title_owned.as_str();
         t(g, title, x, top + 16.0 + 5.0 + 10.0, Face::Medium, 15.0, hex(pal::INK));
         let detail = task.and_then(|t| t.steps.last().cloned()).unwrap_or_else(|| "No detail available.".into());
         let detail = text::ellipsize(&detail.replace('\n', " "), Face::Regular, 12.0, w);
@@ -465,15 +688,20 @@ impl App {
         ui::card(g, v, Wash::Green, false);
         let x = v.x + 116.0;
         let w = v.w - 116.0 - 16.0;
-        let top = stack_top(v, &[16.0, 20.0, 30.0], 5.0);
         let task = self.st.focus_task();
-        agent_who(g, x, top + 8.0, task, "Claude Code finished", w);
-        let title = task.and_then(|t| t.steps.last().cloned()).unwrap_or_else(|| "Session finished".into());
-        let title = text::ellipsize(&title, Face::Medium, 15.0, w);
-        t(g, &title, x, top + 16.0 + 5.0 + 10.0, Face::Medium, 15.0, hex(pal::INK));
-        let by = top + 16.0 + 20.0 + 10.0;
-        let (term, tw) = self.ui.button(g, x, by, "Open terminal", true, None);
-        let (ok, _) = self.ui.button(g, x + tw + 8.0, by, "OK", false, None);
+        let last = task.and_then(|t| t.steps.last().cloned()).unwrap_or_default();
+        let has_last = !last.trim().is_empty();
+        let top = stack_top(v, &[22.0, if has_last { 18.0 } else { 0.0 }, 30.0], 6.0);
+
+        let head = format!("Claude Code sesi “{}” sudah beres, silakan dicek.", self.session_name(18));
+        t(g, &text::ellipsize(&head, Face::Medium, 15.0, w), x, top + 11.0, Face::Medium, 15.0, hex(pal::INK));
+        let mut y = top + 22.0 + 6.0;
+        if has_last {
+            t(g, &text::ellipsize(&last.replace('\n', " "), Face::Regular, 12.0, w), x, y + 9.0, Face::Regular, 12.0, hex(pal::DIM));
+            y += 18.0 + 6.0;
+        }
+        let (term, tw) = self.ui.button(g, x, y, "Buka terminal", true, None);
+        let (ok, _) = self.ui.button(g, x + tw + 8.0, y, "OK", false, None);
         if term {
             self.open_terminal();
         } else if ok {
@@ -872,4 +1100,26 @@ pub fn open_in_vscode(path: Option<&str>) -> bool {
         let _ = std::process::Command::new("explorer").arg(p).spawn();
     }
     false
+}
+
+/// What an approval is about, in a sentence (the command itself stays one tap away).
+fn approval_summary(tool: &str, detail: &str) -> String {
+    let base = detail.rsplit(['\\', '/']).next().unwrap_or(detail).trim();
+    let host = detail
+        .trim_start_matches("https://")
+        .trim_start_matches("http://")
+        .split('/')
+        .next()
+        .unwrap_or(detail);
+    match tool {
+        "Bash" | "PowerShell" => "Menjalankan perintah di terminal".to_string(),
+        "Write" => format!("Menulis file {base}"),
+        "Edit" | "MultiEdit" | "NotebookEdit" => format!("Mengubah file {base}"),
+        "Read" | "LS" => format!("Membaca {base}"),
+        "Glob" | "Grep" => "Mencari di dalam proyek".to_string(),
+        "WebFetch" => format!("Membuka {host}"),
+        "WebSearch" => "Mencari di web".to_string(),
+        "Task" => "Menjalankan sub-agent".to_string(),
+        other => format!("Memakai alat {other}"),
+    }
 }

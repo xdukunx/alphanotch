@@ -13,7 +13,9 @@ use crate::layout::{Mode, View};
 use crate::mochi::engine::BotState;
 use crate::pipe;
 use crate::sound;
-use crate::state::{validate_agent, ApprovalInfo, PillBadge, CLAUDE_ID};
+use crate::state::{
+    validate_agent, ApprovalInfo, AskOption, AskQuestion, PendingQuestion, PillBadge, StepDiff, CLAUDE_ID,
+};
 
 fn last_path_component(p: &str) -> String {
     let cleaned = p.trim_end_matches(['\\', '/']);
@@ -84,6 +86,59 @@ fn approval_target(tool: &str, input: &Value) -> String {
     tool.to_string()
 }
 
+/// `coucou_diff` from coucou-hook, when the edit actually changes something.
+fn parse_diff(payload: &Value) -> Option<StepDiff> {
+    let d = payload.get("coucou_diff")?;
+    let added = d.get("added").and_then(Value::as_u64).unwrap_or(0) as u32;
+    let removed = d.get("removed").and_then(Value::as_u64).unwrap_or(0) as u32;
+    if added == 0 && removed == 0 {
+        return None;
+    }
+    Some(StepDiff {
+        file: d.get("file").and_then(Value::as_str).unwrap_or("").to_string(),
+        added,
+        removed,
+        lines: d
+            .get("lines")
+            .and_then(Value::as_array)
+            .map(|a| a.iter().filter_map(|l| l.as_str().map(str::to_string)).collect())
+            .unwrap_or_default(),
+    })
+}
+
+/// The `questions` of an AskUserQuestion call. Anything cut by the relay's string
+/// limit would no longer match the key Claude Code expects, so it is not offered.
+fn parse_questions(input: &Value) -> Vec<AskQuestion> {
+    let mut out = Vec::new();
+    for q in input.get("questions").and_then(Value::as_array).into_iter().flatten().take(4) {
+        let question = str_of(q, "question").unwrap_or("").trim().to_string();
+        if question.is_empty() || question.chars().count() >= 1500 {
+            return Vec::new();
+        }
+        let options: Vec<AskOption> = q
+            .get("options")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .take(4)
+            .filter_map(|o| {
+                let label = str_of(o, "label")?.trim().to_string();
+                (!label.is_empty()).then(|| AskOption {
+                    label,
+                    description: str_of(o, "description").unwrap_or("").trim().to_string(),
+                })
+            })
+            .collect();
+        out.push(AskQuestion {
+            header: str_of(q, "header").unwrap_or("").trim().to_string(),
+            question,
+            options,
+            multi: q.get("multiSelect").and_then(Value::as_bool).unwrap_or(false),
+        });
+    }
+    out
+}
+
 impl App {
     pub fn handle_hook(&mut self, payload: Value) {
         let request_id = payload.get("request_id").and_then(Value::as_str).unwrap_or("").to_string();
@@ -123,6 +178,7 @@ impl App {
         let message = payload.get("message").and_then(Value::as_str).unwrap_or("").to_string();
         let tool = payload.get("tool_name").and_then(Value::as_str).unwrap_or("Tool").to_string();
         let input = payload.get("tool_input").cloned().unwrap_or(Value::Null);
+        let is_ask = payload.get("coucou_kind").and_then(Value::as_str) == Some("ask_user_question");
 
         let upsert = |app: &mut App| {
             if is_external {
@@ -155,10 +211,52 @@ impl App {
                 }
                 self.surface(View::Overview, false);
             }
+            // The generic hook also sees AskUserQuestion; the dedicated one speaks for it.
+            "PreToolUse" if tool == "AskUserQuestion" && !is_ask => {}
+            "PreToolUse" if is_ask => {
+                let questions = parse_questions(&input);
+                let busy = self.st.pending_approval.is_some() || self.st.pending_question.is_some();
+                if is_external || request_id.is_empty() || questions.is_empty() || busy {
+                    // Nobody can answer it here: the terminal asks, as if we were not installed.
+                    if !request_id.is_empty() {
+                        pipe::decline(&self.ctx, &request_id);
+                    }
+                    return;
+                }
+                upsert(self);
+                self.cancel_timer(|t| matches!(t, Timer::QuestionTimeout));
+                let first = questions[0].clone();
+                let picked = vec![false; first.options.len()];
+                self.st.pending_question = Some(PendingQuestion {
+                    request_id: request_id.clone(),
+                    questions,
+                    index: 0,
+                    answers: Vec::new(),
+                    picked,
+                });
+                self.ask_input.clear();
+                pipe::acknowledge(&self.ctx, &request_id);
+                self.st.update_task(target, BotState::Question);
+                let label = if first.header.is_empty() { take(&first.question, 40) } else { take(&first.header, 40) };
+                self.st.append_step(target, format!("Bertanya · {label}"));
+                self.st.is_pinned = true;
+                sound::play("approval");
+                if focused {
+                    self.alert(View::Question);
+                } else {
+                    self.st.set_pill_badge(target, Some(PillBadge::Approval));
+                    self.reveal();
+                }
+                self.later(122.0, Timer::QuestionTimeout);
+            }
             "PreToolUse" => {
                 upsert(self);
                 self.st.update_task(target, BotState::Working);
-                self.st.append_step(target, step_label(&tool, &input));
+                let label = step_label(&tool, &input);
+                match parse_diff(&payload) {
+                    Some(d) => self.st.append_step_diff(target, label, d),
+                    None => self.st.append_step(target, label),
+                }
                 self.surface(View::Overview, false);
             }
             "PostToolUse" | "PostInvocation" => self.st.update_task(target, BotState::Working),
@@ -181,6 +279,7 @@ impl App {
                 }
             }
             "Stop" => {
+                self.drop_question();
                 self.st.update_task(target, BotState::Finished);
                 if !message.is_empty() {
                     self.st.append_step(target, take(&message, 60));
@@ -279,6 +378,118 @@ impl App {
             self.alert(view);
         } else if self.st.mode == Mode::Hidden {
             self.reveal();
+        }
+    }
+
+    /// Forgets a question whose hook is gone (the session stopped under it).
+    fn drop_question(&mut self) {
+        if self.st.pending_question.take().is_some() {
+            self.cancel_timer(|t| matches!(t, Timer::QuestionTimeout));
+            self.st.is_pinned = false;
+            self.fsm.pinned = false;
+            self.ask_input.focused = false;
+        }
+    }
+
+    pub fn question_timeout(&mut self) {
+        if self.st.pending_question.is_none() {
+            return;
+        }
+        self.st.pending_question = None;
+        self.finish_question();
+    }
+
+    /// After a question is answered, handed back or timed out: back to work.
+    fn finish_question(&mut self) {
+        self.cancel_timer(|t| matches!(t, Timer::QuestionTimeout));
+        self.ask_input.clear();
+        self.ask_input.focused = false;
+        self.platform.set_activating(false);
+        self.st.is_pinned = false;
+        self.fsm.pinned = false;
+        self.st.update_task(CLAUDE_ID, BotState::Working);
+        self.st.set_pill_badge(CLAUDE_ID, None);
+        if self.st.view == View::Question {
+            let v = self.st.default_view();
+            self.set_view(v);
+        }
+    }
+
+    /// Records the answer to the current question and moves on, or sends them all.
+    pub fn answer_question(&mut self, text: String) {
+        let Some(p) = self.st.pending_question.as_mut() else { return };
+        let q = p.questions.get(p.index).map(|q| q.question.clone()).unwrap_or_default();
+        p.answers.push((q, text));
+        p.index += 1;
+        self.ask_input.clear();
+        if let Some(next) = p.questions.get(p.index) {
+            p.picked = vec![false; next.options.len()];
+            sound::play("blip");
+            return;
+        }
+        let Some(p) = self.st.pending_question.take() else { return };
+        let mut answers = serde_json::Map::new();
+        for (k, v) in p.answers {
+            answers.insert(k, Value::String(v));
+        }
+        let reply = serde_json::json!({ "permissionDecision": "answer", "answers": answers }).to_string();
+        sound::play("approve");
+        pipe::answer_raw(&self.ctx, &p.request_id, &reply);
+        self.finish_question();
+    }
+
+    /// Ticks or unticks one option of a multi-select question.
+    pub fn toggle_option(&mut self, i: usize) {
+        if let Some(p) = self.st.pending_question.as_mut() {
+            if let Some(b) = p.picked.get_mut(i) {
+                *b = !*b;
+            }
+        }
+    }
+
+    /// "Kirim": the typed text if there is any, otherwise the ticked options.
+    pub fn submit_question_text(&mut self) {
+        let typed = self.ask_input.text().trim().to_string();
+        if !typed.is_empty() {
+            self.answer_question(typed);
+            return;
+        }
+        let picks: Vec<String> = match self.st.pending_question.as_ref() {
+            Some(p) => p
+                .questions
+                .get(p.index)
+                .map(|q| {
+                    q.options
+                        .iter()
+                        .enumerate()
+                        .filter(|(i, _)| p.picked.get(*i).copied().unwrap_or(false))
+                        .map(|(_, o)| o.label.clone())
+                        .collect()
+                })
+                .unwrap_or_default(),
+            None => return,
+        };
+        if !picks.is_empty() {
+            self.answer_question(picks.join(", "));
+        }
+    }
+
+    /// "Di terminal": say nothing, and Claude Code asks there as usual.
+    pub fn hand_back_question(&mut self) {
+        let Some(p) = self.st.pending_question.take() else { return };
+        pipe::answer_raw(&self.ctx, &p.request_id, r#"{"permissionDecision":"ask"}"#);
+        sound::play("blip");
+        self.finish_question();
+    }
+
+    /// Opens the diff of step `step` of the focused session.
+    pub fn open_diff(&mut self, step: usize) {
+        let d = self.st.focus_task().and_then(|t| t.diffs.get(step).cloned().flatten());
+        if let Some(d) = d {
+            self.diff_view = Some(d);
+            self.diff_scroll = 0.0;
+            sound::play("blip");
+            self.set_view(View::Diff);
         }
     }
 

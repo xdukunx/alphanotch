@@ -32,6 +32,8 @@ use crate::log;
 
 /// Slightly under coucou-hook's own 110 s wait, so we always answer first.
 const DECISION_TIMEOUT: Duration = Duration::from_secs(108);
+/// A question takes longer than a yes/no; coucou-hook waits 125 s and the hook entry 130 s.
+const ASK_TIMEOUT: Duration = Duration::from_secs(120);
 /// How long the island gets to say "the card is up". This is the whole of B4:
 /// without it, an island that is paused, hidden behind a crashed webview or
 /// simply not listening would leave Claude Code staring at a prompt nobody can
@@ -131,7 +133,8 @@ async fn handle(app: AppHandle, mut pipe: NamedPipeServer) {
         .unwrap_or_default()
         .to_string();
 
-    if event != "PermissionRequest" {
+    let is_ask = payload.get("coucou_kind").and_then(Value::as_str) == Some("ask_user_question");
+    if event != "PermissionRequest" && !is_ask {
         log::line(format!("hook {event}"));
         app.emit_hook(payload);
         let _ = pipe.disconnect();
@@ -142,10 +145,11 @@ async fn handle(app: AppHandle, mut pipe: NamedPipeServer) {
     let (tx, mut rx) = mpsc::channel::<Reply>(4);
     app.pending().0.lock().unwrap().insert(id.clone(), tx);
     payload["request_id"] = json!(id);
-    log::line(format!("hook PermissionRequest id={id}"));
+    log::line(format!("hook {} id={id}", if is_ask { "AskUserQuestion" } else { "PermissionRequest" }));
     app.emit_hook(payload);
 
-    let decision = wait_for_decision(&id, &mut rx).await;
+    let wait = if is_ask { ASK_TIMEOUT } else { DECISION_TIMEOUT };
+    let decision = wait_for_decision(&id, &mut rx, wait).await;
     app.pending().0.lock().unwrap().remove(&id);
 
     // No decision: say nothing at all. coucou-hook then writes nothing to stdout
@@ -158,12 +162,12 @@ async fn handle(app: AppHandle, mut pipe: NamedPipeServer) {
 }
 
 /// Two waits: a short one for "the card is up", then the long one for a human.
-async fn wait_for_decision(id: &str, rx: &mut mpsc::Receiver<Reply>) -> Option<String> {
+async fn wait_for_decision(id: &str, rx: &mut mpsc::Receiver<Reply>, long: Duration) -> Option<String> {
     match tokio::time::timeout(ACK_TIMEOUT, rx.recv()).await {
         Ok(Some(Reply::Ack)) => {}
         // A click that beats the ack is still a click.
         Ok(Some(Reply::Decision(d))) => {
-            log::line(format!("hook id={id} answered {d}"));
+            log::line(format!("hook id={id} answered {}", shown(&d)));
             return Some(d);
         }
         Ok(Some(Reply::Decline)) => {
@@ -177,9 +181,9 @@ async fn wait_for_decision(id: &str, rx: &mut mpsc::Receiver<Reply>) -> Option<S
         }
     }
 
-    match tokio::time::timeout(DECISION_TIMEOUT, rx.recv()).await {
+    match tokio::time::timeout(long, rx.recv()).await {
         Ok(Some(Reply::Decision(d))) => {
-            log::line(format!("hook id={id} answered {d}"));
+            log::line(format!("hook id={id} answered {}", shown(&d)));
             Some(d)
         }
         Ok(Some(Reply::Decline)) => {
@@ -190,6 +194,14 @@ async fn wait_for_decision(id: &str, rx: &mut mpsc::Receiver<Reply>) -> Option<S
             log::line(format!("hook id={id} timed out — terminal takes over"));
             None
         }
+    }
+}
+
+/// What goes in the log: the word for allow/deny, never the text of an answer.
+fn shown(d: &str) -> &str {
+    match d {
+        "allow" | "deny" => d,
+        _ => "(answer)",
     }
 }
 
@@ -227,4 +239,12 @@ pub fn answer(app: &AppHandle, request_id: &str, decision: &str) {
     };
     log::line(format!("decision id={request_id} {word}"));
     send(app, request_id, Reply::Decision(word.to_string()), false);
+}
+
+/// Called when a question is answered (or handed back) from the island: one JSON
+/// line — `{"permissionDecision":"answer","answers":{…}}` or `…:"ask"` — which
+/// coucou-hook turns into Claude Code's `updatedInput`.
+pub fn answer_raw(app: &AppHandle, request_id: &str, json_line: &str) {
+    log::line(format!("question id={request_id} answered"));
+    send(app, request_id, Reply::Decision(json_line.to_string()), false);
 }

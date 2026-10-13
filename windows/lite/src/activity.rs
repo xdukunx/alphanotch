@@ -108,6 +108,11 @@ pub fn current() -> Option<Activity> {
     s.download.clone().map(Activity::Download)
 }
 
+/// True while a media session is playing (no allocation: called every frame).
+pub fn is_playing() -> bool {
+    SHARED.lock().map(|s| s.media.as_ref().map(|m| m.playing).unwrap_or(false)).unwrap_or(false)
+}
+
 /// The current media session even when it is paused (the dashboard keeps showing it).
 pub fn media() -> Option<Media> {
     SHARED.lock().ok()?.media.clone()
