@@ -224,6 +224,8 @@ pub struct App {
     last_move_render: f32,
     pub task_scroll: usize,
     pub stock_sel: usize,
+    /// First visible watchlist row (the list scrolls with the wheel).
+    pub stock_scroll: usize,
     pub stock_input: crate::textfield::TextField,
     pub tp_text: String,
     pub tp_lines: Vec<String>,
@@ -316,6 +318,7 @@ impl App {
             last_move_render: 0.0,
             task_scroll: 0,
             stock_sel: 0,
+            stock_scroll: 0,
             stock_input: crate::textfield::TextField::new("Tambah ticker (mis. BBCA)", false),
             tp_text: String::new(),
             tp_lines: Vec::new(),

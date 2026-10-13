@@ -219,7 +219,19 @@ impl App {
         let rows_max = (((right.h - 12.0 - 44.0) / 30.0).floor() as usize).clamp(2, 6);
         let mut y = right.y + 12.0;
         let mut act: Option<(usize, bool)> = None; // (index, remove)
-        for (i, sym) in order.iter().enumerate().take(rows_max) {
+        // The wheel scrolls the list a row at a time when it does not all fit.
+        let max_off = order.len().saturating_sub(rows_max);
+        let list = Rect::new(right.x, right.y + 12.0, right.w, rows_max as f32 * 30.0);
+        if max_off > 0 && self.ui.input.wheel != 0.0 && list.contains(self.ui.input.mouse.0, self.ui.input.mouse.1) {
+            if self.ui.input.wheel > 0.0 {
+                self.stock_scroll = self.stock_scroll.saturating_sub(1);
+            } else {
+                self.stock_scroll += 1;
+            }
+        }
+        self.stock_scroll = self.stock_scroll.min(max_off);
+        let off = self.stock_scroll;
+        for (i, sym) in order.iter().enumerate().skip(off).take(rows_max) {
             let row = Rect::new(right.x + 8.0, y, right.w - 16.0, 28.0);
             let (clicked, hover, _) = self.ui.click_region(id_of(&format!("stk-row{i}"), 98), row);
             if i == self.stock_sel || hover {
@@ -250,8 +262,13 @@ impl App {
             }
             y += 30.0;
         }
-        if order.len() > rows_max {
-            text::draw(g, &format!("+{} lagi", order.len() - rows_max), right.x + right.w - 14.0, y + 2.0, Face::Regular, 10.0, hex(pal::DIM3), Align::Right);
+        if max_off > 0 {
+            // A thin scrollbar, so it is clear there is more below.
+            let track_h = rows_max as f32 * 30.0 - 4.0;
+            let thumb_h = (track_h * rows_max as f32 / order.len() as f32).max(14.0);
+            let thumb_y = list.y + 2.0 + (track_h - thumb_h) * off as f32 / max_off as f32;
+            g.fill_style(rgba(255, 255, 255, 0.28));
+            g.fill_round_rect(right.x + right.w - 5.0, thumb_y, 2.5, thumb_h, 1.25);
         }
 
         // Add field.
@@ -299,6 +316,7 @@ impl App {
         if !self.st.settings.stocks.contains(&sym) && self.st.settings.stocks.len() < 12 {
             self.st.settings.stocks.push(sym);
             self.stock_sel = self.st.settings.stocks.len() - 1;
+            self.stock_scroll = usize::MAX; // clamped on the next frame: shows the new row
             self.save_settings();
             stocks::set_symbols(&self.st.settings.stocks);
         }
