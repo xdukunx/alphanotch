@@ -83,7 +83,10 @@ function Run([string]$file, [string[]]$arguments, [switch]$AllowFail) {
     $old = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     try {
-        & $file @arguments
+        # Out-Host keeps the tool's output out of this function's return value: without it
+        # the caller gets @(<output lines>, <exit code>) and `$code -ne 0` is always true,
+        # which is why winget "failed" even when it succeeded.
+        & $file @arguments | Out-Host
         $code = $LASTEXITCODE
     } finally { $ErrorActionPreference = $old }
     if ($code -ne 0 -and -not $AllowFail) { throw ("'" + $file + " " + ($arguments -join ' ') + "' exited with code " + $code) }
