@@ -42,6 +42,8 @@ use crate::layout::{PANEL_H, PANEL_W, WAKE_STRIP_H, WAKE_STRIP_W};
 
 pub const TIMER_FRAME: usize = 1;
 pub const TIMER_POLL: usize = 2;
+/// Wellness reminders: one wake-up every 30 s, nothing else runs while the island is hidden.
+pub const TIMER_REMIND: usize = 3;
 
 pub const WM_TRAY: u32 = 0x8000 + 2;
 pub const WM_OPEN: u32 = 0x8000 + 3;
@@ -66,6 +68,7 @@ pub struct Platform {
     frame_timer: bool,
     frame_ms: u32,
     poll_timer: bool,
+    remind_timer: bool,
     headless: bool,
     /// Rows (device px) the last present converted; the next one must cover them too.
     last_rows: usize,
@@ -165,6 +168,7 @@ impl Platform {
                 frame_timer: false,
                 frame_ms: 16,
                 poll_timer: false,
+                remind_timer: false,
                 headless: false,
                 last_rows: 0,
             };
@@ -185,6 +189,7 @@ impl Platform {
             dib: None,
             frame_timer: false,
             frame_ms: 16,
+            remind_timer: false,
             poll_timer: false,
             headless: true,
             last_rows: 0,
@@ -390,6 +395,20 @@ impl Platform {
     }
 
     /// Cursor poll + FSM deadlines. Off while hidden, so a hidden island costs nothing.
+    pub fn set_remind_timer(&mut self, on: bool) {
+        if self.headless || on == self.remind_timer {
+            return;
+        }
+        self.remind_timer = on;
+        unsafe {
+            if on {
+                SetTimer(Some(self.hwnd), TIMER_REMIND, 30_000, None);
+            } else {
+                let _ = KillTimer(Some(self.hwnd), TIMER_REMIND);
+            }
+        }
+    }
+
     pub fn set_poll_timer(&mut self, on: bool) {
         if self.headless || on == self.poll_timer {
             return;

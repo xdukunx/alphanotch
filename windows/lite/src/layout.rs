@@ -42,6 +42,8 @@ pub enum View {
     Teleprompter,
     /// The diff of one file edit, opened from the session ticker.
     Diff,
+    /// A wellness reminder (drink, stretch, rest your eyes).
+    Reminder,
 }
 
 /// The window is a fixed 720×320 (largest view); the island is drawn inside it,
@@ -94,6 +96,7 @@ pub fn layout(v: View) -> ViewLayout {
         View::Approval => l(160.0, 62.0, None, 56.0),
         View::Question => l(224.0, 62.0, None, 56.0),
         View::Diff => l(252.0, 62.0, None, 56.0),
+        View::Reminder => l(160.0, 62.0, None, 56.0),
         View::Error => l(160.0, 62.0, None, 58.0),
         View::Finished => l(160.0, 62.0, None, 58.0),
         View::Confused => l(160.0, 76.0, None, 66.0),
@@ -107,7 +110,9 @@ pub fn layout(v: View) -> ViewLayout {
         View::Greeting => l(150.0, 320.0, Some(90.0), 0.0),
         // Home is short; Mochi sits in the header row beside the greeting.
         View::Dashboard => l(196.0, 286.0, Some(21.0), 26.0),
-        View::Stocks | View::Weather | View::Teleprompter => l(220.0, 286.0, Some(21.0), 26.0),
+        // Four watchlist rows fit; more scroll.
+        View::Stocks => l(250.0, 286.0, Some(21.0), 26.0),
+        View::Weather | View::Teleprompter => l(220.0, 286.0, Some(21.0), 26.0),
     }
 }
 

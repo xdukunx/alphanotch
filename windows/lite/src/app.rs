@@ -16,7 +16,7 @@ use crate::layout::{
 use crate::mochi::engine::{BotEngine, BotState, Emote};
 use crate::mochi::greeting::Greeting;
 use crate::mochi::upload::{UploadSeq, USC};
-use crate::platform::{self, Platform, TIMER_FRAME, TIMER_POLL};
+use crate::platform::{self, Platform, TIMER_FRAME, TIMER_POLL, TIMER_REMIND};
 use crate::settings;
 use crate::sound;
 use crate::state::{DroppedInfo, State, CLAUDE_ID};
@@ -240,6 +240,10 @@ pub struct App {
     /// The diff shown by `View::Diff`, and its scroll offset.
     pub diff_view: Option<crate::state::StepDiff>,
     pub diff_scroll: f32,
+    /// The reminder on screen, and when each kind is next due (unix seconds, 0 = off).
+    pub reminder: Option<crate::reminders::ReminderCard>,
+    pub rem_next: [f64; 3],
+    pub rem_cfg: [u32; 3],
     quit: bool,
 }
 
@@ -331,6 +335,9 @@ impl App {
             ask_input: crate::textfield::TextField::new("Atau ketik jawabanmu…", false),
             diff_view: None,
             diff_scroll: 0.0,
+            reminder: None,
+            rem_next: [0.0; 3],
+            rem_cfg: [0; 3],
             quit: false,
         };
         app.refresh_flags();
@@ -493,6 +500,7 @@ impl App {
         match id {
             TIMER_FRAME => self.frame(),
             TIMER_POLL => self.poll(),
+            TIMER_REMIND => self.reminder_tick(),
             _ => {}
         }
     }
@@ -1314,6 +1322,7 @@ impl App {
         self.fsm.set_stay_visible(self.st.settings.stay_visible);
         crate::weather::set_city(&self.st.settings.weather_city);
         crate::stocks::set_symbols(&self.st.settings.stocks);
+        self.sync_reminder_timer();
         self.process_transitions();
         self.st.load_integration_tasks();
         self.refresh_flags();

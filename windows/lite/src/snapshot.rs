@@ -237,6 +237,11 @@ fn views(dir: &str, want: &dyn Fn(&str) -> bool) {
             "coucou_diff":{"file":"C:/p/coucou/src/app.rs","added":12,"removed":4,"lines":["+x","-y"]}}));
         app.debug_show(Mode::Expanded, View::Overview);
     }, 2.0);
+    scene!("reminder", Mode::Expanded, View::Reminder, |app| {
+        app.reminder = Some(crate::reminders::card_for(crate::reminders::RemKind::Water, "Dhana"));
+        app.debug_show(Mode::Expanded, View::Reminder);
+    }, 1.5);
+    scene!("stocks", Mode::Expanded, View::Stocks, |app| { crate::stocks::set_demo(); }, 1.5);
     scene!("error", Mode::Expanded, View::Error, |app| {
         hook(&mut app, json!({"hook_event_name":"PreToolUse","cwd":"C:/p/coucou","tool_name":"Bash","tool_input":{"command":"cargo test"}}));
         hook(&mut app, json!({"hook_event_name":"StopFailure","cwd":"C:/p/coucou"}));

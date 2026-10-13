@@ -388,7 +388,7 @@ impl State {
     pub fn default_view(&self) -> View {
         // Docked: the dashboard is home unless a session is actually doing something.
         let active = self.tasks.iter().any(|t| t.state != BotState::Idle);
-        if self.settings.stay_visible && !active {
+        if self.settings.stay_visible && !active && self.settings.feature_on("dashboard") {
             View::Dashboard
         } else if self.tasks.is_empty() {
             View::Empty

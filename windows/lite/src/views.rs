@@ -112,6 +112,7 @@ impl App {
             View::Approval => self.draw_approval(g, v),
             View::Question => self.draw_question(g, v),
             View::Diff => self.draw_diff(g, v),
+            View::Reminder => self.draw_reminder(g, v),
             View::Error => self.draw_error(g, v),
             View::Finished => self.draw_finished(g, v),
             View::Confused => self.draw_confused(g, v),
@@ -156,15 +157,21 @@ impl App {
 
     fn draw_header(&mut self, g: &mut Gfx, iw: f32) {
         let cy = 25.0;
-        let tabs = [
-            (Icon::House, "tab-home", View::Overview),
-            (Icon::Bubble, "tab-chat", View::Prompt),
-            (Icon::Plus, "tab-drop", View::Upload),
-            (Icon::Stack, "tab-dash", View::Dashboard),
-            (Icon::Chart, "tab-stocks", View::Stocks),
-            (Icon::Cloud, "tab-weather", View::Weather),
-            (Icon::Lines, "tab-prompter", View::Teleprompter),
+        // (icon, id, view, the feature switch that can hide it)
+        let all = [
+            (Icon::House, "tab-home", View::Overview, ""),
+            (Icon::Bubble, "tab-chat", View::Prompt, "chat"),
+            (Icon::Plus, "tab-drop", View::Upload, "drop"),
+            (Icon::Stack, "tab-dash", View::Dashboard, "dashboard"),
+            (Icon::Chart, "tab-stocks", View::Stocks, "stocks"),
+            (Icon::Cloud, "tab-weather", View::Weather, "weather"),
+            (Icon::Lines, "tab-prompter", View::Teleprompter, "teleprompter"),
         ];
+        let tabs: Vec<(Icon, &str, View)> = all
+            .iter()
+            .filter(|(_, _, _, f)| f.is_empty() || self.st.settings.feature_on(f))
+            .map(|(i, id, t, _)| (*i, *id, *t))
+            .collect();
         let v = self.st.view;
         for (i, (icon, id, target)) in tabs.iter().enumerate() {
             let r = Rect::new(14.0 + i as f32 * 35.0, cy - 11.0, 30.0, 22.0);
@@ -174,7 +181,13 @@ impl App {
             };
             if self.ui.header_icon(g, id, r, *icon, 13.0, on, true) {
                 crate::sound::play("blip");
-                let go = if *target == View::Overview { self.st.default_view() } else { *target };
+                // Home is the sessions view, always: with a docked bar `default_view` is the
+                // dashboard, which made Home look dead whenever the dashboard was open.
+                let go = if *target == View::Overview {
+                    if self.st.tasks.is_empty() { View::Empty } else { View::Overview }
+                } else {
+                    *target
+                };
                 self.set_view(go);
             }
         }
@@ -557,6 +570,40 @@ impl App {
             self.submit_question_text();
         } else if back {
             self.hand_back_question();
+        }
+    }
+
+    // ── Reminder ──────────────────────────────────────────────────────────────
+
+    fn draw_reminder(&mut self, g: &mut Gfx, v: Rect) {
+        use crate::reminders::RemKind;
+        let Some(card) = self.reminder.clone() else {
+            ui::card(g, v, Wash::None, false);
+            return;
+        };
+        let wash = match card.kind {
+            RemKind::Water => Wash::Cyan,
+            RemKind::Stretch => Wash::Green,
+            RemKind::Eyes => Wash::Indigo,
+        };
+        ui::card(g, v, wash, false);
+        let x = v.x + 116.0;
+        let w = v.w - 116.0 - 16.0;
+        let body: Vec<String> = text::wrap(&card.body, Face::Regular, 12.5, w).into_iter().take(2).collect();
+        let top = stack_top(v, &[22.0, body.len() as f32 * 17.0, 30.0], 8.0);
+        t(g, &text::ellipsize(&card.title, Face::Medium, 15.0, w), x, top + 11.0, Face::Medium, 15.0, hex(pal::INK));
+        let mut y = top + 22.0 + 8.0;
+        for l in &body {
+            t(g, l, x, y + 8.0, Face::Regular, 12.5, hex(pal::DIM));
+            y += 17.0;
+        }
+        let by = y + 8.0;
+        let (ok, ow) = self.ui.button(g, x, by, "Sudah", true, None);
+        let (later, _) = self.ui.button(g, x + ow + 8.0, by, "Tunda 10 menit", false, None);
+        if ok {
+            self.dismiss_reminder(false);
+        } else if later {
+            self.dismiss_reminder(true);
         }
     }
 

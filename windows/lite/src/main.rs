@@ -27,6 +27,7 @@ mod log;
 mod mochi;
 mod ole;
 mod pipe;
+mod reminders;
 mod platform;
 mod rt;
 mod secrets;
@@ -109,6 +110,7 @@ fn main() {
     handle.set_hwnd(island.platform.hwnd);
     let hwnd = island.platform.hwnd;
     app::install(island);
+    app::with_app(|a| a.sync_reminder_timer());
     ole::register(hwnd);
 
     pipe::start(handle.clone());

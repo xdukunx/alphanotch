@@ -345,6 +345,7 @@ impl Win {
         y = self.claude_api(g, m, y, cw);
         y = self.integrations(g, m, y, cw);
         y = self.google(g, m, y, cw);
+        y = self.features(g, m, y, cw);
         y = self.general(g, m, y, cw);
 
         text::draw(g, "No telemetry. Network requests only go to the services you configure yourself.", m, y + 8.0, Face::Regular, 11.0, hex(pal::DIM3), Align::Left);
@@ -854,6 +855,79 @@ impl Win {
                 }
             }
         }
+        y0 + h + 2.0 * pad + 16.0
+    }
+
+    /// Which tabs the island shows, and the wellness reminders. Unticked = gone, no clutter.
+    fn features(&mut self, g: &mut Gfx, m: f32, y0: f32, cw: f32) -> f32 {
+        let pad = 18.0;
+        let (ix, iw) = (m + pad, cw - 2.0 * pad);
+        let h = 32.0 + 3.0 * 34.0 + 18.0 + 3.0 * 38.0 + 40.0;
+        Self::card(g, m, y0, cw, h + 2.0 * pad);
+        let mut y = y0 + pad;
+        Self::title(g, ix, y + 9.0, None, "Fitur & pengingat");
+        y += 32.0;
+
+        let feats = [
+            ("chat", "Chat"),
+            ("drop", "Drop file"),
+            ("dashboard", "Dashboard"),
+            ("stocks", "Saham"),
+            ("weather", "Cuaca"),
+            ("teleprompter", "Teleprompter"),
+        ];
+        let half = iw / 2.0;
+        for (i, (id, label)) in feats.iter().enumerate() {
+            let x = ix + (i % 2) as f32 * half;
+            let yy = y + (i / 2) as f32 * 34.0;
+            text::draw(g, label, x, yy + 11.0, Face::Regular, 12.0, hex("#C5C8CD"), Align::Left);
+            let on = self.settings.feature_on(id);
+            if self.ui.switch(g, &format!("feat-{id}"), x + 110.0, yy + 2.0, on) {
+                if on {
+                    self.settings.disabled_features.push(id.to_string());
+                } else {
+                    self.settings.disabled_features.retain(|f| f != id);
+                }
+                self.save();
+            }
+        }
+        y += 3.0 * 34.0 + 18.0;
+
+        let rems: [(&str, usize, &[u32]); 3] = [
+            ("Minum air", 0, &[0, 30, 45, 60, 90]),
+            ("Peregangan", 1, &[0, 30, 60, 90]),
+            ("Istirahat mata", 2, &[0, 20, 30]),
+        ];
+        for (label, k, opts) in rems {
+            text::draw(g, label, ix, y + 11.0, Face::Regular, 12.0, hex("#C5C8CD"), Align::Left);
+            let cur = match k {
+                0 => self.settings.water_every_min,
+                1 => self.settings.stretch_every_min,
+                _ => self.settings.eyes_every_min,
+            };
+            let mut px = ix + 112.0;
+            for &o in opts {
+                let t = if o == 0 { "Mati".to_string() } else { format!("{o} mnt") };
+                let pw = text::measure(&t, Face::Regular, 11.5) + 16.0;
+                let r = Rect::new(px, y - 2.0, pw, 28.0);
+                let (clicked, hover, _) = self.ui.click_region(id_of(&format!("rem-{k}-{o}"), 83), r);
+                let on = cur == o;
+                g.fill_style(if on { hex("#252830") } else { rgba(255, 255, 255, if hover { 0.1 } else { 0.05 }) });
+                g.fill_round_rect(r.x, r.y, r.w, r.h, 14.0);
+                text::draw(g, &t, r.cx(), r.cy(), Face::Regular, 11.5, hex(if on { pal::INK } else { pal::DIM2 }), Align::Center);
+                px += pw + 4.0;
+                if clicked && !on {
+                    match k {
+                        0 => self.settings.water_every_min = o,
+                        1 => self.settings.stretch_every_min = o,
+                        _ => self.settings.eyes_every_min = o,
+                    }
+                    self.save();
+                }
+            }
+            y += 38.0;
+        }
+        let _ = Self::para(g, ix, y + 2.0, iw, "Mochi muncul dengan pengingat; kartunya punya tombol Tunda 10 menit. Semua mati secara bawaan.");
         y0 + h + 2.0 * pad + 16.0
     }
 

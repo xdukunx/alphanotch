@@ -36,6 +36,24 @@ pub struct Settings {
     /// Defaulted explicitly so a settings.json written by an older build still loads.
     #[serde(default = "default_model")]
     pub model: String,
+    /// Features the user switched off in Settings (`chat`, `drop`, `dashboard`, `stocks`,
+    /// `weather`, `teleprompter`). Empty = everything on, as before.
+    #[serde(default)]
+    pub disabled_features: Vec<String>,
+    /// Reminder intervals in minutes; 0 = off. Opt-in, so a fresh install stays quiet.
+    #[serde(default)]
+    pub water_every_min: u32,
+    #[serde(default)]
+    pub stretch_every_min: u32,
+    #[serde(default)]
+    pub eyes_every_min: u32,
+}
+
+impl Settings {
+    /// Whether a switchable feature (a header tab) is enabled.
+    pub fn feature_on(&self, id: &str) -> bool {
+        !self.disabled_features.iter().any(|f| f == id)
+    }
 }
 
 fn default_city() -> String {
@@ -72,6 +90,10 @@ impl Default for Settings {
             weather_city: default_city(),
             stocks: default_stocks(),
             model: default_model(),
+            disabled_features: Vec::new(),
+            water_every_min: 0,
+            stretch_every_min: 0,
+            eyes_every_min: 0,
         }
     }
 }

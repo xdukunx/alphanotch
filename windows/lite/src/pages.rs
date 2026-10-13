@@ -199,6 +199,18 @@ impl App {
                 text::draw(g, &stocks::fmt_price(q.price), left.x + 18.0, left.y + 56.0, Face::Bold, 26.0, hex(pal::INK), Align::Left);
                 let col = updown(q.change());
                 text::draw(g, &format!("{}{}  ({}{:.2}%)", if q.change() >= 0.0 { "+" } else { "" }, stocks::fmt_price(q.change()), if q.pct() >= 0.0 { "+" } else { "" }, q.pct()), left.x + 18.0, left.y + 82.0, Face::Medium, 12.0, col, Align::Left);
+                // Key figures of the day, from the intraday series, in a column beside the price.
+                if q.series.len() >= 2 {
+                    let open = q.series[0];
+                    let hi = q.series.iter().cloned().fold(f32::MIN, f32::max);
+                    let lo = q.series.iter().cloned().fold(f32::MAX, f32::min);
+                    let (sx, sr) = (left.x + 150.0, left.x + left.w - 16.0);
+                    for (i, (lab, val)) in [("Buka", open), ("Tinggi", hi), ("Rendah", lo), ("Kemarin", q.prev)].iter().enumerate() {
+                        let yy = left.y + 42.0 + i as f32 * 14.0;
+                        text::draw(g, lab, sx, yy, Face::Regular, 9.5, hex(pal::DIM3), Align::Left);
+                        text::draw(g, &stocks::fmt_price(*val), sr, yy, Face::Medium, 10.5, hex(pal::INK2), Align::Right);
+                    }
+                }
                 let chart = Rect::new(left.x + 16.0, left.y + 100.0, left.w - 32.0, left.h - 100.0 - 16.0);
                 chart_area(g, chart, &q.series, q.prev, col);
                 if let Some(e) = &q.error {
@@ -238,8 +250,13 @@ impl App {
                 g.fill_style(rgba(255, 255, 255, if i == self.stock_sel { 0.09 } else { 0.05 }));
                 g.fill_round_rect(row.x, row.y, row.w, row.h, 10.0);
             }
-            text::draw(g, &stocks::display(sym), row.x + 10.0, row.cy(), Face::Medium, 12.0, hex(pal::INK), Align::Left);
             let q = quotes.iter().find(|q| &q.symbol == sym);
+            if i == self.stock_sel {
+                let c = q.map(|q| updown(q.change())).unwrap_or(hex(pal::DIM3));
+                g.fill_style(c);
+                g.fill_round_rect(row.x + 2.0, row.y + 8.0, 2.5, row.h - 16.0, 1.25);
+            }
+            text::draw(g, &stocks::display(sym), row.x + 10.0, row.cy(), Face::Medium, 12.0, hex(pal::INK), Align::Left);
             if let Some(q) = q.filter(|q| q.price > 0.0) {
                 let col = updown(q.change());
                 spark(g, Rect::new(row.x + 62.0, row.y + 6.0, 54.0, 16.0), &q.series, col);

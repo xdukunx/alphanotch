@@ -46,6 +46,26 @@ pub fn quotes() -> Vec<Quote> {
     S.lock().map(|s| s.quotes.clone()).unwrap_or_default()
 }
 
+/// Snapshot builds only: fixed quotes, so the page can be rendered without a network.
+#[cfg(feature = "snapshot")]
+pub fn set_demo() {
+    let wave = |base: f32, amp: f32, drift: f32| -> Vec<f32> {
+        (0..60).map(|i| base + (i as f32 * 0.35).sin() * amp + i as f32 * drift).collect()
+    };
+    let mk = |sym: &str, price: f32, prev: f32, series: Vec<f32>| Quote {
+        symbol: sym.into(), price, prev, series, currency: "IDR".into(), error: None,
+    };
+    if let Ok(mut s) = S.lock() {
+        s.quotes = vec![
+            mk("^JKSE", 7234.5, 7190.2, wave(7190.0, 18.0, 0.7)),
+            mk("BBCA.JK", 9850.0, 9925.0, wave(9925.0, 40.0, -1.3)),
+            mk("BBRI.JK", 4320.0, 4280.0, wave(4280.0, 25.0, 0.7)),
+            mk("BMRI.JK", 5775.0, 5800.0, wave(5800.0, 30.0, -0.4)),
+            mk("TLKM.JK", 3010.0, 2960.0, wave(2960.0, 15.0, 0.8)),
+        ];
+    }
+}
+
 /// The UI calls this every frame the Stocks page is on screen: it keeps the fast poll going.
 pub fn touch() {
     if let Ok(mut s) = S.lock() {
