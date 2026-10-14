@@ -12,6 +12,7 @@ mod anim;
 mod app;
 mod cards;
 mod claude;
+mod coach;
 mod ctx;
 mod dashboard;
 mod files;

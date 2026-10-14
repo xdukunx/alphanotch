@@ -47,6 +47,16 @@ pub struct Settings {
     pub stretch_every_min: u32,
     #[serde(default)]
     pub eyes_every_min: u32,
+    /// Work suggestions (tasks, agenda, projects left alone) and Claude-usage alerts.
+    /// Both are estimates computed locally; each can be switched off.
+    #[serde(default = "yes")]
+    pub coach_suggestions: bool,
+    #[serde(default = "yes")]
+    pub coach_limit: bool,
+}
+
+fn yes() -> bool {
+    true
 }
 
 impl Settings {
@@ -94,6 +104,8 @@ impl Default for Settings {
             water_every_min: 0,
             stretch_every_min: 0,
             eyes_every_min: 0,
+            coach_suggestions: true,
+            coach_limit: true,
         }
     }
 }

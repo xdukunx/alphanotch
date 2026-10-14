@@ -862,7 +862,7 @@ impl Win {
     fn features(&mut self, g: &mut Gfx, m: f32, y0: f32, cw: f32) -> f32 {
         let pad = 18.0;
         let (ix, iw) = (m + pad, cw - 2.0 * pad);
-        let h = 32.0 + 3.0 * 34.0 + 18.0 + 3.0 * 38.0 + 40.0;
+        let h = 32.0 + 3.0 * 34.0 + 18.0 + 3.0 * 38.0 + 40.0 + 56.0;
         Self::card(g, m, y0, cw, h + 2.0 * pad);
         let mut y = y0 + pad;
         Self::title(g, ix, y + 9.0, None, "Fitur & pengingat");
@@ -927,6 +927,27 @@ impl Win {
             }
             y += 38.0;
         }
+        // The coach: both are estimates computed on this machine.
+        y += 8.0;
+        for (i, (label, on)) in [
+            ("Saran pekerjaan", self.settings.coach_suggestions),
+            ("Alert limit Claude", self.settings.coach_limit),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let x = ix + i as f32 * half;
+            text::draw(g, label, x, y + 11.0, Face::Regular, 12.0, hex("#C5C8CD"), Align::Left);
+            if self.ui.switch(g, &format!("coach-{i}"), x + 130.0, y + 2.0, on) {
+                if i == 0 {
+                    self.settings.coach_suggestions = !on;
+                } else {
+                    self.settings.coach_limit = !on;
+                }
+                self.save();
+            }
+        }
+        y += 38.0;
         let _ = Self::para(g, ix, y + 2.0, iw, "Mochi muncul dengan pengingat; kartunya punya tombol Tunda 10 menit. Semua mati secara bawaan.");
         y0 + h + 2.0 * pad + 16.0
     }

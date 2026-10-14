@@ -244,6 +244,11 @@ pub struct App {
     pub reminder: Option<crate::reminders::ReminderCard>,
     pub rem_next: [f64; 3],
     pub rem_cfg: [u32; 3],
+    /// Coach cards: the local day they are counted for, how many were shown, and when each
+    /// usage alert (plenty, careful) last fired.
+    pub coach_day: i64,
+    pub coach_popups: u32,
+    pub coach_alert_at: [f64; 2],
     quit: bool,
 }
 
@@ -338,6 +343,9 @@ impl App {
             reminder: None,
             rem_next: [0.0; 3],
             rem_cfg: [0; 3],
+            coach_day: 0,
+            coach_popups: 0,
+            coach_alert_at: [0.0; 2],
             quit: false,
         };
         app.refresh_flags();

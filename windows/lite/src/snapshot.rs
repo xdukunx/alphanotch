@@ -241,6 +241,22 @@ fn views(dir: &str, want: &dyn Fn(&str) -> bool) {
         app.reminder = Some(crate::reminders::card_for(crate::reminders::RemKind::Water, "Dhana"));
         app.debug_show(Mode::Expanded, View::Reminder);
     }, 1.5);
+    scene!("coach_suggest", Mode::Expanded, View::Reminder, |app| {
+        let mut c = crate::reminders::card_for(crate::reminders::RemKind::Suggest, "Dhana");
+        c.body = "Telat: Kirim laporan magang
+Sudah 41 hari belum disentuh: Rapikan arsip foto
+Kosong ~150 menit sebelum Rapat tim (14:00) — cocok untuk: Kirim laporan".into();
+        app.reminder = Some(c);
+        app.debug_show(Mode::Expanded, View::Reminder);
+    }, 1.5);
+    scene!("coach_fast", Mode::Expanded, View::Reminder, |app| {
+        app.reminder = Some(crate::reminders::limit_card(crate::coach::LimitAlert::Fast { pct: 91 }));
+        app.debug_show(Mode::Expanded, View::Reminder);
+    }, 1.5);
+    scene!("coach_plenty", Mode::Expanded, View::Reminder, |app| {
+        app.reminder = Some(crate::reminders::limit_card(crate::coach::LimitAlert::Plenty { pct: 12 }));
+        app.debug_show(Mode::Expanded, View::Reminder);
+    }, 1.5);
     scene!("stocks", Mode::Expanded, View::Stocks, |app| { crate::stocks::set_demo(); }, 1.5);
     scene!("error", Mode::Expanded, View::Error, |app| {
         hook(&mut app, json!({"hook_event_name":"PreToolUse","cwd":"C:/p/coucou","tool_name":"Bash","tool_input":{"command":"cargo test"}}));

@@ -38,6 +38,16 @@ enum Op {
     Complete(String),
 }
 
+/// What the suggestions need to know about an open task.
+#[derive(Clone, Debug)]
+pub struct TaskMeta {
+    pub title: String,
+    /// RFC 3339 date-time of the deadline, when it has one.
+    pub due: Option<String>,
+    /// RFC 3339 time of its last change.
+    pub updated: String,
+}
+
 /// One agenda entry for today.
 #[derive(Clone, Debug)]
 pub struct Event {
@@ -55,6 +65,7 @@ struct Shared {
     status: Status,
     /// (task id, title) of every open task, as of the last pull. Taken once by the UI.
     remote: Option<Vec<(String, String)>>,
+    meta: Vec<TaskMeta>,
     ops: Vec<Op>,
     access: Option<(String, Instant)>,
     list: Option<String>,
@@ -62,7 +73,7 @@ struct Shared {
     note: String,
 }
 
-static S: Mutex<Shared> = Mutex::new(Shared { events: Vec::new(), cal_denied: false, status: Status::NoClient, remote: None, ops: Vec::new(), access: None, list: None, note: String::new() });
+static S: Mutex<Shared> = Mutex::new(Shared { events: Vec::new(), cal_denied: false, status: Status::NoClient, remote: None, meta: Vec::new(), ops: Vec::new(), access: None, list: None, note: String::new() });
 static KICK: Notify = Notify::const_new();
 /// Wakes a sign-in that is waiting for the browser so it can be cancelled or restarted.
 static CANCEL: Notify = Notify::const_new();
@@ -184,6 +195,11 @@ pub fn events() -> Vec<Event> {
 
 pub fn calendar_needs_login() -> bool {
     S.lock().map(|s| s.cal_denied).unwrap_or(false)
+}
+
+/// Deadline and last-change time of every open task, as of the last pull.
+pub fn task_meta() -> Vec<TaskMeta> {
+    S.lock().map(|s| s.meta.clone()).unwrap_or_default()
 }
 
 pub fn take_remote() -> Option<Vec<(String, String)>> {
@@ -488,8 +504,25 @@ async fn sync_once() -> Result<(), String> {
                 .collect()
         })
         .unwrap_or_default();
+    let meta: Vec<TaskMeta> = v["items"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter(|t| t["status"].as_str() == Some("needsAction"))
+                .filter_map(|t| {
+                    let title = t["title"].as_str()?.trim().to_string();
+                    (!title.is_empty()).then(|| TaskMeta {
+                        title,
+                        due: t["due"].as_str().map(str::to_string),
+                        updated: t["updated"].as_str().unwrap_or("").to_string(),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
     if let Ok(mut s) = S.lock() {
         s.remote = Some(items);
+        s.meta = meta;
     }
 
     // Agenda: failures here never fail the to-do sync.

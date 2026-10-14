@@ -96,7 +96,7 @@ pub fn layout(v: View) -> ViewLayout {
         View::Approval => l(160.0, 62.0, None, 56.0),
         View::Question => l(224.0, 62.0, None, 56.0),
         View::Diff => l(252.0, 62.0, None, 56.0),
-        View::Reminder => l(160.0, 62.0, None, 56.0),
+        View::Reminder => l(176.0, 62.0, None, 56.0),
         View::Error => l(160.0, 62.0, None, 58.0),
         View::Finished => l(160.0, 62.0, None, 58.0),
         View::Confused => l(160.0, 76.0, None, 66.0),

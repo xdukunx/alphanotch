@@ -14,17 +14,28 @@ pub enum RemKind {
     Water,
     Stretch,
     Eyes,
+    /// Work suggestions for today.
+    Suggest,
+    /// Claude usage: plenty of room / careful.
+    LimitPlenty,
+    LimitFast,
 }
 
 const KINDS: [RemKind; 3] = [RemKind::Water, RemKind::Stretch, RemKind::Eyes];
 
 impl RemKind {
+    /// Slot in the interval schedule; the coach cards have none.
     fn idx(self) -> usize {
         match self {
             RemKind::Water => 0,
             RemKind::Stretch => 1,
-            RemKind::Eyes => 2,
+            _ => 2,
         }
+    }
+
+    /// An interval reminder (can be snoozed), as opposed to a coach card.
+    pub fn is_interval(self) -> bool {
+        matches!(self, RemKind::Water | RemKind::Stretch | RemKind::Eyes)
     }
 }
 
@@ -40,6 +51,7 @@ fn every(s: &Settings, k: RemKind) -> u32 {
         RemKind::Water => s.water_every_min,
         RemKind::Stretch => s.stretch_every_min,
         RemKind::Eyes => s.eyes_every_min,
+        _ => 0,
     }
 }
 
@@ -59,8 +71,28 @@ pub fn card_for(kind: RemKind, name: &str) -> ReminderCard {
             format!("Istirahatkan matamu{who}"),
             "Lihat sesuatu yang jauh (sekitar 6 meter) selama 20 detik.".to_string(),
         ),
+        RemKind::Suggest => (format!("Saran hari ini{who}"), String::new()),
+        RemKind::LimitPlenty => (String::new(), String::new()),
+        RemKind::LimitFast => (String::new(), String::new()),
     };
     ReminderCard { kind, title, body }
+}
+
+/// The card for a usage estimate; `pct` is the share of the user's own busiest stretch.
+pub fn limit_card(alert: crate::coach::LimitAlert) -> ReminderCard {
+    use crate::coach::LimitAlert::*;
+    match alert {
+        Plenty { pct } => ReminderCard {
+            kind: RemKind::LimitPlenty,
+            title: "Limit Claude masih longgar".into(),
+            body: format!("Lima jam terakhir baru ±{pct}% dari puncak pemakaianmu. Pakai dong, sayang kalau tidak terpakai. (perkiraan)"),
+        },
+        Fast { pct } => ReminderCard {
+            kind: RemKind::LimitFast,
+            title: "Hati-hati, pemakaian Claude ngebut".into(),
+            body: format!("Sudah ±{pct}% dari puncak pemakaianmu. Pelan-pelan biar tidak habis sebelum limit reset. (perkiraan)"),
+        },
+    }
 }
 
 impl App {
@@ -77,6 +109,8 @@ impl App {
             }
             any |= e > 0;
         }
+        let s = &self.st.settings;
+        any |= s.coach_suggestions || s.coach_limit;
         self.platform.set_remind_timer(any);
     }
 
@@ -95,9 +129,64 @@ impl App {
             if e > 0 && self.rem_next[i] > 0.0 && now >= self.rem_next[i] {
                 self.rem_next[i] = now + e as f64 * 60.0;
                 self.fire_reminder(k);
-                break; // one at a time; the next one waits for the next tick
+                return; // one at a time; the next one waits for the next tick
             }
         }
+        self.coach_tick(now);
+    }
+
+    /// Usage alerts and the daily suggestions. Quiet by construction: at most four cards a
+    /// day, the same alert never twice within four hours, suggestions once per day.
+    fn coach_tick(&mut self, now: f64) {
+        let (want_sug, want_lim) = (self.st.settings.coach_suggestions, self.st.settings.coach_limit);
+        if !(want_sug || want_lim) {
+            return;
+        }
+        crate::coach::kick_scan();
+        if !crate::coach::ready() {
+            return;
+        }
+        let off = util::local_offset_secs() as f64;
+        let day = ((now + off) / 86_400.0).floor() as i64;
+        if day != self.coach_day {
+            self.coach_day = day;
+            self.coach_popups = 0;
+        }
+        if self.coach_popups >= 4 {
+            return;
+        }
+        let name = self.st.settings.display_name.trim().to_string();
+
+        if want_lim {
+            if let Some(a) = crate::coach::limit_alert(now) {
+                let slot = matches!(a, crate::coach::LimitAlert::Fast { .. }) as usize;
+                if now - self.coach_alert_at[slot] > 4.0 * 3600.0 {
+                    self.coach_alert_at[slot] = now;
+                    self.coach_popups += 1;
+                    self.show_coach_card(limit_card(a), if slot == 1 { Emote::Surprised } else { Emote::Happy });
+                    return;
+                }
+            }
+        }
+        let hour = ((now + off) / 3600.0).floor() as i64 % 24;
+        if want_sug && hour >= 8 && coach_day_done() != Some(day) {
+            let s = crate::coach::suggestions(now);
+            if !s.is_empty() {
+                mark_coach_day(day);
+                self.coach_popups += 1;
+                let mut card = card_for(RemKind::Suggest, &name);
+                card.body = s.join("\n");
+                self.show_coach_card(card, Emote::Proud);
+            }
+        }
+    }
+
+    fn show_coach_card(&mut self, card: ReminderCard, emote: Emote) {
+        self.reminder = Some(card);
+        sound::play("greet");
+        self.engine.trigger_emote(emote, 3.0);
+        self.alert(View::Reminder);
+        self.ensure_running();
     }
 
     fn fire_reminder(&mut self, kind: RemKind) {
@@ -108,7 +197,7 @@ impl App {
             match kind {
                 RemKind::Water => Emote::Happy,
                 RemKind::Stretch => Emote::Yawn,
-                RemKind::Eyes => Emote::Wink,
+                _ => Emote::Wink,
             },
             3.0,
         );
@@ -119,13 +208,27 @@ impl App {
     /// "Sudah" closes it; "Tunda" brings the same reminder back in 10 minutes.
     pub fn dismiss_reminder(&mut self, snooze: bool) {
         if let Some(card) = self.reminder.take() {
-            if snooze {
+            if snooze && card.kind.is_interval() {
                 self.rem_next[card.kind.idx()] = util::unix_now() + 10.0 * 60.0;
             }
         }
         sound::play("blip");
         self.collapse();
     }
+}
+
+fn coach_day_file() -> std::path::PathBuf {
+    crate::settings::local_dir().join("coach.day")
+}
+
+/// The local day number the suggestions were last shown on (survives restarts).
+fn coach_day_done() -> Option<i64> {
+    std::fs::read_to_string(coach_day_file()).ok()?.trim().parse().ok()
+}
+
+fn mark_coach_day(day: i64) {
+    let _ = std::fs::create_dir_all(crate::settings::local_dir());
+    let _ = std::fs::write(coach_day_file(), day.to_string());
 }
 
 #[cfg(test)]
@@ -137,6 +240,14 @@ mod tests {
         assert_eq!(card_for(RemKind::Water, "Dhana").title, "Waktunya minum air, Dhana");
         assert_eq!(card_for(RemKind::Water, "").title, "Waktunya minum air");
         assert!(card_for(RemKind::Eyes, "").body.contains("20 detik"));
+    }
+
+    #[test]
+    fn coach_cards_carry_the_estimate_label_and_cannot_be_snoozed() {
+        let c = limit_card(crate::coach::LimitAlert::Fast { pct: 91 });
+        assert!(c.body.contains("91") && c.body.contains("perkiraan"));
+        assert!(!c.kind.is_interval() && RemKind::Water.is_interval());
+        assert!(limit_card(crate::coach::LimitAlert::Plenty { pct: 12 }).title.contains("longgar"));
     }
 
     #[test]

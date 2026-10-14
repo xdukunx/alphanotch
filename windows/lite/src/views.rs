@@ -584,12 +584,23 @@ impl App {
         let wash = match card.kind {
             RemKind::Water => Wash::Cyan,
             RemKind::Stretch => Wash::Green,
-            RemKind::Eyes => Wash::Indigo,
+            RemKind::Eyes | RemKind::Suggest => Wash::Indigo,
+            RemKind::LimitPlenty => Wash::Green,
+            RemKind::LimitFast => Wash::Amber,
         };
         ui::card(g, v, wash, false);
         let x = v.x + 116.0;
         let w = v.w - 116.0 - 16.0;
-        let body: Vec<String> = text::wrap(&card.body, Face::Regular, 12.5, w).into_iter().take(2).collect();
+        // Suggestions arrive one per line; everything else is a paragraph.
+        let body: Vec<String> = if card.body.contains('\n') {
+            card.body
+                .lines()
+                .take(3)
+                .map(|l| text::ellipsize(l, Face::Regular, 12.5, w))
+                .collect()
+        } else {
+            text::wrap(&card.body, Face::Regular, 12.5, w).into_iter().take(3).collect()
+        };
         let top = stack_top(v, &[22.0, body.len() as f32 * 17.0, 30.0], 8.0);
         t(g, &text::ellipsize(&card.title, Face::Medium, 15.0, w), x, top + 11.0, Face::Medium, 15.0, hex(pal::INK));
         let mut y = top + 22.0 + 8.0;
@@ -598,8 +609,13 @@ impl App {
             y += 17.0;
         }
         let by = y + 8.0;
-        let (ok, ow) = self.ui.button(g, x, by, "Sudah", true, None);
-        let (later, _) = self.ui.button(g, x + ow + 8.0, by, "Tunda 10 menit", false, None);
+        let interval = card.kind.is_interval();
+        let (ok, ow) = self.ui.button(g, x, by, if interval { "Sudah" } else { "Oke" }, true, None);
+        let later = if interval {
+            self.ui.button(g, x + ow + 8.0, by, "Tunda 10 menit", false, None).0
+        } else {
+            false
+        };
         if ok {
             self.dismiss_reminder(false);
         } else if later {
