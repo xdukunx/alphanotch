@@ -241,6 +241,20 @@ fn views(dir: &str, want: &dyn Fn(&str) -> bool) {
         app.reminder = Some(crate::reminders::card_for(crate::reminders::RemKind::Water, "Dhana"));
         app.debug_show(Mode::Expanded, View::Reminder);
     }, 1.5);
+    scene!("quests", Mode::Expanded, View::Quests, |app| {
+        app.buddy.day = ((crate::util::unix_now() + crate::util::local_offset_secs() as f64) / 86_400.0).floor() as i64;
+        app.buddy.tasks_done = 1;
+        app.buddy.care = 2;
+        app.buddy.crowns = 3;
+        app.buddy.streak = 5;
+        app.buddy.streak_day = app.buddy.day;
+        crate::mochi::character::set_crown_tier(2);
+        app.debug_show(Mode::Expanded, View::Quests);
+    }, 1.5);
+    scene!("confetti", Mode::Expanded, View::Overview, |app| {
+        app.engine.confetti(26);
+        app.engine.trigger_emote(crate::mochi::engine::Emote::Proud, 2.2);
+    }, 0.9);
     scene!("coach_suggest", Mode::Expanded, View::Reminder, |app| {
         let mut c = crate::reminders::card_for(crate::reminders::RemKind::Suggest, "Dhana");
         c.body = "Telat: Kirim laporan magang

@@ -35,6 +35,24 @@ mod pal {
     pub const CREAM: &str = "#FFF6E0";
 }
 
+static CROWN_TIER: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+
+/// Crown colour earned from daily quests: 0 gold, then rose gold, emerald, sapphire, amethyst.
+pub fn set_crown_tier(t: u8) {
+    CROWN_TIER.store(t.min(4), std::sync::atomic::Ordering::Relaxed);
+}
+
+/// (top, bottom) of the crown's gradient for the current tier.
+fn crown_colors() -> (&'static str, &'static str) {
+    match CROWN_TIER.load(std::sync::atomic::Ordering::Relaxed) {
+        1 => ("#F7C6B8", "#E8998D"),
+        2 => ("#6EE7B7", "#10B981"),
+        3 => ("#7DB8FF", "#3B82F6"),
+        4 => ("#D2A8FF", "#9B5DE5"),
+        _ => (pal::GOLD_TOP, pal::GOLD_BOTTOM),
+    }
+}
+
 fn mix(a: Rgb, b: Rgb, t: f32) -> Rgb {
     [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)]
 }
@@ -261,9 +279,10 @@ fn draw_crown(g: &mut Gfx, r: f32, o: &FrontOpts) {
     g.line_join_round();
     g.line_width(r * 0.1);
     poly(g, &CROWN, r, 0.0);
-    let grad = g.linear(0.0, -r * 1.28, 0.0, -r * 0.38, &[(0.0, hex(pal::GOLD_TOP)), (1.0, hex(pal::GOLD_BOTTOM))]);
+    let (top, bottom) = crown_colors();
+    let grad = g.linear(0.0, -r * 1.28, 0.0, -r * 0.38, &[(0.0, hex(top)), (1.0, hex(bottom))]);
     g.fill_style(grad);
-    g.stroke_style(hex(pal::GOLD_BOTTOM));
+    g.stroke_style(hex(bottom));
     let p = g.take_path().unwrap();
     g.fill_path(&p);
     g.stroke_path(&p);
@@ -290,8 +309,8 @@ fn draw_mini_crown(g: &mut Gfx, r: f32) {
     g.line_join_round();
     g.line_width(r * 0.12);
     poly(g, &pts, r, 0.0);
-    g.fill_style(hex(pal::GOLD_TOP));
-    g.stroke_style(hex(pal::GOLD_TOP));
+    g.fill_style(hex(crown_colors().0));
+    g.stroke_style(hex(crown_colors().0));
     let p = g.take_path().unwrap();
     g.fill_path(&p);
     g.stroke_path(&p);

@@ -323,7 +323,7 @@ pub fn build_suggestions(
 ) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     let mut seen_titles: HashSet<&str> = HashSet::new();
-    let mut push = |s: String, out: &mut Vec<String>| {
+    let push = |s: String, out: &mut Vec<String>| {
         if out.len() < 3 {
             out.push(s);
         }

@@ -862,7 +862,7 @@ impl Win {
     fn features(&mut self, g: &mut Gfx, m: f32, y0: f32, cw: f32) -> f32 {
         let pad = 18.0;
         let (ix, iw) = (m + pad, cw - 2.0 * pad);
-        let h = 32.0 + 3.0 * 34.0 + 18.0 + 3.0 * 38.0 + 40.0 + 56.0;
+        let h = 32.0 + 4.0 * 34.0 + 18.0 + 3.0 * 38.0 + 40.0 + 56.0;
         Self::card(g, m, y0, cw, h + 2.0 * pad);
         let mut y = y0 + pad;
         Self::title(g, ix, y + 9.0, None, "Fitur & pengingat");
@@ -875,6 +875,7 @@ impl Win {
             ("stocks", "Saham"),
             ("weather", "Cuaca"),
             ("teleprompter", "Teleprompter"),
+            ("quests", "Misi harian"),
         ];
         let half = iw / 2.0;
         for (i, (id, label)) in feats.iter().enumerate() {
@@ -891,7 +892,7 @@ impl Win {
                 self.save();
             }
         }
-        y += 3.0 * 34.0 + 18.0;
+        y += 4.0 * 34.0 + 18.0;
 
         let rems: [(&str, usize, &[u32]); 3] = [
             ("Minum air", 0, &[0, 30, 45, 60, 90]),

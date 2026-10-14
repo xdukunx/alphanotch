@@ -113,6 +113,7 @@ impl App {
             View::Question => self.draw_question(g, v),
             View::Diff => self.draw_diff(g, v),
             View::Reminder => self.draw_reminder(g, v),
+            View::Quests => self.draw_quests(g, v),
             View::Error => self.draw_error(g, v),
             View::Finished => self.draw_finished(g, v),
             View::Confused => self.draw_confused(g, v),
@@ -166,6 +167,7 @@ impl App {
             (Icon::Chart, "tab-stocks", View::Stocks, "stocks"),
             (Icon::Cloud, "tab-weather", View::Weather, "weather"),
             (Icon::Lines, "tab-prompter", View::Teleprompter, "teleprompter"),
+            (Icon::Star, "tab-quests", View::Quests, "quests"),
         ];
         let tabs: Vec<(Icon, &str, View)> = all
             .iter()
@@ -571,6 +573,53 @@ impl App {
         } else if back {
             self.hand_back_question();
         }
+    }
+
+    // ── Quests ────────────────────────────────────────────────────────────────
+
+    fn draw_quests(&mut self, g: &mut Gfx, v: Rect) {
+        use crate::buddy::crown_tier;
+        ui::card(g, v, Wash::Amber, false);
+        let x = v.x + 116.0;
+        let w = v.w - 116.0 - 16.0;
+        let care_on = {
+            let s = &self.st.settings;
+            s.water_every_min > 0 || s.stretch_every_min > 0 || s.eyes_every_min > 0
+        };
+        let quests = self.buddy.quests(care_on);
+        let (_, crown) = crown_tier(self.buddy.crowns);
+        let day = ((crate::util::unix_now() + crate::util::local_offset_secs() as f64) / 86_400.0).floor() as i64;
+        let streak = self.buddy.streak_on(day);
+
+        t(g, "Misi hari ini", x, v.y + 16.0, Face::Medium, 14.0, hex(pal::INK));
+        let tag = format!("Mahkota {crown} · {} hari tuntas", self.buddy.crowns);
+        text::draw(g, &tag, x + w, v.y + 16.0, Face::Regular, 11.0, hex(pal::DIM2), Align::Right);
+
+        for (i, q) in quests.iter().enumerate() {
+            let y = v.y + 34.0 + i as f32 * 28.0;
+            let done = q.complete();
+            let shown = q.done.min(q.target);
+            let label = text::ellipsize(&q.title, Face::Regular, 12.5, w - 56.0);
+            t(g, &label, x, y + 8.0, Face::Regular, 12.5, hex(if done { pal::DIM3 } else { pal::INK }));
+            if done {
+                crate::icons::stroke(g, Icon::Check, x + w - 8.0, y + 8.0, 9.0, 2.2, hex(pal::GREEN));
+            } else {
+                text::draw(g, &format!("{shown}/{}", q.target), x + w, y + 8.0, Face::Medium, 11.5, hex(pal::DIM), Align::Right);
+            }
+            g.fill_style(rgba(255, 255, 255, 0.09));
+            g.fill_round_rect(x, y + 19.0, w, 4.0, 2.0);
+            let k = if q.target == 0 { 1.0 } else { (shown as f32 / q.target as f32).clamp(0.0, 1.0) };
+            if k > 0.0 {
+                g.fill_style(hex(if done { pal::GREEN } else { "#F5A524" }));
+                g.fill_round_rect(x, y + 19.0, (w * k).max(4.0), 4.0, 2.0);
+            }
+        }
+        let foot = if streak > 0 {
+            format!("Beruntun {streak} hari menjaga diri. Selesaikan ketiganya untuk mahkota baru.")
+        } else {
+            "Konfirmasi satu pengingat (Sudah) untuk memulai beruntun.".to_string()
+        };
+        t(g, &text::ellipsize(&foot, Face::Regular, 11.0, w), x, v.y + v.h - 12.0, Face::Regular, 11.0, hex(pal::DIM3));
     }
 
     // ── Reminder ──────────────────────────────────────────────────────────────

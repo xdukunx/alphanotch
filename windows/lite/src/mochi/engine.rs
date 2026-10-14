@@ -149,7 +149,7 @@ struct StateCfg {
 
 #[derive(Clone, Copy, PartialEq)]
 enum PKind {
-    Heart, Star, Spark, Sweat, Z, Note,
+    Heart, Star, Spark, Sweat, Z, Note, Confetti,
 }
 
 struct Particle {
@@ -306,6 +306,9 @@ pub struct BotEngine {
     delayed: Vec<(f32, Action)>,
 
     pub look_x: f32,
+    /// A hobby (stargazing) overrides where the eyes point until `hobby_until`.
+    hobby_look: Option<(f32, f32)>,
+    hobby_until: f32,
     pub look_y: f32,
 
     t0: f32,
@@ -350,7 +353,7 @@ impl BotEngine {
             mini_next_behavior: 0.0,
             badge: None, badge_key: -1, badge_token: 0, pending_badge: None,
             tweens: HashMap::new(), particles: Vec::new(), delayed: Vec::new(),
-            look_x: 0.0, look_y: 0.0,
+            look_x: 0.0, look_y: 0.0, hobby_look: None, hobby_until: 0.0,
             t0: n, next_blink: n + 1.8, wave_until: 0.0, wave_start: 0.0, greet_token: 0,
             dancing: false, dance_bps: 2.0, dance_k: 0.0, dance_phase: 0.0,
             last_ambient: 0.0, slap_times: Vec::new(), mini_look: (0.0, 0.0), mini_look_next: 0.0,
@@ -624,6 +627,38 @@ impl BotEngine {
         }
     }
 
+    /// A burst of coloured paper over the head.
+    pub fn confetti(&mut self, n: i32) {
+        for i in 0..n {
+            let (a, b, c, d, e, f, s) = (self.rnd(), self.rnd(), self.rnd(), self.rnd(), self.rnd(), self.rnd(), self.rnd());
+            self.particles.push(Particle {
+                kind: PKind::Confetti,
+                x: (a - 0.5) * 0.7,
+                y: -1.0 - b * 0.3,
+                vx: (c - 0.5) * 1.7,
+                vy: -(0.1 + d * 0.55),
+                age: -(i as f32) * 0.015,
+                life: 1.5 + e * 0.8,
+                rot: f * TAU,
+                size: 0.12 + s * 0.06,
+            });
+        }
+    }
+
+    /// Hums a little tune: notes float up and the head sways.
+    pub fn hum(&mut self) {
+        self.emit(PKind::Note, 3);
+        self.anim(Prop::Tilt, &[
+            (0.1, 260.0, ease::out), (-0.1, 520.0, ease::in_out), (0.1, 520.0, ease::in_out), (0.0, 300.0, ease::in_out),
+        ]);
+    }
+
+    /// Looks up and to the side for a few seconds, as if at the sky.
+    pub fn stargaze(&mut self, secs: f32) {
+        self.hobby_look = Some((0.4, 0.55));
+        self.hobby_until = now() + secs;
+    }
+
     fn emit(&mut self, kind: PKind, count: i32) {
         for i in 0..count {
             let is_z = kind == PKind::Z;
@@ -735,6 +770,14 @@ impl BotEngine {
         if self.cfg.scans {
             ty = (t * 2.6).sin() * 0.6;
             tp = -0.06;
+        }
+        if let Some((hx, hy)) = self.hobby_look {
+            if n < self.hobby_until {
+                ty = hx;
+                tp = hy;
+            } else {
+                self.hobby_look = None;
+            }
         }
         if self.state == BotState::Sleeping {
             ty = 0.0;
@@ -1408,6 +1451,12 @@ impl BotEngine {
                 }
                 PKind::Z => {
                     text::draw(g, "z", 0.0, 0.0, Face::Bold, sz * 1.9, rgb(209, 219, 235), Align::Center);
+                }
+                PKind::Confetti => {
+                    const COLS: [&str; 6] = ["#FF6B5B", "#F7B32B", "#2DD4A7", "#38BDF8", "#A78BFA", "#F472B6"];
+                    g.rotate(p.rot + p.age * 5.0);
+                    g.fill_style(hex(COLS[((p.rot * 10.0) as usize) % 6]));
+                    g.fill_rect(-sz * 0.5, -sz * 0.28, sz, sz * 0.56);
                 }
                 PKind::Note => {
                     g.rotate((p.age * 3.0).sin() * 0.25);

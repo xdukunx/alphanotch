@@ -652,6 +652,7 @@ impl App {
                 self.todos[i].star = !self.todos[i].star;
             } else {
                 let done = self.todos.remove(i);
+                self.buddy_task_done();
                 if let Some(gid) = done.gid {
                     crate::gtasks::enqueue_complete(&gid);
                     self.done_gids.push(gid);

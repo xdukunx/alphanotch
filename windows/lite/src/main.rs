@@ -10,6 +10,7 @@ mod activity;
 mod agenthooks;
 mod anim;
 mod app;
+mod buddy;
 mod cards;
 mod claude;
 mod coach;
@@ -111,7 +112,10 @@ fn main() {
     handle.set_hwnd(island.platform.hwnd);
     let hwnd = island.platform.hwnd;
     app::install(island);
-    app::with_app(|a| a.sync_reminder_timer());
+    app::with_app(|a| {
+        a.sync_reminder_timer();
+        a.apply_crown();
+    });
     ole::register(hwnd);
 
     pipe::start(handle.clone());

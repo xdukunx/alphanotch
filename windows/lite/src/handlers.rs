@@ -161,6 +161,10 @@ impl App {
             self.ensure_running();
             return;
         }
+        self.note_activity();
+        if payload.get("coucou_agent").is_none() {
+            self.buddy_session_event(&name);
+        }
         let cwd = payload.get("cwd").and_then(Value::as_str).unwrap_or("").to_string();
         let raw = last_path_component(&cwd);
         let project = alias_project(if raw.is_empty() { "Session" } else { &raw });

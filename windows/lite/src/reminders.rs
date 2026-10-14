@@ -191,7 +191,11 @@ impl App {
 
     fn fire_reminder(&mut self, kind: RemKind) {
         let name = self.st.settings.display_name.trim().to_string();
-        self.reminder = Some(card_for(kind, &name));
+        let mut card = card_for(kind, &name);
+        if let Some(line) = self.streak_line() {
+            card.body = format!("{}\n{}", card.body, line);
+        }
+        self.reminder = Some(card);
         sound::play("greet");
         self.engine.trigger_emote(
             match kind {
@@ -207,10 +211,15 @@ impl App {
 
     /// "Sudah" closes it; "Tunda" brings the same reminder back in 10 minutes.
     pub fn dismiss_reminder(&mut self, snooze: bool) {
+        let mut cared = false;
         if let Some(card) = self.reminder.take() {
             if snooze && card.kind.is_interval() {
                 self.rem_next[card.kind.idx()] = util::unix_now() + 10.0 * 60.0;
             }
+            cared = !snooze && card.kind.is_interval();
+        }
+        if cared {
+            self.buddy_care_done();
         }
         sound::play("blip");
         self.collapse();

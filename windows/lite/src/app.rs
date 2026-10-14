@@ -249,6 +249,13 @@ pub struct App {
     pub coach_day: i64,
     pub coach_popups: u32,
     pub coach_alert_at: [f64; 2],
+    /// The companion: streak, quests, crowns (persisted), and its idle behaviour (not).
+    pub buddy: crate::buddy::Buddy,
+    pub last_input: f32,
+    pub sleeping: bool,
+    pub next_hobby: f32,
+    pub next_mood: f32,
+    last_cursor: (f32, f32),
     quit: bool,
 }
 
@@ -346,6 +353,12 @@ impl App {
             coach_day: 0,
             coach_popups: 0,
             coach_alert_at: [0.0; 2],
+            buddy: crate::buddy::Buddy::load(),
+            last_input: 0.0,
+            sleeping: false,
+            next_hobby: 0.0,
+            next_mood: 0.0,
+            last_cursor: (-1.0, -1.0),
             quit: false,
         };
         app.refresh_flags();
@@ -517,6 +530,7 @@ impl App {
     fn poll(&mut self) {
         let n = now();
         self.run_timers();
+        self.buddy_poll();
         self.fsm.tick(n);
         self.process_transitions();
 
@@ -1039,6 +1053,7 @@ impl App {
             self.ui.input.pressed = false;
             return;
         }
+        self.note_activity();
         if self.is_bot_hit(x, y) && !self.upload_active() {
             self.cancel_bot_hover();
             self.engine.slap();
@@ -1075,6 +1090,7 @@ impl App {
     }
 
     pub fn on_char(&mut self, c: char) {
+        self.note_activity();
         if self.st.view == View::Prompt && self.chat.input.focused {
             self.chat.input.on_char(c);
             self.render_now();
@@ -1140,6 +1156,13 @@ impl App {
 
     /// Cursor in window-logical coordinates.
     pub fn on_cursor(&mut self, x: f32, y: f32) {
+        // Any real movement counts as somebody being there.
+        if (x - self.last_cursor.0).abs() > 2.0 || (y - self.last_cursor.1).abs() > 2.0 {
+            if self.last_cursor.0 >= 0.0 {
+                self.note_activity();
+            }
+            self.last_cursor = (x, y);
+        }
         self.st.mouse = (x, y);
         let (ix, iy, iw, ih) = self.island_rect();
         self.st.mouse_in_island = (x - ix, y - iy);
