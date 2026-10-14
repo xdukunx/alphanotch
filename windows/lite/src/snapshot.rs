@@ -251,6 +251,14 @@ fn views(dir: &str, want: &dyn Fn(&str) -> bool) {
         crate::mochi::character::set_crown_tier(2);
         app.debug_show(Mode::Expanded, View::Quests);
     }, 1.5);
+    scene!("weather_rain", Mode::Expanded, View::Overview, |app| {
+        app.engine.weather = 1;
+        app.weather_checked = 1.0e9; // keep the forced value
+    }, 0.6);
+    scene!("weather_hot", Mode::Expanded, View::Overview, |app| {
+        app.engine.weather = 2;
+        app.weather_checked = 1.0e9;
+    }, 0.6);
     scene!("confetti", Mode::Expanded, View::Overview, |app| {
         app.engine.confetti(26);
         app.engine.trigger_emote(crate::mochi::engine::Emote::Proud, 2.2);

@@ -256,6 +256,17 @@ pub struct App {
     pub next_hobby: f32,
     pub next_mood: f32,
     last_cursor: (f32, f32),
+    /// Petting: when the press on Mochi began, whether it has become a pet, and the last stroke.
+    pub pet_since: Option<f32>,
+    pub petting: bool,
+    pub pet_last: f32,
+    /// Fleeing from a chasing cursor (compact bar only).
+    pub chase_score: f32,
+    pub chase_prev: (f32, f32, f32),
+    pub flee_off: f32,
+    pub flee_until: f32,
+    pub flee_cool: f32,
+    pub weather_checked: f32,
     quit: bool,
 }
 
@@ -359,6 +370,15 @@ impl App {
             next_hobby: 0.0,
             next_mood: 0.0,
             last_cursor: (-1.0, -1.0),
+            pet_since: None,
+            petting: false,
+            pet_last: 0.0,
+            chase_score: 0.0,
+            chase_prev: (0.0, 0.0, 0.0),
+            flee_off: 0.0,
+            flee_until: 0.0,
+            flee_cool: 0.0,
+            weather_checked: -100.0,
             quit: false,
         };
         app.refresh_flags();
@@ -693,6 +713,18 @@ impl App {
     }
 
     fn update_engine(&mut self, dt: f32) {
+        // The weather asks Mochi for an umbrella or a fan; looked up twice a minute.
+        let wn = now();
+        if wn - self.weather_checked > 30.0 {
+            self.weather_checked = wn;
+            self.engine.weather = if self.st.settings.feature_on("weather") {
+                crate::weather::report()
+                    .map(|r| crate::buddy::weather_prop(crate::weather::kind_of(r.now.code), r.now.temp, r.now.is_day))
+                    .unwrap_or(0)
+            } else {
+                0
+            };
+        }
         let playing = crate::activity::is_playing();
         self.engine.dancing = playing;
         if playing {
@@ -999,7 +1031,8 @@ impl App {
 
     fn update_bot_targets(&mut self) {
         let p = bot_position(self.st.mode, self.st.view, self.height.value(), self.st.upload_progress);
-        self.bot_cx.target = p.cx;
+        // Chased by the cursor on the idle bar, Mochi slides a little out of the way.
+        self.bot_cx.target = p.cx + if self.st.mode == Mode::Compact { self.flee_off } else { 0.0 };
         self.bot_cy.target = p.cy;
         self.bot_size.target = p.d / 0.6;
     }
@@ -1056,8 +1089,9 @@ impl App {
         self.note_activity();
         if self.is_bot_hit(x, y) && !self.upload_active() {
             self.cancel_bot_hover();
-            self.engine.slap();
-            self.drain_sounds();
+            // A quick click is a slap (on release); holding it down is petting.
+            self.pet_since = Some(now());
+            self.petting = false;
         }
         // Text fields claim the click before the frame draws.
         self.chat.on_mouse_down(self.ui.input.mouse.0);
@@ -1071,6 +1105,13 @@ impl App {
         self.ui.input.released = true;
         self.platform.capture(false);
         self.slider_drag = false;
+        if self.pet_since.take().is_some() {
+            if !self.petting {
+                self.engine.slap();
+                self.drain_sounds();
+            }
+            self.petting = false;
+        }
         if self.st.mode == Mode::Expanded {
             self.render_now_keep_edges();
         }
@@ -1236,7 +1277,13 @@ impl App {
         }
     }
 
-    fn is_bot_hit(&self, x: f32, y: f32) -> bool {
+    /// Where Mochi is, in window pixels.
+    pub fn bot_center(&self) -> (f32, f32) {
+        let ix = (PANEL_W - self.width.value()) / 2.0;
+        (ix + self.bot_cx.value, self.bot_cy.value)
+    }
+
+    pub(crate) fn is_bot_hit(&self, x: f32, y: f32) -> bool {
         let (ix, iy, _, _) = self.island_rect();
         let cx = ix + self.bot_cx.value;
         let cy = iy + self.bot_cy.value;

@@ -308,6 +308,8 @@ pub struct BotEngine {
     pub look_x: f32,
     /// A hobby (stargazing) overrides where the eyes point until `hobby_until`.
     hobby_look: Option<(f32, f32)>,
+    /// What the weather asks of Mochi: 0 nothing, 1 umbrella, 2 fan, 3 shivers.
+    pub weather: u8,
     hobby_until: f32,
     pub look_y: f32,
 
@@ -353,7 +355,7 @@ impl BotEngine {
             mini_next_behavior: 0.0,
             badge: None, badge_key: -1, badge_token: 0, pending_badge: None,
             tweens: HashMap::new(), particles: Vec::new(), delayed: Vec::new(),
-            look_x: 0.0, look_y: 0.0, hobby_look: None, hobby_until: 0.0,
+            look_x: 0.0, look_y: 0.0, hobby_look: None, weather: 0, hobby_until: 0.0,
             t0: n, next_blink: n + 1.8, wave_until: 0.0, wave_start: 0.0, greet_token: 0,
             dancing: false, dance_bps: 2.0, dance_k: 0.0, dance_phase: 0.0,
             last_ambient: 0.0, slap_times: Vec::new(), mini_look: (0.0, 0.0), mini_look_next: 0.0,
@@ -645,6 +647,16 @@ impl BotEngine {
         }
     }
 
+    /// One stroke of a pet: eyes close, cheeks warm up, a heart floats off.
+    pub fn pet(&mut self) {
+        let t = now();
+        self.eye_override = Some(EyeShape::Closed);
+        self.eye_override_until = t + 0.9;
+        self.anim(Prop::Blush, &[(1.0, 200.0, ease::out), (1.0, 450.0, ease::lin), (0.0, 300.0, ease::in_out)]);
+        self.anim(Prop::Tilt, &[(0.06, 280.0, ease::in_out), (-0.06, 480.0, ease::in_out), (0.0, 280.0, ease::in_out)]);
+        self.emit(PKind::Heart, 1);
+    }
+
     /// Hums a little tune: notes float up and the head sways.
     pub fn hum(&mut self) {
         self.emit(PKind::Note, 3);
@@ -884,7 +896,7 @@ impl BotEngine {
             if self.cfg.zz {
                 self.emit(PKind::Z, 1);
             }
-            if !self.is_mini && self.cfg.sweat && self.rnd() < 0.5 {
+            if !self.is_mini && (self.cfg.sweat || self.weather == 2) && self.rnd() < 0.5 {
                 self.emit(PKind::Sweat, 1);
             }
             if self.dance_k > 0.5 && !self.is_mini {
@@ -1047,8 +1059,10 @@ impl BotEngine {
 
         g.save();
         g.translate(cx, cy);
-        if self.tilt != 0.0 {
-            g.rotate(self.tilt);
+        // Cold weather: a small, fast shiver on top of whatever the head is doing.
+        let shiver = if self.weather == 3 && !self.is_mini { (now() * 38.0).sin() * 0.022 } else { 0.0 };
+        if self.tilt + shiver != 0.0 {
+            g.rotate(self.tilt + shiver);
         }
         g.scale_xy(self.sx, self.sy);
 
@@ -1082,6 +1096,7 @@ impl BotEngine {
             lit: self.medal_lit, glyph: spec.glyph,
             color: self.col, t, mini: self.is_mini, wobble: self.wobble,
         });
+        self.draw_weather_prop(g, r, t);
 
         g.restore();
 
@@ -1091,6 +1106,72 @@ impl BotEngine {
             }
         }
         self.draw_particles(g, r, cx, cy);
+    }
+
+    /// An umbrella in the rain, a paper fan in the heat. Skipped on the idle bar, where
+    /// the character is tiny and must stay inside it.
+    fn draw_weather_prop(&self, g: &mut Gfx, r: f32, t: f32) {
+        if r < 14.0 || self.is_mini {
+            return;
+        }
+        match self.weather {
+            1 => {
+                let cy = -1.52 * r;
+                let (hw, h) = (1.0 * r, 0.62 * r);
+                g.stroke_style(hex("#E8E9EC"));
+                g.line_width(r * 0.07);
+                g.begin_path();
+                g.move_to(0.0, cy);
+                g.line_to(0.0, -1.18 * r);
+                g.stroke();
+                g.fill_style(hex("#F4505E"));
+                g.begin_path();
+                g.move_to(-hw, cy);
+                g.quad_to(-hw * 0.9, cy - h * 1.35, 0.0, cy - h);
+                g.quad_to(hw * 0.9, cy - h * 1.35, hw, cy);
+                g.quad_to(hw * 0.5, cy + h * 0.2, 0.0, cy);
+                g.quad_to(-hw * 0.5, cy + h * 0.2, -hw, cy);
+                g.close_path();
+                g.fill();
+                // Drops falling off its edge.
+                g.stroke_style(rgba(150, 205, 255, 0.85));
+                g.line_width(r * 0.045);
+                for i in 0..4 {
+                    let k = (t * 1.1 + i as f32 * 0.27).fract();
+                    let x = (if i % 2 == 0 { -1.0 } else { 1.0 }) * (hw + r * (0.12 + 0.1 * (i / 2) as f32));
+                    let y = cy + k * r * 1.5;
+                    g.begin_path();
+                    g.move_to(x, y);
+                    g.line_to(x - r * 0.03, y + r * 0.16);
+                    g.stroke();
+                }
+            }
+            2 => {
+                g.save();
+                g.translate(1.5 * r, 0.7 * r);
+                g.rotate(0.15 + (t * 7.0).sin() * 0.3);
+                g.stroke_style(hex("#C98F27"));
+                g.line_width(r * 0.07);
+                g.begin_path();
+                g.move_to(0.0, 0.0);
+                g.line_to(0.0, -0.5 * r);
+                g.stroke();
+                g.fill_style(hex("#FFE08A"));
+                g.stroke_style(hex("#EDB33C"));
+                g.line_width(r * 0.04);
+                g.begin_path();
+                g.move_to(0.0, -0.5 * r);
+                g.arc(0.0, -0.5 * r, 0.62 * r, -2.35, -0.79, false);
+                g.close_path();
+                let p = g.take_path();
+                if let Some(p) = p {
+                    g.fill_path(&p);
+                    g.stroke_path(&p);
+                }
+                g.restore();
+            }
+            _ => {}
+        }
     }
 
     fn body_path(&self, rx: f32, ry: f32, r: f32) -> Path {

@@ -146,6 +146,18 @@ impl Buddy {
     }
 }
 
+/// 0 nothing, 1 umbrella, 2 fan, 3 shivers — what Mochi does about the weather.
+pub fn weather_prop(kind: crate::weather::Kind, temp: f32, is_day: bool) -> u8 {
+    use crate::weather::Kind;
+    match kind {
+        Kind::Rain | Kind::Storm => 1,
+        Kind::Snow => 3,
+        _ if temp >= 32.0 && is_day => 2,
+        _ if temp <= 21.0 => 3,
+        _ => 0,
+    }
+}
+
 /// (tier, name, top colour, bottom colour) of the crown for the number of quest days.
 pub fn crown_tier(crowns: u32) -> (u8, &'static str) {
     match crowns {
@@ -294,6 +306,51 @@ impl App {
             return;
         }
         let n = now();
+
+        // Petting: held down on Mochi, and the cursor has not wandered off.
+        if let Some(t0) = self.pet_since {
+            let (mx, my) = self.st.mouse;
+            if self.ui.input.down && n - t0 > 0.3 && self.is_bot_hit(mx, my) {
+                if !self.petting {
+                    self.petting = true;
+                    sound::play("love");
+                }
+                if n - self.pet_last > 0.75 {
+                    self.pet_last = n;
+                    self.engine.pet();
+                    self.ensure_running();
+                }
+                self.last_input = n;
+                return;
+            }
+        }
+
+        // Fleeing from a cursor that keeps chasing it on the idle bar.
+        if self.st.mode == Mode::Compact && !self.sleeping && !self.ui.input.down {
+            let (mx, my) = self.st.mouse;
+            let (bx, by) = self.bot_center();
+            let dt = (n - self.chase_prev.2).clamp(0.001, 0.2);
+            let speed = ((mx - self.chase_prev.0).powi(2) + (my - self.chase_prev.1).powi(2)).sqrt() / dt;
+            self.chase_prev = (mx, my, n);
+            let near = ((mx - bx).powi(2) + (my - by).powi(2)).sqrt() < 55.0;
+            if near && speed > 300.0 {
+                self.chase_score += 1.0;
+            }
+            self.chase_score = (self.chase_score - dt * 1.5).max(0.0);
+            if self.chase_score >= 18.0 && n > self.flee_cool {
+                self.chase_score = 0.0;
+                self.flee_off = 46.0;
+                self.flee_until = n + 2.0;
+                self.flee_cool = n + 8.0;
+                self.engine.trigger_emote(Emote::Surprised, 1.0);
+                self.ensure_running();
+            }
+        }
+        if self.flee_off != 0.0 && n > self.flee_until {
+            self.flee_off = 0.0;
+            self.ensure_running();
+        }
+
         if self.last_input == 0.0 {
             self.last_input = n;
             self.next_hobby = n + 60.0;
@@ -415,6 +472,17 @@ mod tests {
         assert_eq!(crown_tier(3).0, 2);
         assert_eq!(crown_tier(7).0, 3);
         assert_eq!(crown_tier(20).0, 4);
+    }
+
+    #[test]
+    fn the_weather_picks_a_prop() {
+        use crate::weather::Kind;
+        assert_eq!(weather_prop(Kind::Rain, 27.0, true), 1);
+        assert_eq!(weather_prop(Kind::Storm, 25.0, false), 1);
+        assert_eq!(weather_prop(Kind::Clear, 34.0, true), 2);
+        assert_eq!(weather_prop(Kind::Clear, 34.0, false), 0); // hot at night: no fan
+        assert_eq!(weather_prop(Kind::Cloudy, 19.0, false), 3);
+        assert_eq!(weather_prop(Kind::Partly, 28.0, true), 0);
     }
 
     #[test]
