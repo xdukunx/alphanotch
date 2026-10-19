@@ -956,7 +956,7 @@ impl Win {
     fn general(&mut self, g: &mut Gfx, m: f32, y0: f32, cw: f32) -> f32 {
         let pad = 18.0;
         let (ix, iw) = (m + pad, cw - 2.0 * pad);
-        let h = 28.0 + 5.0 * 38.0;
+        let h = 28.0 + 6.0 * 38.0;
         Self::card(g, m, y0, cw, h + 2.0 * pad);
         let mut y = y0 + pad;
         Self::title(g, ix, y + 9.0, None, "General");
@@ -1052,6 +1052,17 @@ impl Win {
             self.save();
         }
         text::draw(g, "keep the compact bar visible when idle", cx + 48.0, y + 11.0, Face::Regular, 11.5, hex(pal::DIM3), Align::Left);
+        y += 38.0;
+
+        // Look.
+        lab(g, y, "Tema Nusa");
+        let on = self.settings.theme_nusa;
+        if self.ui.switch(g, "set-nusa", cx, y + 2.0, on) {
+            self.settings.theme_nusa = !on;
+            crate::ui::set_nusa(!on);
+            self.save();
+        }
+        text::draw(g, "biru-hitam pekat dan cahaya di tepi bawah island", cx + 48.0, y + 11.0, Face::Regular, 11.5, hex(pal::DIM3), Align::Left);
         let _ = iw;
         y0 + h + 2.0 * pad + 16.0
     }

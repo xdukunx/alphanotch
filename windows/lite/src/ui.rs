@@ -239,11 +239,28 @@ pub fn dot(g: &mut Gfx, cx: f32, cy: f32, d: f32, color: Color) {
     g.fill();
 }
 
+static NUSA: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
+/// Switches the Nusa look (deeper panels, glowing edge) on or off.
+pub fn set_nusa(on: bool) {
+    NUSA.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
+pub fn nusa() -> bool {
+    NUSA.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 /// `.card`: rounded panel with an optional glow rising from below (the wash).
 pub fn card(g: &mut Gfx, r: Rect, wash: Wash, flat: bool) {
-    g.fill_style(hex(if flat { pal::CARD_FLAT } else { pal::CARD }));
+    let nusa = nusa();
+    g.fill_style(hex(match (nusa, flat) {
+        (true, true) => "#080B15",
+        (true, false) => "#0A0D18",
+        (false, true) => pal::CARD_FLAT,
+        (false, false) => pal::CARD,
+    }));
     g.fill_round_rect(r.x, r.y, r.w, r.h, 20.0);
-    g.stroke_style(rgba(255, 255, 255, 0.035));
+    g.stroke_style(if nusa { rgba(236, 239, 247, 0.10) } else { rgba(255, 255, 255, 0.035) });
     g.line_width(1.0);
     g.round_rect(r.x + 0.5, r.y + 0.5, r.w - 1.0, r.h - 1.0, 19.5);
     g.stroke();

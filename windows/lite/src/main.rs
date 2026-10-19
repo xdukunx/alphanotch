@@ -115,6 +115,7 @@ fn main() {
     app::with_app(|a| {
         a.sync_reminder_timer();
         a.apply_crown();
+        ui::set_nusa(a.st.settings.theme_nusa);
     });
     ole::register(hwnd);
 

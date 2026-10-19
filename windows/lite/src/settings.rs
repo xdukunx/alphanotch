@@ -53,6 +53,10 @@ pub struct Settings {
     pub coach_suggestions: bool,
     #[serde(default = "yes")]
     pub coach_limit: bool,
+    /// The Nusa look: a deeper blue-black island, see-through panel lines and a glow
+    /// along the island's lower edge. Off = the classic flat black.
+    #[serde(default = "yes")]
+    pub theme_nusa: bool,
 }
 
 fn yes() -> bool {
@@ -106,6 +110,7 @@ impl Default for Settings {
             eyes_every_min: 0,
             coach_suggestions: true,
             coach_limit: true,
+            theme_nusa: true,
         }
     }
 }

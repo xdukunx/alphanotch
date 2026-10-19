@@ -1404,6 +1404,7 @@ impl App {
         self.fsm.set_stay_visible(self.st.settings.stay_visible);
         crate::weather::set_city(&self.st.settings.weather_city);
         crate::stocks::set_symbols(&self.st.settings.stocks);
+        crate::ui::set_nusa(self.st.settings.theme_nusa);
         self.sync_reminder_timer();
         self.process_transitions();
         self.st.load_integration_tasks();
@@ -1622,7 +1623,7 @@ impl App {
         g.begin_path();
         g.round_rect4(0.0, 0.0, iw, ih, [0.0, 0.0, r, r]);
         let body = g.take_path().unwrap();
-        g.fill_style(hex("#000000"));
+        g.fill_style(hex(if crate::ui::nusa() { "#03040A" } else { "#000000" }));
         g.fill_path(&body);
 
         let expanded = self.st.mode == Mode::Expanded;
@@ -1645,6 +1646,10 @@ impl App {
                 g.restore();
             }
             self.draw_content(g, iw, ih, n);
+        }
+
+        if crate::ui::nusa() && ih > 6.0 && !greeting_active {
+            Self::draw_edge_glow(g, iw, ih, r, &body);
         }
 
         // Bot, glow, minis and the countdown bar sit above the clip.
@@ -1704,6 +1709,27 @@ impl App {
         g.translate(cx - size / 2.0, cy - size / 2.0 - BOT_OVERHANG);
         let h = size + BOT_OVERHANG;
         self.engine.draw(g, size, h);
+        g.restore();
+    }
+
+    /// The Nusa glow: cyan → indigo → violet along the island's lower edge and corners,
+    /// a bright hairline over two soft halos.
+    fn draw_edge_glow(g: &mut Gfx, iw: f32, ih: f32, r: f32, body: &tiny_skia::Path) {
+        use crate::gfx::with_alpha;
+        let (cyan, indigo, violet) = (hex("#19B8FF"), hex("#2D5BFF"), hex("#7B4BFF"));
+        let breathe = 0.9 + 0.1 * (now() * 0.9).sin();
+        g.save();
+        let _ = r;
+        g.clip_rect_xywh(-24.0, (ih - 4.5).max(0.0), iw + 48.0, 40.0);
+        for (w, a) in [(12.0f32, 0.08f32), (6.0, 0.18), (2.0, 0.8)] {
+            let a = a * breathe;
+            let grad = g.linear(0.0, 0.0, iw, 0.0, &[
+                (0.0, with_alpha(cyan, a)), (0.55, with_alpha(indigo, a)), (1.0, with_alpha(violet, a)),
+            ]);
+            g.stroke_style(grad);
+            g.line_width(w);
+            g.stroke_path(body);
+        }
         g.restore();
     }
 
