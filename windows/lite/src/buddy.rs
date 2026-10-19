@@ -31,6 +31,8 @@ pub struct Buddy {
     pub care: u32,
     pub tasks_done: u32,
     pub clean_sessions: u32,
+    /// Focus (Pomodoro) sessions finished today.
+    pub focus_done: u32,
     /// The day the crown for the quests was handed out (so it happens once a day).
     pub rewarded_day: i64,
     pub crowns: u32,
@@ -97,6 +99,7 @@ impl Buddy {
         self.care = 0;
         self.tasks_done = 0;
         self.clean_sessions = 0;
+        self.focus_done = 0;
         true
     }
 
@@ -184,6 +187,10 @@ impl App {
             self.buddy.save();
         }
         day
+    }
+
+    pub fn buddy_today_pub(&mut self) -> i64 {
+        self.buddy_today()
     }
 
     pub fn apply_crown(&self) {

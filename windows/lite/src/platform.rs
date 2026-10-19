@@ -491,6 +491,20 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
             app::with_app(|a| a.on_display_change());
             LRESULT(0)
         }
+        // PBT_APMPOWERSTATUSCHANGE: the charger came or went, or the battery level moved.
+        windows::Win32::UI::WindowsAndMessaging::WM_POWERBROADCAST => {
+            if wp.0 == 0xA {
+                app::with_app(|a| a.on_power_status());
+            }
+            LRESULT(1)
+        }
+        // DBT_DEVICEARRIVAL / DBT_DEVICEREMOVECOMPLETE for audio devices.
+        windows::Win32::UI::WindowsAndMessaging::WM_DEVICECHANGE => {
+            if wp.0 == 0x8000 || wp.0 == 0x8004 {
+                app::with_app(|a| a.on_device_change());
+            }
+            LRESULT(1)
+        }
         WM_DESTROY => {
             windows::Win32::UI::WindowsAndMessaging::PostQuitMessage(0);
             LRESULT(0)

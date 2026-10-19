@@ -46,6 +46,9 @@ pub enum View {
     Reminder,
     /// Daily quests, the care streak and the crown.
     Quests,
+    /// Pomodoro timer and water counter: the next pages of the dashboard group.
+    Focus,
+    Water,
 }
 
 /// The window is a fixed 720×320 (largest view); the island is drawn inside it,
@@ -64,7 +67,7 @@ pub const DASH_W: f32 = 548.0;
 
 pub fn view_width(v: View) -> f32 {
     match v {
-        View::Dashboard | View::Stocks | View::Weather | View::Teleprompter => DASH_W,
+        View::Dashboard | View::Stocks | View::Weather | View::Teleprompter | View::Focus | View::Water => DASH_W,
         _ => EXPANDED_W,
     }
 }
@@ -112,7 +115,8 @@ pub fn layout(v: View) -> ViewLayout {
         View::Settings => l(160.0, 54.0, None, 46.0),
         View::Greeting => l(150.0, 320.0, Some(90.0), 0.0),
         // Home is short; Mochi sits in the header row beside the greeting.
-        View::Dashboard => l(196.0, 286.0, Some(21.0), 26.0),
+        // The pages of the group keep a 14 px strip at the bottom for the chevrons and dots.
+        View::Dashboard | View::Focus | View::Water => l(210.0, 286.0, Some(21.0), 26.0),
         // Four watchlist rows fit; more scroll.
         View::Stocks => l(250.0, 286.0, Some(21.0), 26.0),
         View::Weather | View::Teleprompter => l(220.0, 286.0, Some(21.0), 26.0),

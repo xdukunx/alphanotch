@@ -27,7 +27,9 @@ mod integrations;
 mod layout;
 mod log;
 mod mochi;
+mod nusapages;
 mod ole;
+mod overlay;
 mod pipe;
 mod reminders;
 mod platform;
@@ -116,6 +118,7 @@ fn main() {
         a.sync_reminder_timer();
         a.apply_crown();
         ui::set_nusa(a.st.settings.theme_nusa);
+        a.init_system_watch();
     });
     ole::register(hwnd);
 

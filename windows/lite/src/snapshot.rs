@@ -279,6 +279,23 @@ Kosong ~150 menit sebelum Rapat tim (14:00) — cocok untuk: Kirim laporan".into
         app.reminder = Some(crate::reminders::limit_card(crate::coach::LimitAlert::Plenty { pct: 12 }));
         app.debug_show(Mode::Expanded, View::Reminder);
     }, 1.5);
+    scene!("ov_charging", Mode::Compact, View::Overview, |app| {
+        app.show_overlay(crate::overlay::Overlay { kind: crate::overlay::OverlayKind::Charging, title: "Mengisi daya".into(), sub: "Charger terhubung".into(), metric: "70%".into() });
+    }, 1.0);
+    scene!("ov_headphones", Mode::Compact, View::Overview, |app| {
+        app.show_overlay(crate::overlay::Overlay { kind: crate::overlay::OverlayKind::Headphones, title: "AirPods Pro".into(), sub: "Tersambung".into(), metric: String::new() });
+    }, 1.0);
+    scene!("water", Mode::Expanded, View::Water, |app| {
+        let day = ((crate::util::unix_now() + crate::util::local_offset_secs() as f64) / 86_400.0).floor() as i64;
+        app.water.day = day;
+        let t0 = day as f64 * 86_400.0 - crate::util::local_offset_secs() as f64;
+        for h in [7.5f64, 9.5, 12.5, 13.0, 15.5] {
+            app.water.add(250, t0 + h * 3600.0);
+        }
+        app.water.add(250, t0 + 17.0 * 3600.0);
+    }, 1.5);
+    scene!("focus", Mode::Expanded, View::Focus, |app| {}, 1.5);
+    scene!("dashboard", Mode::Expanded, View::Dashboard, |app| {}, 1.5);
     scene!("stocks", Mode::Expanded, View::Stocks, |app| { crate::stocks::set_demo(); }, 1.5);
     scene!("error", Mode::Expanded, View::Error, |app| {
         hook(&mut app, json!({"hook_event_name":"PreToolUse","cwd":"C:/p/coucou","tool_name":"Bash","tool_input":{"command":"cargo test"}}));

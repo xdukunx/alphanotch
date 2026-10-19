@@ -57,6 +57,19 @@ pub struct Settings {
     /// along the island's lower edge. Off = the classic flat black.
     #[serde(default = "yes")]
     pub theme_nusa: bool,
+    /// Daily water goal and the size of one drink, in millilitres.
+    #[serde(default = "default_goal")]
+    pub water_goal_ml: u32,
+    #[serde(default = "default_bottle")]
+    pub water_bottle_ml: u32,
+}
+
+fn default_goal() -> u32 {
+    2000
+}
+
+fn default_bottle() -> u32 {
+    250
 }
 
 fn yes() -> bool {
@@ -111,6 +124,8 @@ impl Default for Settings {
             coach_suggestions: true,
             coach_limit: true,
             theme_nusa: true,
+            water_goal_ml: 2000,
+            water_bottle_ml: 250,
         }
     }
 }

@@ -111,10 +111,13 @@ impl App {
         }
         let s = &self.st.settings;
         any |= s.coach_suggestions || s.coach_limit;
-        self.platform.set_remind_timer(any);
+        // The resting clock needs a wake-up every half minute anyway.
+        let _ = any;
+        self.platform.set_remind_timer(true);
     }
 
     pub fn reminder_tick(&mut self) {
+        self.clock_tick();
         // Never over a decision somebody has to make, and not while one is already up.
         if self.st.paused || self.st.pending_approval.is_some() || self.st.pending_question.is_some() {
             return;
@@ -212,13 +215,18 @@ impl App {
     /// "Sudah" closes it; "Tunda" brings the same reminder back in 10 minutes.
     pub fn dismiss_reminder(&mut self, snooze: bool) {
         let mut cared = false;
+        let mut cared_water = false;
         if let Some(card) = self.reminder.take() {
+            cared_water = !snooze && card.kind == RemKind::Water;
             if snooze && card.kind.is_interval() {
                 self.rem_next[card.kind.idx()] = util::unix_now() + 10.0 * 60.0;
             }
             cared = !snooze && card.kind.is_interval();
         }
         if cared {
+            if cared_water {
+                self.water_drink();
+            }
             self.buddy_care_done();
         }
         sound::play("blip");

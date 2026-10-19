@@ -862,7 +862,7 @@ impl Win {
     fn features(&mut self, g: &mut Gfx, m: f32, y0: f32, cw: f32) -> f32 {
         let pad = 18.0;
         let (ix, iw) = (m + pad, cw - 2.0 * pad);
-        let h = 32.0 + 4.0 * 34.0 + 18.0 + 3.0 * 38.0 + 40.0 + 56.0;
+        let h = 32.0 + 5.0 * 34.0 + 18.0 + 5.0 * 38.0 + 40.0 + 56.0;
         Self::card(g, m, y0, cw, h + 2.0 * pad);
         let mut y = y0 + pad;
         Self::title(g, ix, y + 9.0, None, "Fitur & pengingat");
@@ -876,6 +876,8 @@ impl Win {
             ("weather", "Cuaca"),
             ("teleprompter", "Teleprompter"),
             ("quests", "Misi harian"),
+            ("focus", "Fokus (Pomodoro)"),
+            ("water", "Air minum"),
         ];
         let half = iw / 2.0;
         for (i, (id, label)) in feats.iter().enumerate() {
@@ -892,7 +894,7 @@ impl Win {
                 self.save();
             }
         }
-        y += 4.0 * 34.0 + 18.0;
+        y += 5.0 * 34.0 + 18.0;
 
         let rems: [(&str, usize, &[u32]); 3] = [
             ("Minum air", 0, &[0, 30, 45, 60, 90]),
@@ -928,6 +930,29 @@ impl Win {
             }
             y += 38.0;
         }
+        // Water: the daily goal and the size of one drink.
+        for (label, which, opts) in [("Target air", 0usize, [1500u32, 2000, 2500, 3000]), ("Satu minum", 1, [200, 250, 330, 500])] {
+            text::draw(g, label, ix, y + 11.0, Face::Regular, 12.0, hex("#C5C8CD"), Align::Left);
+            let cur = if which == 0 { self.settings.water_goal_ml } else { self.settings.water_bottle_ml };
+            let mut px = ix + 112.0;
+            for o in opts {
+                let t = if which == 0 { format!("{} L", format!("{:.1}", o as f32 / 1000.0).replace('.', ",")) } else { format!("{o} ml") };
+                let pw = text::measure(&t, Face::Regular, 11.5) + 16.0;
+                let r = Rect::new(px, y - 2.0, pw, 28.0);
+                let (clicked, hover, _) = self.ui.click_region(id_of(&format!("water-{which}-{o}"), 85), r);
+                let on = cur == o;
+                g.fill_style(if on { hex("#252830") } else { rgba(255, 255, 255, if hover { 0.1 } else { 0.05 }) });
+                g.fill_round_rect(r.x, r.y, r.w, r.h, 14.0);
+                text::draw(g, &t, r.cx(), r.cy(), Face::Regular, 11.5, hex(if on { pal::INK } else { pal::DIM2 }), Align::Center);
+                px += pw + 4.0;
+                if clicked && !on {
+                    if which == 0 { self.settings.water_goal_ml = o } else { self.settings.water_bottle_ml = o }
+                    self.save();
+                }
+            }
+            y += 38.0;
+        }
+
         // The coach: both are estimates computed on this machine.
         y += 8.0;
         for (i, (label, on)) in [

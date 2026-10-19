@@ -86,7 +86,10 @@ impl App {
         crate::app::prof_lap("header", &mut lap);
         g.restore();
 
-        let v = Rect::new(10.0, 42.0, iw - 20.0, (ih - 52.0).max(0.0));
+        let mut v = Rect::new(10.0, 42.0, iw - 20.0, (ih - 52.0).max(0.0));
+        if crate::nusapages::is_page(self.st.view) {
+            v.h -= crate::nusapages::PAGER_H;
+        }
         if v.h < 20.0 || self.upload_active() {
             // While the drop sequence runs it paints the whole island body; only
             // the header stays on top of it.
@@ -114,6 +117,8 @@ impl App {
             View::Diff => self.draw_diff(g, v),
             View::Reminder => self.draw_reminder(g, v),
             View::Quests => self.draw_quests(g, v),
+            View::Focus => self.draw_focus(g, v),
+            View::Water => self.draw_water(g, v),
             View::Error => self.draw_error(g, v),
             View::Finished => self.draw_finished(g, v),
             View::Confused => self.draw_confused(g, v),
@@ -134,8 +139,12 @@ impl App {
         }
         g.restore();
 
+        // The pages of the dashboard group page between themselves with chevrons and dots.
+        if crate::nusapages::is_page(self.st.view) {
+            self.draw_pager(g, iw, ih);
+        }
         // A small arrow at the bottom centre folds the island back to the bar.
-        if !matches!(self.st.view, View::Greeting | View::Upload | View::Uploading | View::Choose | View::Confused) {
+        else if !matches!(self.st.view, View::Greeting | View::Upload | View::Uploading | View::Choose | View::Confused) {
             let hit = Rect::new(iw / 2.0 - 24.0, ih - 14.0, 48.0, 14.0);
             let (clicked, hover, _) = self.ui.click_region(id_of("collapse-arrow", 103), hit);
             g.stroke_style(rgba(255, 255, 255, if hover { 0.9 } else { 0.32 }));
@@ -176,7 +185,7 @@ impl App {
             .collect();
         let v = self.st.view;
         for (i, (icon, id, target)) in tabs.iter().enumerate() {
-            let r = Rect::new(14.0 + i as f32 * 35.0, cy - 11.0, 30.0, 22.0);
+            let r = Rect::new(14.0 + i as f32 * 31.0, cy - 11.0, 27.0, 22.0);
             let on = match target {
                 View::Overview => v == View::Overview || v == View::Empty,
                 other => v == *other,

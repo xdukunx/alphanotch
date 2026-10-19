@@ -41,6 +41,8 @@ pub enum Timer {
     ConfusedRecovery,
     ApprovalTimeout,
     QuestionTimeout,
+    OverlayEnd,
+    DeviceCheck,
     TaskIdle(&'static str),
     RemoveTask(&'static str),
     IntegrationClear(&'static str),
@@ -156,8 +158,8 @@ fn profile_frame(render_ms: f32, present_ms: f32, view: View) {
 
 /// Compact bar: where the live-activity slot starts (right of Mochi) and how much room
 /// the integration pills keep on the right.
-const ACT_X: f32 = 56.0;
-const ACT_RIGHT: f32 = 62.0;
+pub(crate) const ACT_X: f32 = 56.0;
+pub(crate) const ACT_RIGHT: f32 = 62.0;
 
 pub struct App {
     pub platform: Platform,
@@ -267,6 +269,15 @@ pub struct App {
     pub flee_until: f32,
     pub flee_cool: f32,
     pub weather_checked: f32,
+    /// The short overlay on the idle bar, and what it needs to remember.
+    pub overlay: Option<crate::overlay::Overlay>,
+    pub ac_online: Option<bool>,
+    pub batt_warned: u8,
+    pub output_name: Option<String>,
+    pub clock_min: i32,
+    pub water: crate::nusapages::Water,
+    pub focus_kind: crate::nusapages::FocusKind,
+    pub last_timer_total: f32,
     quit: bool,
 }
 
@@ -379,6 +390,14 @@ impl App {
             flee_until: 0.0,
             flee_cool: 0.0,
             weather_checked: -100.0,
+            overlay: None,
+            ac_online: None,
+            batt_warned: 0,
+            output_name: None,
+            clock_min: -1,
+            water: crate::nusapages::Water::load(),
+            focus_kind: crate::nusapages::FocusKind::Focus,
+            last_timer_total: 0.0,
             quit: false,
         };
         app.refresh_flags();
@@ -481,6 +500,8 @@ impl App {
             }
             Timer::ApprovalTimeout => self.approval_timeout(),
             Timer::QuestionTimeout => self.question_timeout(),
+            Timer::OverlayEnd => self.end_overlay(),
+            Timer::DeviceCheck => self.check_headphones(),
             Timer::TaskIdle(id) => {
                 self.st.update_task(id, BotState::Idle);
                 self.st.set_pill_badge(id, None);
@@ -591,8 +612,12 @@ impl App {
 
             // Live activities: keep frames coming while one is shown, and once more
             // when it ends so the slot clears.
+            if let Some((_, total)) = crate::activity::timer() {
+                self.last_timer_total = total;
+            }
             if crate::activity::take_finished_timer() {
                 sound::play("finish");
+                self.on_focus_finished();
                 self.ensure_running();
             }
             if let Some(remote) = crate::gtasks::take_remote() {
@@ -992,8 +1017,13 @@ impl App {
     // ── Geometry ──────────────────────────────────────────────────────────────
 
     fn target_size(&self) -> (f32, f32, f32) {
-        let (w, h) = island_size(self.st.mode, self.st.view, self.st.chat_history.len());
-        let r = if self.st.mode == Mode::Expanded { EXPANDED_CORNER } else { ROUNDED_CORNER };
+        let (mut w, mut h) = island_size(self.st.mode, self.st.view, self.st.chat_history.len());
+        let mut r = if self.st.mode == Mode::Expanded { EXPANDED_CORNER } else { ROUNDED_CORNER };
+        if self.overlay.is_some() && self.st.mode != Mode::Expanded {
+            w = crate::overlay::OVERLAY_W;
+            h = crate::overlay::OVERLAY_H;
+            r = 18.0;
+        }
         (w, h, r)
     }
 
@@ -1658,9 +1688,13 @@ impl App {
             self.draw_bot(g, iw, ih, &body);
             prof_lap("bot", &mut lap);
         }
-        if self.st.mode == Mode::Compact {
-            self.draw_activity(g, iw, ih);
-            self.draw_mini_grid(g, iw, ih);
+        if self.st.mode == Mode::Compact || (self.overlay.is_some() && !expanded) {
+            if self.overlay.is_some() {
+                self.draw_overlay(g, iw, ih);
+            } else {
+                self.draw_activity(g, iw, ih);
+                self.draw_mini_grid(g, iw, ih);
+            }
         }
         self.draw_countdown(g, iw, ih, n);
 
@@ -1738,7 +1772,10 @@ impl App {
         use crate::activity::{format_bytes, format_clock, Activity};
         use crate::text::{self, Align, Face};
         use crate::ui::pal;
-        let Some(act) = crate::activity::current() else { return };
+        let Some(act) = crate::activity::current() else {
+            self.draw_rest_clock(g, iw, ih);
+            return;
+        };
         let n = now();
         let (x0, x1) = (ACT_X, iw - ACT_RIGHT);
         let cy = ih / 2.0;
