@@ -386,140 +386,72 @@ impl App {
         g.restore();
     }
 
-    /// Right column (OmniNotch style): today's agenda on top, the task list under it. The timer is one
-    /// small button on the tasks header; it opens 5/15/25 and a gear for a custom length.
+    /// Right column: the next thing on today's agenda in one soft row, the tasks as pills, and one
+    /// bottom row to add a task, see today's count and start a timer.
     fn dash_column(&mut self, g: &mut Gfx, c: Rect) {
-        // ── Today (an accordion: it folds away when there is nothing to show) ──
-        let gstatus = crate::gtasks::status();
-        let needs = crate::gtasks::calendar_needs_login();
-        let connected = gstatus == crate::gtasks::Status::Linked && !needs;
-        let events = upcoming(&crate::gtasks::events());
-        let shown = events.len().min(1);
-        let auto_open = connected && !events.is_empty();
-        let open = !self.timer_menu && self.today_force.unwrap_or(auto_open);
-        // The body is: the events, or one line saying why there are none / how to connect.
-        let target = if !open { 0.0 } else if connected && !events.is_empty() { shown as f32 * 20.0 } else { 20.0 };
-        self.today_target = target;
-        if (self.today_h - target).abs() > 0.3 {
-            self.ensure_running();
+        self.today_target = 0.0;
+        self.dash_today_row(g, Rect::new(c.x, c.y, c.w, 26.0));
+        let bottom = Rect::new(c.x, c.y + c.h - 24.0, c.w, 24.0);
+        let top = c.y + 34.0;
+        let mut list = Rect::new(c.x, top, c.w, (bottom.y - 7.0 - top).max(0.0));
+        if self.timer_menu {
+            self.dash_timer_menu(g, Rect::new(list.x, list.y, list.w, 22.0));
+            list.y += 28.0;
+            list.h = (list.h - 28.0).max(0.0);
         }
+        self.dash_todos(g, list, bottom);
+    }
 
-        let head = Rect::new(c.x, c.y, c.w, 26.0);
-        let (hclick, hhover, _) = self.ui.click_region(id_of("today-head", 97), head);
-        text::draw(g, "Hari ini", c.x, c.y + 12.0, Face::Bold, 12.5, if hhover { hex("#FFFFFF") } else { hex(pal::INK) }, Align::Left);
-        let hw = text::measure("Hari ini", Face::Bold, 12.5);
-        // Chevron: points right when folded, down when open.
-        g.stroke_style(hex(pal::DIM));
-        g.line_width(1.5);
-        g.line_cap_round();
-        g.line_join_round();
-        g.begin_path();
-        let (cx0, cy0) = (c.x + hw + 10.0, c.y + 12.0);
-        if open {
-            g.move_to(cx0 - 3.0, cy0 - 1.5);
-            g.line_to(cx0, cy0 + 1.8);
-            g.line_to(cx0 + 3.0, cy0 - 1.5);
-        } else {
-            g.move_to(cx0 - 1.5, cy0 - 3.0);
-            g.line_to(cx0 + 1.8, cy0);
-            g.line_to(cx0 - 1.5, cy0 + 3.0);
-        }
-        g.stroke();
-        if hclick {
-            crate::sound::play("blip");
-            self.today_force = Some(!open);
-        }
-        if !open {
-            // Folded: a one-line summary beside the title.
-            let summary = if !connected {
-                if needs { "kalender: masuk ulang".to_string() } else { "belum terhubung".to_string() }
-            } else if events.is_empty() {
-                "tidak ada agenda".to_string()
-            } else {
-                format!("{} acara · {} {}", events.len(), events[0].start, events[0].title)
-            };
-            crate::app::fading_text(g, &summary, c.x + hw + 22.0, c.y + 12.0, 10.5, hex(pal::DIM2), c.x + hw + 22.0, c.x + c.w);
-        }
-        // Body, clipped by its animated height without a clip: rows that do not fit yet are not drawn.
-        if self.today_h > 6.0 {
-            let fade = clamp(self.today_h / target.max(24.0), 0.0, 1.0);
-            g.save();
-            g.mul_alpha(fade);
-            if !connected {
-                let r = Rect::new(c.x, c.y + 26.0, c.w, 24.0);
-                let (clicked, hover, _) = self.ui.click_region(id_of("gt-cal", 97), r);
-                let hint = if needs { "Kalender: masuk ulang" } else { "Hubungkan Google untuk agenda" };
-                text::draw(g, hint, c.x, c.y + 38.0, Face::Medium, 11.5, if hover { hex(pal::INK) } else { hex(pal::AMBER) }, Align::Left);
+    /// "Today" in one row: a little date tile, then the next event (or why there is none).
+    fn dash_today_row(&mut self, g: &mut Gfx, r: Rect) {
+        use crate::gtasks::Status;
+        let status = crate::gtasks::status();
+        let needs = crate::gtasks::calendar_needs_login();
+        let connected = status == Status::Linked && !needs;
+        let events = upcoming(&crate::gtasks::events());
+        let (clicked, hover, _) = self.ui.click_region(id_of("today-row", 97), r);
+        g.fill_style(rgba(255, 255, 255, if hover && !connected { 0.08 } else { 0.05 }));
+        g.fill_round_rect(r.x, r.y, r.w, r.h, 9.0);
+
+        let t = unsafe { windows::Win32::System::SystemInformation::GetLocalTime() };
+        let tile = Rect::new(r.x + 4.0, r.y + 4.0, 18.0, 18.0);
+        g.fill_style(rgba(180, 90, 240, 0.30));
+        g.fill_round_rect(tile.x, tile.y, tile.w, tile.h, 6.0);
+        text::draw(g, &t.wDay.to_string(), tile.cx(), tile.cy(), Face::Bold, 9.5, hex("#EBDDFF"), Align::Center);
+
+        let x = r.x + 30.0;
+        let right = r.x + r.w - 10.0;
+        let cy = r.cy();
+        match &status {
+            Status::LoggingIn => {
+                text::draw(g, "Menunggu login Google…", x, cy, Face::Regular, 11.0, hex(pal::DIM), Align::Left);
+            }
+            Status::Error(e) => {
+                crate::app::fading_text(g, &format!("Google: {e}"), x, cy, 11.0, hex(pal::RED_TEXT), x, right);
+            }
+            _ if !connected => {
+                let label = if needs { "Kalender perlu masuk ulang" } else { "Hubungkan Google" };
+                text::draw(g, label, x, cy, Face::Medium, 11.0, if hover { hex(pal::INK) } else { hex(pal::AMBER) }, Align::Left);
+                text::draw(g, "›", right, cy - 1.0, Face::Regular, 13.0, hex(pal::DIM), Align::Right);
                 if clicked {
                     crate::gtasks::connect();
                 }
-            } else if events.is_empty() {
-                text::draw(g, "Tidak ada agenda lagi hari ini", c.x, c.y + 38.0, Face::Regular, 11.5, hex(pal::DIM2), Align::Left);
-            } else {
-                for e in events.iter().take(1) {
-                    let y = c.y + 36.0;
-                    if y + 9.0 > c.y + 28.0 + self.today_h + 6.0 {
-                        break;
-                    }
-                    g.fill_style(hex("#B45AF0"));
-                    g.fill_round_rect(c.x, y - 8.0, 3.0, 16.0, 1.5);
-                    let when = if e.start == "Seharian" { "Seharian".to_string() } else { e.start.clone() };
-                    text::draw(g, &when, c.x + 10.0, y, Face::Medium, 10.5, rgba(255, 255, 255, 0.55), Align::Left);
-                    let tx = c.x + 10.0 + text::measure(&when, Face::Medium, 10.5) + 8.0;
-                    crate::app::fading_text(g, &e.title, tx, y, 11.5, hex(pal::INK), tx, c.x + c.w);
-                }
-                if events.len() > 1 {
-                    text::draw(g, &format!("+{} lagi", events.len() - 1), c.x + c.w, c.y + 12.0, Face::Regular, 10.0, hex(pal::DIM3), Align::Right);
+            }
+            _ if events.is_empty() => {
+                text::draw(g, "Tidak ada agenda lagi hari ini", x, cy, Face::Regular, 11.0, hex(pal::DIM2), Align::Left);
+            }
+            _ => {
+                let e = &events[0];
+                let more = events.len() - 1;
+                let tw = text::measure(&e.start, Face::Medium, 10.5);
+                text::draw(g, &e.start, x, cy, Face::Medium, 10.5, hex("#C9A7F5"), Align::Left);
+                let end = if more > 0 { right - 22.0 } else { right };
+                crate::app::fading_text(g, &e.title, x + tw + 8.0, cy, 11.5, hex(pal::INK), x + tw + 8.0, end);
+                if more > 0 {
+                    text::draw(g, &format!("+{more}"), right, cy, Face::Medium, 10.0, hex(pal::DIM3), Align::Right);
                 }
             }
-            g.restore();
         }
-
-        // ── Tasks ──
-        let ty = c.y + 40.0 + self.today_h;
-        text::draw(g, "Tugas", c.x, ty, Face::Bold, 12.5, hex(pal::INK), Align::Left);
-        let tw = text::measure("Tugas", Face::Bold, 12.5);
-        text::draw(g, "›", c.x + tw + 6.0, ty - 1.0, Face::Regular, 13.0, hex(pal::DIM), Align::Left);
-        // Done today / all of today, as in Nusa's to-do.
-        let done_today = self.buddy.tasks_done;
-        let total_today = self.todos.len() as u32 + done_today;
-        let mut counter_w = 0.0;
-        if total_today > 0 {
-            let label = format!("{done_today}/{total_today}");
-            let lw = text::measure(&label, Face::Medium, 10.5) + 14.0;
-            let pill = Rect::new(c.x + tw + 22.0, ty - 8.0, lw, 16.0);
-            g.fill_style(if done_today >= total_today { rgba(34, 197, 94, 0.22) } else { rgba(255, 255, 255, 0.08) });
-            g.fill_round_rect(pill.x, pill.y, pill.w, pill.h, 8.0);
-            text::draw(g, &label, pill.cx(), pill.cy(), Face::Medium, 10.5, hex(if done_today >= total_today { pal::GREEN2 } else { pal::DIM }), Align::Center);
-            counter_w = lw + 6.0;
-        }
-
-        // Timer button: an icon when idle, the countdown when running.
-        let running = activity::timer();
-        let label = running.map(|(left, _)| activity::format_clock(left));
-        let bw = if label.is_some() { 66.0 } else { 30.0 };
-        let btn = Rect::new(c.x + c.w - bw, ty - 12.0, bw, 24.0);
-        let (clicked, hover, _) = self.ui.click_region(id_of("dash-timer-btn", 93), btn);
-        g.fill_style(rgba(255, 255, 255, if self.timer_menu { 0.16 } else if hover { 0.12 } else { 0.07 }));
-        g.fill_round_rect(btn.x, btn.y, btn.w, btn.h, 12.0);
-        let tint = if label.is_some() { hex(pal::AMBER) } else { hex(pal::INK) };
-        let icon_x = if label.is_some() { btn.x + 15.0 } else { btn.cx() };
-        crate::icons::fill(g, crate::icons::Icon::Timer, icon_x, btn.cy(), 13.0, tint);
-        if let Some(l) = &label {
-            text::draw(g, l, btn.x + 27.0, btn.cy(), Face::Bold, 11.5, hex(pal::INK), Align::Left);
-        }
-        if clicked {
-            crate::sound::play("blip");
-            self.timer_menu = !self.timer_menu;
-            self.timer_custom = false;
-        }
-
-        let mut list_top = ty + 14.0;
-        if self.timer_menu {
-            self.dash_timer_menu(g, Rect::new(c.x, list_top, c.w, 26.0));
-            list_top += 34.0;
-        }
-        self.dash_todos(g, Rect::new(c.x, list_top, c.w, c.y + c.h - list_top), Rect::new(c.x + tw + 22.0 + counter_w, ty - 8.0, c.w - tw - 22.0 - counter_w - bw - 8.0, 16.0));
     }
 
     fn dash_timer_menu(&mut self, g: &mut Gfx, row: Rect) {
@@ -596,81 +528,132 @@ impl App {
         }
     }
 
-    /// `r` is everything under the tasks header (rows, then the add field at the bottom);
-    /// `status_r` is the spot beside the header where the Google status and its button live.
-    fn dash_todos(&mut self, g: &mut Gfx, r: Rect, status_r: Rect) {
-        // Rows.
+    /// The tasks as soft pills in `r`; the bottom row holds the add field, today's count and the
+    /// timer button.
+    fn dash_todos(&mut self, g: &mut Gfx, r: Rect, bottom: Rect) {
         let order = crate::todos::order(&self.todos);
-        let field_h = 22.0;
-        let rows = (((r.h - field_h - 4.0) / 20.0).floor().max(0.0) as usize).min(7);
-        // Mouse wheel over the rows scrolls the list.
-        let list_area = Rect::new(r.x, r.y, r.w, (r.h - field_h - 6.0).max(0.0));
+        let (pitch, row_h) = (25.0, 22.0);
+        let slots = ((r.h + 3.0) / pitch).floor().max(0.0) as usize;
+        let overflow = order.len() > slots;
+        let rows = slots;
+        let below = order.len().saturating_sub(self.task_scroll + rows);
         let (mx0, my0) = self.ui.input.mouse;
-        if list_area.contains(mx0, my0) && self.ui.input.wheel != 0.0 {
+        if r.contains(mx0, my0) && self.ui.input.wheel != 0.0 && rows > 0 {
             let step = -self.ui.input.wheel.round() as i32;
             let max = order.len().saturating_sub(rows) as i32;
             self.task_scroll = (self.task_scroll as i32 + step).clamp(0, max) as usize;
         }
         self.task_scroll = self.task_scroll.min(order.len().saturating_sub(rows));
-        let mut y = r.y + 10.0;
+
+        let mut y = r.y;
         let mut act: Option<(usize, bool)> = None; // (index, toggle star instead of complete)
-        for &i in order.iter().skip(self.task_scroll).take(rows) {
+        for (k, &i) in order.iter().skip(self.task_scroll).take(rows).enumerate() {
             let t = &self.todos[i];
-            let (check, star) = (Rect::new(r.x - 2.0, y - 9.0, 18.0, 18.0), Rect::new(r.x + r.w - 18.0, y - 9.0, 18.0, 18.0));
+            let row = Rect::new(r.x, y, r.w, row_h);
+            // The last row carries the way to the rest of the list.
+            let more_chip = overflow && k + 1 == rows;
+            let (_, row_hover, _) = self.ui.click_region(id_of(&format!("todo-r{i}"), 94), row);
+            g.fill_style(rgba(255, 255, 255, if row_hover { 0.085 } else { 0.045 }));
+            g.fill_round_rect(row.x, row.y, row.w, row.h, 8.0);
+
+            let check = Rect::new(r.x + 2.0, y + 2.0, 20.0, 18.0);
             let (c_click, c_hover, _) = self.ui.click_region(id_of(&format!("todo-c{i}"), 95), check);
-            let (s_click, s_hover, _) = self.ui.click_region(id_of(&format!("todo-s{i}"), 96), star);
-            g.stroke_style(if c_hover { hex(pal::GREEN) } else { rgba(255, 255, 255, 0.4) });
+            let (cx, cy) = (r.x + 12.0, y + row_h / 2.0);
+            if c_hover {
+                g.fill_style(rgba(34, 197, 94, 0.28));
+                g.begin_path();
+                g.circle(cx, cy, 6.0);
+                g.fill();
+            }
+            g.stroke_style(if c_hover { hex(pal::GREEN) } else { rgba(255, 255, 255, 0.42) });
             g.line_width(1.4);
             g.begin_path();
-            g.circle(r.x + 7.0, y, 5.5);
+            g.circle(cx, cy, 5.5);
             g.stroke();
             if c_hover {
-                g.stroke_style(hex(pal::GREEN));
+                g.line_cap_round();
+                g.line_join_round();
                 g.begin_path();
-                g.move_to(r.x + 4.5, y);
-                g.line_to(r.x + 6.5, y + 2.2);
-                g.line_to(r.x + 10.0, y - 2.4);
+                g.move_to(cx - 2.6, cy + 0.1);
+                g.line_to(cx - 0.6, cy + 2.1);
+                g.line_to(cx + 2.8, cy - 2.2);
                 g.stroke();
             }
-            crate::app::fading_text(g, &t.text, r.x + 20.0, y, 11.5, hex(pal::INK), r.x + 20.0, r.x + r.w - 24.0);
-            let star_color = if t.star { hex(pal::AMBER) } else if s_hover { rgba(255, 255, 255, 0.55) } else { rgba(255, 255, 255, 0.2) };
-            crate::icons::fill(g, crate::icons::Icon::Star, star.cx(), star.cy(), 11.0, star_color);
+
+            let show_star = (t.star || row_hover) && !more_chip;
+            let chip_label = if below > 0 { format!("+{below}") } else { "atas".to_string() };
+            let chip_w = text::measure(&chip_label, Face::Medium, 10.0) + 14.0;
+            let text_end = r.x + r.w - if more_chip { chip_w + 10.0 } else if show_star { 24.0 } else { 8.0 };
+            crate::app::fading_text(g, &t.text, r.x + 24.0, cy, 11.5, hex(pal::INK), r.x + 24.0, text_end);
+            if show_star {
+                let star = Rect::new(r.x + r.w - 21.0, y + 2.0, 18.0, 18.0);
+                let (s_click, s_hover, _) = self.ui.click_region(id_of(&format!("todo-s{i}"), 96), star);
+                let col = if t.star { hex(pal::AMBER) } else if s_hover { rgba(255, 255, 255, 0.85) } else { rgba(255, 255, 255, 0.4) };
+                crate::icons::fill(g, crate::icons::Icon::Star, star.cx(), star.cy(), 11.0, col);
+                if s_click {
+                    act = Some((i, true));
+                }
+            }
+            if more_chip {
+                let chip = Rect::new(r.x + r.w - chip_w - 4.0, y + 3.0, chip_w, row_h - 6.0);
+                let (m_click, m_hover, _) = self.ui.click_region(id_of("tasks-more", 101), chip);
+                g.fill_style(rgba(255, 255, 255, if m_hover { 0.18 } else { 0.10 }));
+                g.fill_round_rect(chip.x, chip.y, chip.w, chip.h, chip.h / 2.0);
+                text::draw(g, &chip_label, chip.cx(), chip.cy(), Face::Medium, 10.0, hex(if m_hover { pal::INK } else { pal::DIM }), Align::Center);
+                if m_click {
+                    crate::sound::play("blip");
+                    self.task_scroll = if below > 0 { (self.task_scroll + rows).min(order.len().saturating_sub(rows)) } else { 0 };
+                }
+            }
             if c_click {
                 act = Some((i, false));
-            } else if s_click {
-                act = Some((i, true));
             }
-            y += 20.0;
+            y += pitch;
         }
-        if order.is_empty() && rows > 0 {
-            text::draw(g, "Belum ada tugas", r.x + 2.0, r.y + 10.0, Face::Regular, 11.0, hex(pal::DIM3), Align::Left);
+        if order.is_empty() && slots > 0 {
+            text::draw(g, "Belum ada tugas. Tulis di bawah.", r.x + 4.0, r.y + row_h / 2.0, Face::Regular, 11.0, hex(pal::DIM3), Align::Left);
         }
-        // "+N lagi" shows the next page of tasks; at the end it says "ke atas". The wheel scrolls too.
-        let below = order.len().saturating_sub(self.task_scroll + rows);
-        let above = self.task_scroll;
-        if below > 0 || above > 0 {
-            let label = if below > 0 { format!("+{below} lagi") } else { "ke atas".to_string() };
-            let lw = text::measure(&label, Face::Medium, 10.0) + 8.0;
-            let hit = Rect::new(r.x + r.w - lw, r.y + r.h - field_h - 17.0, lw, 15.0);
-            let (clicked, hover, _) = self.ui.click_region(id_of("tasks-more", 101), hit);
-            text::draw(g, &label, r.x + r.w, hit.cy(), Face::Medium, 10.0, if hover { hex(pal::INK) } else { hex(pal::DIM2) }, Align::Right);
-            if above > 0 {
-                text::draw(g, &format!("{}–{} dari {}", above + 1, (above + rows).min(order.len()), order.len()), r.x + 2.0, hit.cy(), Face::Regular, 9.5, hex(pal::DIM3), Align::Left);
-            }
-            if clicked {
-                crate::sound::play("blip");
-                self.task_scroll = if below > 0 { (self.task_scroll + rows).min(order.len().saturating_sub(rows)) } else { 0 };
-            }
+        // Bottom row: [ + add a task … ] [ 2/5 ] [ timer ].
+        let running = activity::timer();
+        let label = running.map(|(left, _)| activity::format_clock(left));
+        let bw = if label.is_some() { 64.0 } else { 24.0 };
+        let btn = Rect::new(bottom.x + bottom.w - bw, bottom.y, bw, bottom.h);
+        let (t_click, t_hover, _) = self.ui.click_region(id_of("dash-timer-btn", 93), btn);
+        g.fill_style(rgba(255, 255, 255, if self.timer_menu { 0.16 } else if t_hover { 0.12 } else { 0.06 }));
+        g.fill_round_rect(btn.x, btn.y, btn.w, btn.h, 12.0);
+        let tint = if label.is_some() { hex(pal::AMBER) } else { hex(pal::DIM) };
+        let icon_x = if label.is_some() { btn.x + 14.0 } else { btn.cx() };
+        crate::icons::fill(g, crate::icons::Icon::Timer, icon_x, btn.cy(), 12.0, tint);
+        if let Some(l) = &label {
+            text::draw(g, l, btn.x + 25.0, btn.cy(), Face::Bold, 11.0, hex(pal::INK), Align::Left);
+        }
+        if t_click {
+            crate::sound::play("blip");
+            self.timer_menu = !self.timer_menu;
+            self.timer_custom = false;
         }
 
-        // Add field, at the bottom.
-        let fb = Rect::new(r.x, r.y + r.h - field_h, r.w, field_h);
+        let done_today = self.buddy.tasks_done;
+        let total_today = self.todos.len() as u32 + done_today;
+        let mut field_end = btn.x - 6.0;
+        if total_today > 0 {
+            let all = done_today >= total_today;
+            let lbl = format!("{done_today}/{total_today}");
+            let cw = text::measure(&lbl, Face::Medium, 10.5) + 14.0;
+            let pill = Rect::new(field_end - cw, bottom.y + 4.0, cw, 16.0);
+            g.fill_style(if all { rgba(34, 197, 94, 0.22) } else { rgba(255, 255, 255, 0.07) });
+            g.fill_round_rect(pill.x, pill.y, pill.w, pill.h, 8.0);
+            text::draw(g, &lbl, pill.cx(), pill.cy(), Face::Medium, 10.5, hex(if all { pal::GREEN2 } else { pal::DIM }), Align::Center);
+            field_end = pill.x - 6.0;
+        }
+        let fb = Rect::new(bottom.x, bottom.y, (field_end - bottom.x).max(40.0), bottom.h);
         g.fill_style(rgba(255, 255, 255, if self.todo_input.focused { 0.11 } else { 0.06 }));
-        g.fill_round_rect(fb.x, fb.y, fb.w, fb.h, 11.0);
-        let field = Rect::new(fb.x + 10.0, fb.y + 2.0, fb.w - 20.0, 18.0);
+        g.fill_round_rect(fb.x, fb.y, fb.w, fb.h, 12.0);
+        crate::icons::fill(g, crate::icons::Icon::Plus, fb.x + 12.0, fb.cy(), 10.0, hex(pal::DIM2));
+        let field = Rect::new(fb.x + 22.0, fb.y + 3.0, fb.w - 30.0, 18.0);
         let (mx, my) = self.ui.input.mouse;
-        let over = field.contains(mx, my);
-        self.ui.note_region(id_of("todo-field", 110), field);
+        let over = fb.contains(mx, my);
+        self.ui.note_region(id_of("todo-field", 110), fb);
         if self.ui.input.pressed {
             if over {
                 self.todo_input.focused = true;
@@ -685,51 +668,6 @@ impl App {
             self.ui.hovering_text = true;
         }
         self.todo_input.draw(g, field, 11.5, pal::INK);
-
-        // Google status beside the header: a small icon when all is well (the sentence appears on
-        // hover), a pill only when something needs doing. It is also the connect button.
-        let st = crate::gtasks::status();
-        let (s_click, s_hover, _) = self.ui.click_region(id_of("gt-status", 97), status_r);
-        let cy = status_r.cy();
-        match &st {
-            crate::gtasks::Status::Linked => {
-                let col = if s_hover { hex(pal::GREEN2) } else { rgba(52, 211, 153, 0.75) };
-                g.stroke_style(col);
-                g.line_width(1.3);
-                g.line_cap_round();
-                g.line_join_round();
-                g.begin_path();
-                g.circle(status_r.x + 7.0, cy, 5.5);
-                g.stroke();
-                g.begin_path();
-                g.move_to(status_r.x + 4.6, cy + 0.2);
-                g.line_to(status_r.x + 6.4, cy + 2.0);
-                g.line_to(status_r.x + 9.6, cy - 1.8);
-                g.stroke();
-                if s_hover {
-                    text::draw(g, "tersinkron dengan Google", status_r.x + 18.0, cy, Face::Regular, 9.5, hex(pal::DIM), Align::Left);
-                }
-            }
-            crate::gtasks::Status::LoggingIn => {
-                text::draw(g, "menunggu login…", status_r.x, cy, Face::Regular, 9.5, hex(pal::DIM), Align::Left);
-            }
-            other => {
-                let (label, color) = match other {
-                    crate::gtasks::Status::NoClient => ("Hubungkan Google".to_string(), hex(pal::AMBER)),
-                    crate::gtasks::Status::NeedsLogin => ("Masuk Google".to_string(), hex(pal::AMBER)),
-                    crate::gtasks::Status::Error(e) => (format!("Gagal: {e}"), hex(pal::RED_TEXT)),
-                    _ => (String::new(), hex(pal::DIM)),
-                };
-                let pw = (text::measure(&label, Face::Medium, 9.5) + 14.0).min(status_r.w);
-                let pill = Rect::new(status_r.x, cy - 8.0, pw, 16.0);
-                g.fill_style(rgba(255, 255, 255, if s_hover { 0.12 } else { 0.06 }));
-                g.fill_round_rect(pill.x, pill.y, pill.w, pill.h, 8.0);
-                crate::app::fading_text(g, &label, pill.x + 7.0, cy, 9.5, color, pill.x + 7.0, pill.x + pill.w - 5.0);
-            }
-        }
-        if s_click {
-            crate::gtasks::connect();
-        }
 
         if let Some((i, star_toggle)) = act {
             crate::sound::play("blip");

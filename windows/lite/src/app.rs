@@ -218,7 +218,6 @@ pub struct App {
     pub today_h: f32,
     pub today_target: f32,
     /// The user's own open/closed choice for "Hari ini" (None = automatic).
-    pub today_force: Option<bool>,
     /// Set by the arrow at the bottom of the island; handled after the frame.
     pub collapse_req: bool,
     /// A mouse move skipped its render to stay under ~60 fps; the poll tick draws it.
@@ -354,7 +353,6 @@ impl App {
             timer_custom_min: 30,
             today_h: 0.0,
             today_target: 0.0,
-            today_force: None,
             collapse_req: false,
             move_dirty: false,
             last_hover_sig: 0,
@@ -1690,10 +1688,6 @@ impl App {
             self.draw_content(g, iw, ih, n);
         }
 
-        if crate::ui::nusa() && ih > 6.0 && !greeting_active {
-            Self::draw_edge_glow(g, iw, ih, r, &body);
-        }
-
         // Bot, glow, minis and the countdown bar sit above the clip.
         if !greeting_active {
             let mut lap = std::time::Instant::now();
@@ -1755,27 +1749,6 @@ impl App {
         g.translate(cx - size / 2.0, cy - size / 2.0 - BOT_OVERHANG);
         let h = size + BOT_OVERHANG;
         self.engine.draw(g, size, h);
-        g.restore();
-    }
-
-    /// The Nusa glow: cyan → indigo → violet along the island's lower edge and corners,
-    /// a bright hairline over two soft halos.
-    fn draw_edge_glow(g: &mut Gfx, iw: f32, ih: f32, r: f32, body: &tiny_skia::Path) {
-        use crate::gfx::with_alpha;
-        let (cyan, indigo, violet) = (hex("#19B8FF"), hex("#2D5BFF"), hex("#7B4BFF"));
-        let breathe = 0.9 + 0.1 * (now() * 0.9).sin();
-        g.save();
-        let _ = r;
-        g.clip_rect_xywh(-24.0, (ih - 4.5).max(0.0), iw + 48.0, 40.0);
-        for (w, a) in [(12.0f32, 0.08f32), (6.0, 0.18), (2.0, 0.8)] {
-            let a = a * breathe;
-            let grad = g.linear(0.0, 0.0, iw, 0.0, &[
-                (0.0, with_alpha(cyan, a)), (0.55, with_alpha(indigo, a)), (1.0, with_alpha(violet, a)),
-            ]);
-            g.stroke_style(grad);
-            g.line_width(w);
-            g.stroke_path(body);
-        }
         g.restore();
     }
 

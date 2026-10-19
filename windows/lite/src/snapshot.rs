@@ -307,7 +307,15 @@ Kosong ~150 menit sebelum Rapat tim (14:00) — cocok untuk: Kirim laporan".into
     scene!("ov_caps", Mode::Compact, View::Overview, |app| {
         app.show_overlay(crate::overlay::Overlay { kind: crate::overlay::OverlayKind::Caps, title: "Caps Lock".into(), sub: "Aktif".into(), metric: String::new() });
     }, 1.0);
-    scene!("dashboard", Mode::Expanded, View::Dashboard, |app| {}, 1.5);
+    scene!("dashboard", Mode::Expanded, View::Dashboard, |app| {
+        crate::activity::set_demo();
+        app.buddy.tasks_done = 2;
+        app.todos = ["Bikin thumbnail ICATAM", "Edit video wisuda", "Deal vendor boneka", "Kirim laporan magang", "Balas email dosen"]
+            .iter()
+            .enumerate()
+            .map(|(i, t)| crate::todos::Todo { text: t.to_string(), star: i == 1, gid: None })
+            .collect();
+    }, 1.5);
     scene!("stocks", Mode::Expanded, View::Stocks, |app| { crate::stocks::set_demo(); }, 1.5);
     scene!("error", Mode::Expanded, View::Error, |app| {
         hook(&mut app, json!({"hook_event_name":"PreToolUse","cwd":"C:/p/coucou","tool_name":"Bash","tool_input":{"command":"cargo test"}}));

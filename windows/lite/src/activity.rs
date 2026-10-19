@@ -254,8 +254,19 @@ fn media_loop() {
                 mgr = Manager::RequestAsync().and_then(|o| o.get()).ok();
             }
             let session = mgr.as_ref().and_then(|m| m.GetCurrentSession().ok());
-            let now = session.as_ref().and_then(read_media);
+            let mut now = session.as_ref().and_then(read_media);
             if let Ok(mut s) = SHARED.lock() {
+                // Same song, still playing, and the new reading is within a couple of seconds of
+                // where our own clock says it is: keep our clock. Readings jitter; a ring that
+                // steps back and forth looks broken. A real seek is a bigger jump and is taken.
+                if let (Some(old), Some(new)) = (s.media.as_ref(), now.as_mut()) {
+                    if old.title == new.title && old.artist == new.artist && old.playing && new.playing {
+                        let expected = old.position_now();
+                        if (new.position - expected).abs() < 2.5 {
+                            new.position = expected;
+                        }
+                    }
+                }
                 s.media = now.clone();
                 if now.is_none() {
                     s.art = None;
@@ -299,6 +310,21 @@ fn read_media(s: &Session) -> Option<Media> {
         if let (Ok(p), Ok(start), Ok(end)) = (t.Position(), t.StartTime(), t.EndTime()) {
             position = (secs(p) - secs(start)).max(0.0) as f32;
             duration = (secs(end) - secs(start)).max(0.0) as f32;
+            // `Position` is where the song was when the player last reported it (Spotify does
+            // that every few seconds), not now: add the time since that report while it plays.
+            if playing {
+                if let Ok(updated) = t.LastUpdatedTime() {
+                    let ft = unsafe { windows::Win32::System::SystemInformation::GetSystemTimeAsFileTime() };
+                    let now = ((ft.dwHighDateTime as i64) << 32) | ft.dwLowDateTime as i64;
+                    let since = (now - updated.UniversalTime) as f64 / 1.0e7;
+                    if since > 0.0 && since < 3600.0 {
+                        position += since as f32;
+                        if duration > 0.0 {
+                            position = position.min(duration);
+                        }
+                    }
+                }
+            }
         }
     }
     let info = s.GetPlaybackInfo().ok();

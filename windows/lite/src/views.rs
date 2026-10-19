@@ -139,22 +139,26 @@ impl App {
         }
         g.restore();
 
-        // The pages of the dashboard group page between themselves with chevrons and dots.
-        if crate::nusapages::is_page(self.st.view) {
+        // The pages of the dashboard group page between themselves with chevrons and dots; their
+        // fold arrow moves to the bottom right corner so both fit.
+        let paged = crate::nusapages::is_page(self.st.view);
+        if paged {
             self.draw_pager(g, iw, ih);
         }
-        // A small arrow at the bottom centre folds the island back to the bar.
-        else if !matches!(self.st.view, View::Greeting | View::Upload | View::Uploading | View::Choose | View::Confused) {
-            let hit = Rect::new(iw / 2.0 - 24.0, ih - 14.0, 48.0, 14.0);
+        // A small arrow folds the island back to the bar.
+        if !matches!(self.st.view, View::Greeting | View::Upload | View::Uploading | View::Choose | View::Confused) {
+            let ax = if paged { iw - 40.0 } else { iw / 2.0 };
+            let hit = Rect::new(ax - 24.0, ih - 16.0, 48.0, 16.0);
             let (clicked, hover, _) = self.ui.click_region(id_of("collapse-arrow", 103), hit);
             g.stroke_style(rgba(255, 255, 255, if hover { 0.9 } else { 0.32 }));
             g.line_width(1.6);
             g.line_cap_round();
             g.line_join_round();
             g.begin_path();
-            g.move_to(iw / 2.0 - 6.0, ih - 3.5);
-            g.line_to(iw / 2.0, ih - 7.5);
-            g.line_to(iw / 2.0 + 6.0, ih - 3.5);
+            let ay = if paged { ih - 9.0 } else { ih - 3.5 };
+            g.move_to(ax - 6.0, ay);
+            g.line_to(ax, ay - 4.0);
+            g.line_to(ax + 6.0, ay);
             g.stroke();
             if clicked {
                 crate::sound::play("close");

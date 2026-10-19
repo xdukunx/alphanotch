@@ -1089,7 +1089,7 @@ impl Win {
             crate::ui::set_nusa(!on);
             self.save();
         }
-        text::draw(g, "biru-hitam pekat dan cahaya di tepi bawah island", cx + 48.0, y + 11.0, Face::Regular, 11.5, hex(pal::DIM3), Align::Left);
+        text::draw(g, "biru-hitam pekat dan panel bergaris tipis", cx + 48.0, y + 11.0, Face::Regular, 11.5, hex(pal::DIM3), Align::Left);
         let _ = iw;
         y0 + h + 2.0 * pad + 16.0
     }
