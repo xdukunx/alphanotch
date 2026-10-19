@@ -35,6 +35,8 @@ pub enum OverlayKind {
     Headphones,
     HeadphonesOff,
     Info,
+    Volume,
+    Caps,
 }
 
 #[derive(Clone, Debug)]
@@ -108,6 +110,7 @@ impl App {
             return;
         }
         self.overlay = Some(o);
+        self.overlay_level = None;
         sound::play("blip");
         if self.st.mode == Mode::Hidden {
             self.reveal();
@@ -119,6 +122,7 @@ impl App {
     }
 
     pub fn end_overlay(&mut self) {
+        self.overlay_level = None;
         if self.overlay.take().is_some() {
             self.animate_geometry(true);
             self.ensure_running();
@@ -195,7 +199,8 @@ impl App {
         let col = match o.kind {
             OverlayKind::Charging => "#22C55E",
             OverlayKind::Low => "#F4505E",
-            OverlayKind::Headphones => "#38BDF8",
+            OverlayKind::Headphones | OverlayKind::Volume => "#38BDF8",
+            OverlayKind::Caps => "#F5A524",
             OverlayKind::Unplugged | OverlayKind::HeadphonesOff | OverlayKind::Info => "#9398A1",
         };
         let cx = 66.0;
@@ -234,13 +239,30 @@ impl App {
             OverlayKind::Low | OverlayKind::Info => {
                 crate::icons::fill(g, crate::icons::Icon::Bang, cx, cy, 12.0, c);
             }
+            OverlayKind::Volume => {
+                let icon = if o.title == "Senyap" { crate::icons::Icon::SpeakerOff } else { crate::icons::Icon::SpeakerOn };
+                crate::icons::fill(g, icon, cx, cy, 14.0, c);
+            }
+            OverlayKind::Caps => {
+                crate::icons::fill(g, crate::icons::Icon::ArrowUp, cx, cy, 13.0, c);
+            }
         }
 
         let metric_w = if o.metric.is_empty() { 0.0 } else { text::measure(&o.metric, Face::Medium, 15.0) + 14.0 };
         let tx = cx + 22.0;
         let room = (iw - 16.0 - metric_w - tx).max(40.0);
         text::draw(g, &text::ellipsize(&o.title, Face::Medium, 12.5, room), tx, cy - 7.0, Face::Medium, 12.5, hex(pal::INK), Align::Left);
-        text::draw(g, &text::ellipsize(&o.sub, Face::Regular, 10.5, room), tx, cy + 8.0, Face::Regular, 10.5, hex(pal::DIM), Align::Left);
+        if let Some(level) = self.overlay_level {
+            // Volume: a thin bar where the subtitle would be.
+            g.fill_style(rgba(255, 255, 255, 0.14));
+            g.fill_round_rect(tx, cy + 6.0, room, 4.0, 2.0);
+            if level > 0.0 {
+                g.fill_style(c);
+                g.fill_round_rect(tx, cy + 6.0, (room * level).max(4.0), 4.0, 2.0);
+            }
+        } else {
+            text::draw(g, &text::ellipsize(&o.sub, Face::Regular, 10.5, room), tx, cy + 8.0, Face::Regular, 10.5, hex(pal::DIM), Align::Left);
+        }
         if !o.metric.is_empty() {
             text::draw(g, &o.metric, iw - 16.0, cy, Face::Medium, 15.0, hex(pal::INK), Align::Right);
         }
@@ -289,6 +311,7 @@ impl App {
         if !self.platform.hwnd.0.is_null() {
             register_audio_notifications(self.platform.hwnd);
         }
+        self.sync_key_hook();
     }
 
     /// Redraws the idle bar when the minute changes (the resting clock), and only then.

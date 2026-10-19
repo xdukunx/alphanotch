@@ -203,6 +203,13 @@ impl App {
             }
         }
 
+        // Date and time, in the free stretch of the header (the dashboard group has its own greeting).
+        if !crate::nusapages::is_page(v) && !matches!(v, View::Stocks | View::Weather | View::Teleprompter | View::Greeting) {
+            let t = unsafe { windows::Win32::System::SystemInformation::GetLocalTime() };
+            let (_, _, short) = crate::dashboard::greeting(&self.st.settings.display_name);
+            let label = format!("{short}  {:02}:{:02}", t.wHour, t.wMinute);
+            text::draw(g, &label, iw - 51.0 - 8.0 - 16.0, cy, Face::Regular, 11.0, hex(pal::DIM2), Align::Right);
+        }
         let gear = Rect::new(iw - 51.0 - 8.0, cy - 8.0, 16.0, 16.0);
         let on = v == View::Settings;
         if self.ui.header_icon(g, "gear", gear, if on { Icon::GearFill } else { Icon::Gear }, 14.0, on, false) {

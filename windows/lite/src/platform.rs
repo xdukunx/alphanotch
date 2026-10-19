@@ -498,6 +498,10 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
             }
             LRESULT(1)
         }
+        crate::keys::WM_KEYS => {
+            app::with_app(|a| a.on_special_key(wp.0 as u32));
+            LRESULT(0)
+        }
         // DBT_DEVICEARRIVAL / DBT_DEVICEREMOVECOMPLETE for audio devices.
         windows::Win32::UI::WindowsAndMessaging::WM_DEVICECHANGE => {
             if wp.0 == 0x8000 || wp.0 == 0x8004 {

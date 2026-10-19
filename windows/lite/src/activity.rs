@@ -118,6 +118,26 @@ pub fn media() -> Option<Media> {
     SHARED.lock().ok()?.media.clone()
 }
 
+/// Snapshot builds only: a song that is playing, so the player can be rendered.
+#[cfg(feature = "snapshot")]
+pub fn set_demo() {
+    if let Ok(mut s) = SHARED.lock() {
+        s.media = Some(Media {
+            title: "Paper Sky".into(),
+            artist: "Lumen Coast".into(),
+            playing: true,
+            position: 62.0,
+            duration: 210.0,
+            sampled: Instant::now(),
+            source: "Spotify".into(),
+            shuffle: false,
+            repeat: 0,
+            can_shuffle: true,
+            can_repeat: true,
+        });
+    }
+}
+
 pub fn art() -> Option<Arc<Art>> {
     SHARED.lock().ok()?.art.clone()
 }

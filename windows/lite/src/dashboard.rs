@@ -15,7 +15,7 @@ const LEFT_W: f32 = 296.0;
 
 // ── Greeting ──────────────────────────────────────────────────────────────────
 
-fn greeting(display_name: &str) -> (String, String, String) {
+pub(crate) fn greeting(display_name: &str) -> (String, String, String) {
     use windows::Win32::System::SystemInformation::GetLocalTime;
     let t = unsafe { GetLocalTime() };
     let hello = match t.wHour {
@@ -164,7 +164,12 @@ impl App {
         crate::app::prof("card", || crate::ui::card(g, left, crate::layout::Wash::None, false));
 
         crate::app::prof("player", || self.dash_now_playing(g, left, n));
-        crate::app::prof("column", || self.dash_column(g, col));
+        let media = if self.lyrics_open && self.st.settings.feature_on("lyrics") { activity::media() } else { None };
+        if let Some(m) = media {
+            self.dash_lyrics(g, col, &m);
+        } else {
+            crate::app::prof("column", || self.dash_column(g, col));
+        }
     }
 
     fn dash_now_playing(&mut self, g: &mut Gfx, r: Rect, n: f32) {
@@ -312,6 +317,73 @@ impl App {
             }
         }
         crate::app::prof_lap("p.buttons", &mut lap);
+
+        // Lyrics: one small button, bottom left of the player.
+        if self.st.settings.feature_on("lyrics") {
+            let (bx, by) = (r.x + 20.0, r.y + r.h - 14.0);
+            if self.lyrics_open {
+                g.fill_style(rgba(255, 255, 255, 0.14));
+                g.fill_round_rect(bx - 11.0, by - 9.0, 22.0, 18.0, 9.0);
+            }
+            if self.ui.icon_button(g, "lyrics-btn", bx, by, 20.0, crate::icons::Icon::Bubble, 11.0) {
+                self.lyrics_open = !self.lyrics_open;
+                crate::lyrics::retry_if_failed();
+                crate::sound::play("blip");
+            }
+        }
+    }
+
+    /// The lyrics panel that replaces the agenda column: the line being sung is bright and
+    /// centred, the others fade away from it; a click on a line jumps to it.
+    fn dash_lyrics(&mut self, g: &mut Gfx, c: Rect, m: &activity::Media) {
+        use crate::lyrics::{self, State};
+        lyrics::request(&m.title, &m.artist, m.duration);
+        let Some(ly) = lyrics::current() else { return };
+        let say = |g: &mut Gfx, s: &str| {
+            text::draw(g, s, c.cx(), c.cy(), Face::Medium, 12.5, hex(pal::DIM), Align::Center);
+        };
+        match ly.state {
+            State::Loading => return say(g, "Memuat lirik…"),
+            State::NotFound => return say(g, "Lirik tidak ditemukan"),
+            State::Failed => return say(g, "Lirik tidak bisa dimuat (offline?)"),
+            _ => {}
+        }
+        let synced = ly.state == State::Synced;
+        let pos = m.position_now();
+        let act = if synced { lyrics::active_index(&ly.lines, pos) } else { None };
+        let target = act.map(|i| i as f32).unwrap_or(0.0);
+        self.lyrics_scroll += (target - self.lyrics_scroll) * 0.4;
+        if (target - self.lyrics_scroll).abs() < 0.01 {
+            self.lyrics_scroll = target;
+        }
+        let pitch = 24.0;
+        g.save();
+        g.clip_rect_xywh(c.x, c.y, c.w, c.h);
+        let first = (self.lyrics_scroll.floor() as i32 - 4).max(0) as usize;
+        let last = ((self.lyrics_scroll.ceil() as i32 + 4).max(0) as usize).min(ly.lines.len().saturating_sub(1));
+        for i in first..=last {
+            let (t, line) = &ly.lines[i];
+            let y = c.cy() + (i as f32 - self.lyrics_scroll) * pitch;
+            let dist = (i as f32 - self.lyrics_scroll).abs();
+            let fade = clamp(1.0 - dist / 3.2, 0.0, 1.0);
+            if fade <= 0.02 {
+                continue;
+            }
+            let on = act == Some(i);
+            let shown = if line.is_empty() { "♪" } else { line.as_str() };
+            let size = if on { 14.5 } else { 12.0 };
+            let face = if on { Face::Bold } else { Face::Regular };
+            let color = if on { hex(pal::INK) } else { crate::gfx::with_alpha(hex(pal::DIM), fade) };
+            let hit = Rect::new(c.x, y - pitch / 2.0, c.w, pitch);
+            let (clicked, hover, _) = self.ui.click_region(id_of(&format!("lyric-{i}"), 135), hit);
+            let col = if hover && !on { crate::gfx::with_alpha(hex(pal::INK), fade.max(0.7)) } else { color };
+            let line_txt = text::ellipsize(shown, face, size, c.w - 8.0);
+            text::draw(g, &line_txt, c.x + 4.0, y, face, size, col, Align::Left);
+            if clicked && synced && *t >= 0.0 {
+                activity::transport(Transport::Seek(*t));
+            }
+        }
+        g.restore();
     }
 
     /// Right column (OmniNotch style): today's agenda on top, the task list under it. The timer is one
@@ -408,6 +480,19 @@ impl App {
         text::draw(g, "Tugas", c.x, ty, Face::Bold, 12.5, hex(pal::INK), Align::Left);
         let tw = text::measure("Tugas", Face::Bold, 12.5);
         text::draw(g, "›", c.x + tw + 6.0, ty - 1.0, Face::Regular, 13.0, hex(pal::DIM), Align::Left);
+        // Done today / all of today, as in Nusa's to-do.
+        let done_today = self.buddy.tasks_done;
+        let total_today = self.todos.len() as u32 + done_today;
+        let mut counter_w = 0.0;
+        if total_today > 0 {
+            let label = format!("{done_today}/{total_today}");
+            let lw = text::measure(&label, Face::Medium, 10.5) + 14.0;
+            let pill = Rect::new(c.x + tw + 22.0, ty - 8.0, lw, 16.0);
+            g.fill_style(if done_today >= total_today { rgba(34, 197, 94, 0.22) } else { rgba(255, 255, 255, 0.08) });
+            g.fill_round_rect(pill.x, pill.y, pill.w, pill.h, 8.0);
+            text::draw(g, &label, pill.cx(), pill.cy(), Face::Medium, 10.5, hex(if done_today >= total_today { pal::GREEN2 } else { pal::DIM }), Align::Center);
+            counter_w = lw + 6.0;
+        }
 
         // Timer button: an icon when idle, the countdown when running.
         let running = activity::timer();
@@ -434,7 +519,7 @@ impl App {
             self.dash_timer_menu(g, Rect::new(c.x, list_top, c.w, 26.0));
             list_top += 34.0;
         }
-        self.dash_todos(g, Rect::new(c.x, list_top, c.w, c.y + c.h - list_top), Rect::new(c.x + tw + 22.0, ty - 8.0, c.w - tw - 22.0 - bw - 8.0, 16.0));
+        self.dash_todos(g, Rect::new(c.x, list_top, c.w, c.y + c.h - list_top), Rect::new(c.x + tw + 22.0 + counter_w, ty - 8.0, c.w - tw - 22.0 - counter_w - bw - 8.0, 16.0));
     }
 
     fn dash_timer_menu(&mut self, g: &mut Gfx, row: Rect) {

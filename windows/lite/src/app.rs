@@ -43,6 +43,7 @@ pub enum Timer {
     QuestionTimeout,
     OverlayEnd,
     DeviceCheck,
+    KeyCheck(u32),
     TaskIdle(&'static str),
     RemoveTask(&'static str),
     IntegrationClear(&'static str),
@@ -275,6 +276,10 @@ pub struct App {
     pub batt_warned: u8,
     pub output_name: Option<String>,
     pub clock_min: i32,
+    pub overlay_level: Option<f32>,
+    /// The lyrics panel of the dashboard: open or not, and its smooth scroll position.
+    pub lyrics_open: bool,
+    pub lyrics_scroll: f32,
     pub water: crate::nusapages::Water,
     pub focus_kind: crate::nusapages::FocusKind,
     pub last_timer_total: f32,
@@ -395,6 +400,9 @@ impl App {
             batt_warned: 0,
             output_name: None,
             clock_min: -1,
+            overlay_level: None,
+            lyrics_open: false,
+            lyrics_scroll: 0.0,
             water: crate::nusapages::Water::load(),
             focus_kind: crate::nusapages::FocusKind::Focus,
             last_timer_total: 0.0,
@@ -502,6 +510,7 @@ impl App {
             Timer::QuestionTimeout => self.question_timeout(),
             Timer::OverlayEnd => self.end_overlay(),
             Timer::DeviceCheck => self.check_headphones(),
+            Timer::KeyCheck(vk) => self.key_check(vk),
             Timer::TaskIdle(id) => {
                 self.st.update_task(id, BotState::Idle);
                 self.st.set_pill_badge(id, None);
@@ -627,7 +636,9 @@ impl App {
                 }
             }
             // The dashboard shows a live clock and track position: redraw twice a second.
-            if self.st.mode == Mode::Expanded && matches!(self.st.view, View::Dashboard | View::Stocks | View::Weather) && n - self.dash_t > 0.5 {
+            if self.st.mode == Mode::Expanded && matches!(self.st.view, View::Dashboard | View::Stocks | View::Weather)
+                && n - self.dash_t > if self.lyrics_open && self.st.view == View::Dashboard && crate::activity::is_playing() { 0.12 } else { 0.5 }
+            {
                 self.dash_t = n;
                 self.render_now();
             }
@@ -1435,6 +1446,7 @@ impl App {
         crate::weather::set_city(&self.st.settings.weather_city);
         crate::stocks::set_symbols(&self.st.settings.stocks);
         crate::ui::set_nusa(self.st.settings.theme_nusa);
+        self.sync_key_hook();
         self.sync_reminder_timer();
         self.process_transitions();
         self.st.load_integration_tasks();

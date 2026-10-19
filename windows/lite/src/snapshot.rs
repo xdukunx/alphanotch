@@ -295,6 +295,18 @@ Kosong ~150 menit sebelum Rapat tim (14:00) — cocok untuk: Kirim laporan".into
         app.water.add(250, t0 + 17.0 * 3600.0);
     }, 1.5);
     scene!("focus", Mode::Expanded, View::Focus, |app| {}, 1.5);
+    scene!("lyrics", Mode::Expanded, View::Dashboard, |app| {
+        crate::activity::set_demo();
+        crate::lyrics::set_demo();
+        app.lyrics_open = true;
+    }, 1.0);
+    scene!("ov_volume", Mode::Compact, View::Overview, |app| {
+        app.show_overlay(crate::overlay::Overlay { kind: crate::overlay::OverlayKind::Volume, title: "Volume".into(), sub: String::new(), metric: "45%".into() });
+        app.overlay_level = Some(0.45);
+    }, 1.0);
+    scene!("ov_caps", Mode::Compact, View::Overview, |app| {
+        app.show_overlay(crate::overlay::Overlay { kind: crate::overlay::OverlayKind::Caps, title: "Caps Lock".into(), sub: "Aktif".into(), metric: String::new() });
+    }, 1.0);
     scene!("dashboard", Mode::Expanded, View::Dashboard, |app| {}, 1.5);
     scene!("stocks", Mode::Expanded, View::Stocks, |app| { crate::stocks::set_demo(); }, 1.5);
     scene!("error", Mode::Expanded, View::Error, |app| {

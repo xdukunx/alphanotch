@@ -862,7 +862,7 @@ impl Win {
     fn features(&mut self, g: &mut Gfx, m: f32, y0: f32, cw: f32) -> f32 {
         let pad = 18.0;
         let (ix, iw) = (m + pad, cw - 2.0 * pad);
-        let h = 32.0 + 5.0 * 34.0 + 18.0 + 5.0 * 38.0 + 40.0 + 56.0;
+        let h = 32.0 + 6.0 * 34.0 + 18.0 + 5.0 * 38.0 + 40.0 + 56.0;
         Self::card(g, m, y0, cw, h + 2.0 * pad);
         let mut y = y0 + pad;
         Self::title(g, ix, y + 9.0, None, "Fitur & pengingat");
@@ -878,6 +878,8 @@ impl Win {
             ("quests", "Misi harian"),
             ("focus", "Fokus (Pomodoro)"),
             ("water", "Air minum"),
+            ("lyrics", "Lirik lagu"),
+            ("keys", "Overlay volume & Caps Lock"),
         ];
         let half = iw / 2.0;
         for (i, (id, label)) in feats.iter().enumerate() {
@@ -894,7 +896,7 @@ impl Win {
                 self.save();
             }
         }
-        y += 5.0 * 34.0 + 18.0;
+        y += 6.0 * 34.0 + 18.0;
 
         let rems: [(&str, usize, &[u32]); 3] = [
             ("Minum air", 0, &[0, 30, 45, 60, 90]),
@@ -974,7 +976,7 @@ impl Win {
             }
         }
         y += 38.0;
-        let _ = Self::para(g, ix, y + 2.0, iw, "Mochi muncul dengan pengingat; kartunya punya tombol Tunda 10 menit. Semua mati secara bawaan.");
+        let _ = Self::para(g, ix, y + 2.0, iw, "Mochi muncul dengan pengingat; kartunya punya tombol Tunda 10 menit. Semua mati secara bawaan. Lirik mengirim judul, artis, dan panjang lagu ke lrclib.net hanya saat panelnya dibuka. Overlay volume/Caps Lock memakai pengait keyboard yang hanya melihat empat tombol itu.");
         y0 + h + 2.0 * pad + 16.0
     }
 
