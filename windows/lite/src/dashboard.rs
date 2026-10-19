@@ -351,36 +351,63 @@ impl App {
         let synced = ly.state == State::Synced;
         let pos = m.position_now();
         let act = if synced { lyrics::active_index(&ly.lines, pos) } else { None };
-        let target = act.map(|i| i as f32).unwrap_or(0.0);
-        self.lyrics_scroll += (target - self.lyrics_scroll) * 0.4;
-        if (target - self.lyrics_scroll).abs() < 0.01 {
+        // Wrapped lines, laid out once per song and width (measured in the active line's face,
+        // so every line also fits when it becomes the active one).
+        let width = c.w - 8.0;
+        let fresh = self.lyrics_layout.as_ref().map(|l| l.0 != ly.key || (l.1 - width).abs() > 0.5).unwrap_or(true);
+        if fresh {
+            let mut top = 0.0f32;
+            let mut rows = Vec::with_capacity(ly.lines.len());
+            for (_, line) in &ly.lines {
+                let shown = if line.is_empty() { "♪".to_string() } else { line.clone() };
+                let mut wrapped: Vec<String> = text::wrap(&shown, Face::Bold, 14.0, width).into_iter().take(3).collect();
+                if wrapped.is_empty() {
+                    wrapped.push(shown);
+                }
+                let h = wrapped.len() as f32 * 18.0 + 8.0;
+                rows.push((top, h, wrapped));
+                top += h;
+            }
+            self.lyrics_layout = Some((ly.key.clone(), width, rows));
+        }
+        let Some((_, _, rows)) = self.lyrics_layout.clone() else { return };
+        let target = act.and_then(|i| rows.get(i)).map(|r| r.0 + r.1 / 2.0).unwrap_or(rows.first().map(|r| r.1 / 2.0).unwrap_or(0.0));
+        if fresh {
             self.lyrics_scroll = target;
         }
-        let pitch = 24.0;
+        self.lyrics_scroll += (target - self.lyrics_scroll) * 0.4;
+        if (target - self.lyrics_scroll).abs() < 0.5 {
+            self.lyrics_scroll = target;
+        }
         g.save();
         g.clip_rect_xywh(c.x, c.y, c.w, c.h);
-        let first = (self.lyrics_scroll.floor() as i32 - 4).max(0) as usize;
-        let last = ((self.lyrics_scroll.ceil() as i32 + 4).max(0) as usize).min(ly.lines.len().saturating_sub(1));
-        for i in first..=last {
-            let (t, line) = &ly.lines[i];
-            let y = c.cy() + (i as f32 - self.lyrics_scroll) * pitch;
-            let dist = (i as f32 - self.lyrics_scroll).abs();
-            let fade = clamp(1.0 - dist / 3.2, 0.0, 1.0);
-            if fade <= 0.02 {
+        for (i, (top, h, wrapped)) in rows.iter().enumerate() {
+            let y0 = c.cy() + top - self.lyrics_scroll;
+            if y0 + h < c.y || y0 > c.y + c.h {
                 continue;
             }
+            let center = top + h / 2.0;
+            let fade = clamp(1.0 - (center - self.lyrics_scroll).abs() / 90.0, 0.12, 1.0);
             let on = act == Some(i);
-            let shown = if line.is_empty() { "♪" } else { line.as_str() };
-            let size = if on { 14.5 } else { 12.0 };
-            let face = if on { Face::Bold } else { Face::Regular };
-            let color = if on { hex(pal::INK) } else { crate::gfx::with_alpha(hex(pal::DIM), fade) };
-            let hit = Rect::new(c.x, y - pitch / 2.0, c.w, pitch);
+            let (face, size) = if on { (Face::Bold, 14.0) } else { (Face::Regular, 12.0) };
+            let hit = Rect::new(c.x, y0, c.w, *h);
             let (clicked, hover, _) = self.ui.click_region(id_of(&format!("lyric-{i}"), 135), hit);
-            let col = if hover && !on { crate::gfx::with_alpha(hex(pal::INK), fade.max(0.7)) } else { color };
-            let line_txt = text::ellipsize(shown, face, size, c.w - 8.0);
-            text::draw(g, &line_txt, c.x + 4.0, y, face, size, col, Align::Left);
-            if clicked && synced && *t >= 0.0 {
-                activity::transport(Transport::Seek(*t));
+            let color = if on {
+                hex(pal::INK)
+            } else if hover {
+                crate::gfx::with_alpha(hex(pal::INK), fade.max(0.7))
+            } else {
+                crate::gfx::with_alpha(hex(pal::DIM), fade)
+            };
+            for (k, l) in wrapped.iter().enumerate() {
+                text::draw(g, l, c.x + 4.0, y0 + 4.0 + 9.0 + k as f32 * 18.0, face, size, color, Align::Left);
+            }
+            if clicked && synced {
+                if let Some((t, _)) = ly.lines.get(i) {
+                    if *t >= 0.0 {
+                        activity::transport(Transport::Seek(*t));
+                    }
+                }
             }
         }
         g.restore();

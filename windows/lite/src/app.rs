@@ -279,6 +279,8 @@ pub struct App {
     /// The lyrics panel of the dashboard: open or not, and its smooth scroll position.
     pub lyrics_open: bool,
     pub lyrics_scroll: f32,
+    /// (song key, width, rows of (top, height, wrapped lines)) of the lyrics panel.
+    pub lyrics_layout: Option<(String, f32, Vec<(f32, f32, Vec<String>)>)>,
     pub water: crate::nusapages::Water,
     pub focus_kind: crate::nusapages::FocusKind,
     pub last_timer_total: f32,
@@ -401,6 +403,7 @@ impl App {
             overlay_level: None,
             lyrics_open: false,
             lyrics_scroll: 0.0,
+            lyrics_layout: None,
             water: crate::nusapages::Water::load(),
             focus_kind: crate::nusapages::FocusKind::Focus,
             last_timer_total: 0.0,

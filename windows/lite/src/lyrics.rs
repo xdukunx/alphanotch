@@ -42,7 +42,7 @@ fn key_of(title: &str, artist: &str) -> String {
 /// Snapshot builds only: lyrics around the demo song's position.
 #[cfg(feature = "snapshot")]
 pub fn set_demo() {
-    let lines = ["If I could be by your side", "I'd give you all my seasons", "Every summer, every rain", "Every dawn that finds you again", "Paper sky above our heads"];
+    let lines = ["If I could be by your side", "I'd give you all my seasons and every quiet morning in between", "Every summer, every rain", "Every dawn that finds you again", "Paper sky above our heads"];
     let lines: Vec<(f32, String)> = lines.iter().enumerate().map(|(i, l)| (50.0 + i as f32 * 9.0, l.to_string())).collect();
     if let Ok(mut c) = CURRENT.lock() {
         *c = Some(Lyrics { key: key_of("Paper Sky", "Lumen Coast"), state: State::Synced, lines });

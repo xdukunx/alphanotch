@@ -26,13 +26,27 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use crate::app;
 use crate::gfx::{hex, rgb, rgba, with_alpha, Gfx};
 use crate::hooks::{self, HookStatus};
+use crate::icons::Icon;
 use crate::secrets;
 use crate::settings::{self, Settings};
 use crate::text::{self, Align, Face};
 use crate::textfield::TextField;
 use crate::ui::{self, id_of, pal, Rect, Ui};
 
-const BG: &str = "#0B0C0E";
+const BG: &str = "#03040A";
+/// Width of the navigation on the left.
+const SIDEBAR_W: f32 = 200.0;
+
+/// (title, one-line description, icon) of each page, in the sidebar's order.
+const SECTIONS: [(&str, &str, Icon); 7] = [
+    ("Umum", "Suara, perilaku island, layar, dan tampilan.", Icon::Gear),
+    ("Fitur", "Pilih tab dan fitur yang tampil di island. Yang dimatikan tidak muncul sama sekali.", Icon::Star),
+    ("Pengingat", "Minum, peregangan, istirahat mata, target air, dan saran dari Mochi.", Icon::Timer),
+    ("Claude Code", "Hook untuk sesi, izin, dan pertanyaan Claude Code.", Icon::Lines),
+    ("Chat AI", "Kunci API dan model untuk chat di island.", Icon::Bubble),
+    ("Integrasi", "Resend, n8n, Vercel, GitHub, Notion, Cal.com, dan Stripe.", Icon::Stack),
+    ("Google", "Agenda dan tugas dari akun Google-mu.", Icon::Cloud),
+];
 
 const MODELS: [(&str, &str); 3] = [
     ("claude-opus-5", "Claude Opus 5"),
@@ -98,6 +112,8 @@ struct Win {
     /// Time of the first click on "Ganti client": a second one within 4 s confirms.
     reset_armed: f32,
     timer: bool,
+    /// The page shown (index into SECTIONS).
+    section: usize,
 }
 
 thread_local! {
@@ -155,7 +171,7 @@ fn create() {
             class,
             w!("Settings — AlphaNotch"),
             WS_OVERLAPPEDWINDOW,
-            CW_USEDEFAULT, CW_USEDEFAULT, 620, 760,
+            CW_USEDEFAULT, CW_USEDEFAULT, 920, 720,
             None, None, Some(hinst.into()), None,
         );
         let hwnd = match created {
@@ -192,6 +208,7 @@ fn create() {
             drag_slider: false,
             reset_armed: -100.0,
             timer: false,
+            section: 0,
         };
         win.build_fields();
         win.reload();
@@ -270,6 +287,15 @@ impl Win {
     // ── Painting ──────────────────────────────────────────────────────────────
 
     fn paint(&mut self) {
+        self.render();
+        self.blit();
+
+        // While a sign-in waits for the browser the status line has to keep up.
+        let any_focus = self.focused.is_some() || crate::gtasks::status() == crate::gtasks::Status::LoggingIn;
+        self.set_timer(any_focus);
+    }
+
+    fn render(&mut self) {
         let mut g = std::mem::replace(&mut self.gfx, Gfx::new(1, 1, 1.0));
         g.clear();
         g.fill_style(hex(BG));
@@ -281,6 +307,9 @@ impl Win {
         g.save();
         g.translate(0.0, -self.scroll);
         let total = self.draw(&mut g, lw);
+        // The sidebar stays put: drawn in content space, shifted back by the scroll.
+        let off = self.scroll;
+        self.draw_sidebar(&mut g, lh, off);
         g.restore();
         self.content_h = total;
         let max_scroll = (total - lh).max(0.0);
@@ -294,11 +323,6 @@ impl Win {
         }
         self.ui.end_frame();
         self.gfx = g;
-        self.blit();
-
-        // While a sign-in waits for the browser the status line has to keep up.
-        let any_focus = self.focused.is_some() || crate::gtasks::status() == crate::gtasks::Status::LoggingIn;
-        self.set_timer(any_focus);
     }
 
     fn blit(&self) {
@@ -333,30 +357,67 @@ impl Win {
     // ── Layout ────────────────────────────────────────────────────────────────
 
     fn draw(&mut self, g: &mut Gfx, lw: f32) -> f32 {
-        let m = 24.0;
-        let cw = (lw - 2.0 * m).max(380.0);
-        let mut y = 22.0;
+        let m = 28.0;
+        let x0 = SIDEBAR_W + m;
+        let cw = (lw - SIDEBAR_W - 2.0 * m).max(360.0);
+        let (title, desc, _) = SECTIONS[self.section.min(SECTIONS.len() - 1)];
+        let mut y = 24.0;
+        text::draw(g, title, x0, y + 14.0, Face::Bold, 22.0, hex(pal::INK), Align::Left);
+        y += 34.0;
+        y += Self::para(g, x0, y, cw, desc) + 16.0;
+        y = match self.section {
+            0 => self.general(g, x0, y, cw),
+            1 => self.feature_toggles(g, x0, y, cw),
+            2 => self.reminders_page(g, x0, y, cw),
+            3 => self.claude_code(g, x0, y, cw),
+            4 => self.claude_api(g, x0, y, cw),
+            5 => self.integrations(g, x0, y, cw),
+            _ => self.google(g, x0, y, cw),
+        };
+        y + 24.0
+    }
 
-        text::draw(g, "AlphaNotch", m, y + 12.0, Face::Bold, 20.0, hex(pal::INK), Align::Left);
-        text::draw(g, concat!("Lite ", env!("CARGO_PKG_VERSION")), m + 78.0, y + 15.0, Face::Regular, 11.0, hex(pal::DIM3), Align::Left);
-        y += 40.0;
-
-        y = self.claude_code(g, m, y, cw);
-        y = self.claude_api(g, m, y, cw);
-        y = self.integrations(g, m, y, cw);
-        y = self.google(g, m, y, cw);
-        y = self.features(g, m, y, cw);
-        y = self.general(g, m, y, cw);
-
-        text::draw(g, "No telemetry. Network requests only go to the services you configure yourself.", m, y + 8.0, Face::Regular, 11.0, hex(pal::DIM3), Align::Left);
-        y + 40.0
+    /// The navigation: the app's name, one row per page, the privacy line at the bottom.
+    fn draw_sidebar(&mut self, g: &mut Gfx, lh: f32, off: f32) {
+        g.fill_style(hex("#06080F"));
+        g.fill_rect(0.0, off, SIDEBAR_W, lh);
+        g.fill_style(rgba(236, 239, 247, 0.07));
+        g.fill_rect(SIDEBAR_W - 1.0, off, 1.0, lh);
+        text::draw(g, "AlphaNotch", 22.0, off + 34.0, Face::Bold, 17.0, hex(pal::INK), Align::Left);
+        text::draw(g, concat!("Lite ", env!("CARGO_PKG_VERSION")), 22.0, off + 54.0, Face::Regular, 11.0, hex(pal::DIM3), Align::Left);
+        let mut y = off + 80.0;
+        for (i, (label, _, icon)) in SECTIONS.iter().enumerate() {
+            let r = Rect::new(10.0, y, SIDEBAR_W - 20.0, 34.0);
+            let (clicked, hover, _) = self.ui.click_region(id_of(&format!("nav-{i}"), 141), r);
+            let on = i == self.section;
+            if on {
+                g.fill_style(rgba(45, 91, 255, 0.20));
+                g.fill_round_rect(r.x, r.y, r.w, r.h, 9.0);
+                g.fill_style(hex("#2D5BFF"));
+                g.fill_round_rect(r.x, r.y + 9.0, 3.0, 16.0, 1.5);
+            } else if hover {
+                g.fill_style(rgba(255, 255, 255, 0.05));
+                g.fill_round_rect(r.x, r.y, r.w, r.h, 9.0);
+            }
+            let col = if on { hex(pal::INK) } else if hover { hex("#C5C8CD") } else { hex(pal::DIM2) };
+            crate::icons::fill(g, *icon, r.x + 20.0, r.cy(), 13.0, col);
+            text::draw(g, label, r.x + 38.0, r.cy(), Face::Medium, 12.5, col, Align::Left);
+            if clicked && !on {
+                self.section = i;
+                self.scroll = 0.0;
+                crate::sound::play("blip");
+            }
+            y += 38.0;
+        }
+        text::draw(g, "Tanpa telemetri.", 22.0, off + lh - 34.0, Face::Regular, 10.5, hex(pal::DIM3), Align::Left);
+        text::draw(g, "Hanya ke layanan yang kamu atur.", 22.0, off + lh - 18.0, Face::Regular, 10.5, hex(pal::DIM3), Align::Left);
     }
 
     /// A section card; returns the inner x, width and the content top.
     fn card(g: &mut Gfx, x: f32, y: f32, w: f32, h: f32) {
-        g.fill_style(hex(pal::CARD));
+        g.fill_style(hex("#0A0D18"));
         g.fill_round_rect(x, y, w, h, 14.0);
-        g.stroke_style(rgba(255, 255, 255, 0.05));
+        g.stroke_style(rgba(236, 239, 247, 0.08));
         g.line_width(1.0);
         g.round_rect(x + 0.5, y + 0.5, w - 1.0, h - 1.0, 13.5);
         g.stroke();
@@ -429,9 +490,9 @@ impl Win {
         match &self.mode {
             HooksMode::Normal => {
                 let hint = if installed {
-                    "AlphaNotch is hooked into your Claude Code sessions. Tool calls, questions and permission requests show up in the island, and you can answer them there."
+                    "AlphaNotch tersambung ke sesi Claude Code-mu. Langkah kerja, pertanyaan, dan permintaan izin tampil di island, dan bisa kamu jawab dari sana."
                 } else {
-                    "Install the hooks to see your Claude Code sessions in the island and approve permissions without leaving what you are doing."
+                    "Pasang hook agar sesi Claude Code tampil di island dan izin bisa disetujui tanpa meninggalkan pekerjaanmu."
                 };
                 y += Self::para(g, x, y, w, hint) + 8.0;
                 Self::kv(g, x, y, w, "settings.json", spath, None);
@@ -444,7 +505,7 @@ impl Win {
                 if installed && ready && !self.status.ask_ready {
                     y += Self::notice(g, x, y, w, "Pasang ulang hooks (Reinstall) agar pertanyaan Claude bisa dijawab dari island.", false, true) + 10.0;
                 }
-                let label = if installed { "Reinstall hooks…" } else { "Install hooks…" };
+                let label = if installed { "Pasang ulang hook…" } else { "Pasang hook…" };
                 let (clicked, bw) = if live {
                     let (c, bw) = self.ui.button(g, x, y, label, true, None);
                     (c && ready, bw)
@@ -455,7 +516,7 @@ impl Win {
                     self.open_preview(true);
                 }
                 if installed && live {
-                    let (c, _) = self.ui.button(g, x + bw + 8.0, y, "Uninstall hooks…", false, None);
+                    let (c, _) = self.ui.button(g, x + bw + 8.0, y, "Lepas hook…", false, None);
                     if c {
                         self.open_preview(false);
                     }
@@ -610,7 +671,7 @@ impl Win {
             let r = Rect::new(mx, y, pw, 28.0);
             let (clicked, hover, _) = self.ui.click_region(id_of(&id, 71), r);
             let on = id == current;
-            g.fill_style(if on { hex("#252830") } else { rgba(255, 255, 255, if hover { 0.1 } else { 0.05 }) });
+            g.fill_style(if on { rgba(45, 91, 255, 0.34) } else { rgba(255, 255, 255, if hover { 0.1 } else { 0.05 }) });
             g.fill_round_rect(r.x, r.y, r.w, r.h, 14.0);
             text::draw(g, &label, r.cx(), r.cy(), Face::Regular, 11.5, hex(if on { pal::INK } else { pal::DIM2 }), Align::Center);
             mx += pw + 5.0;
@@ -859,15 +920,10 @@ impl Win {
     }
 
     /// Which tabs the island shows, and the wellness reminders. Unticked = gone, no clutter.
-    fn features(&mut self, g: &mut Gfx, m: f32, y0: f32, cw: f32) -> f32 {
+    /// Which tabs and features the island shows, as switches in two columns.
+    fn feature_toggles(&mut self, g: &mut Gfx, m: f32, y0: f32, cw: f32) -> f32 {
         let pad = 18.0;
         let (ix, iw) = (m + pad, cw - 2.0 * pad);
-        let h = 32.0 + 6.0 * 34.0 + 18.0 + 5.0 * 38.0 + 40.0 + 56.0;
-        Self::card(g, m, y0, cw, h + 2.0 * pad);
-        let mut y = y0 + pad;
-        Self::title(g, ix, y + 9.0, None, "Fitur & pengingat");
-        y += 32.0;
-
         let feats = [
             ("chat", "Chat"),
             ("drop", "Drop file"),
@@ -879,15 +935,18 @@ impl Win {
             ("focus", "Fokus (Pomodoro)"),
             ("water", "Air minum"),
             ("lyrics", "Lirik lagu"),
-            ("keys", "Overlay volume & Caps Lock"),
+            ("keys", "Overlay volume & Caps"),
         ];
+        let rows = feats.len().div_ceil(2) as f32;
+        let h = rows * 40.0 - 8.0;
+        Self::card(g, m, y0, cw, h + 2.0 * pad);
         let half = iw / 2.0;
         for (i, (id, label)) in feats.iter().enumerate() {
             let x = ix + (i % 2) as f32 * half;
-            let yy = y + (i / 2) as f32 * 34.0;
-            text::draw(g, label, x, yy + 11.0, Face::Regular, 12.0, hex("#C5C8CD"), Align::Left);
+            let yy = y0 + pad + (i / 2) as f32 * 40.0;
+            text::draw(g, label, x, yy + 11.0, Face::Regular, 12.5, hex("#D5D8DE"), Align::Left);
             let on = self.settings.feature_on(id);
-            if self.ui.switch(g, &format!("feat-{id}"), x + 110.0, yy + 2.0, on) {
+            if self.ui.switch(g, &format!("feat-{id}"), x + half - 56.0, yy + 2.0, on) {
                 if on {
                     self.settings.disabled_features.push(id.to_string());
                 } else {
@@ -896,8 +955,19 @@ impl Win {
                 self.save();
             }
         }
-        y += 6.0 * 34.0 + 18.0;
+        let mut y = y0 + h + 2.0 * pad + 12.0;
+        y += Self::para(g, m + 4.0, y, cw - 8.0, "Lirik mengirim judul, artis, dan panjang lagu ke lrclib.net hanya saat panelnya dibuka. Overlay volume & Caps memakai pengait keyboard yang hanya melihat empat tombol itu dan dicabut saat dimatikan.");
+        y + 16.0
+    }
 
+    /// Reminders, water and the coach.
+    fn reminders_page(&mut self, g: &mut Gfx, m: f32, y0: f32, cw: f32) -> f32 {
+        let pad = 18.0;
+        let (ix, iw) = (m + pad, cw - 2.0 * pad);
+        let half = iw / 2.0;
+        let h = 5.0 * 40.0 + 10.0 + 38.0;
+        Self::card(g, m, y0, cw, h + 2.0 * pad);
+        let mut y = y0 + pad + 4.0;
         let rems: [(&str, usize, &[u32]); 3] = [
             ("Minum air", 0, &[0, 30, 45, 60, 90]),
             ("Peregangan", 1, &[0, 30, 60, 90]),
@@ -917,7 +987,7 @@ impl Win {
                 let r = Rect::new(px, y - 2.0, pw, 28.0);
                 let (clicked, hover, _) = self.ui.click_region(id_of(&format!("rem-{k}-{o}"), 83), r);
                 let on = cur == o;
-                g.fill_style(if on { hex("#252830") } else { rgba(255, 255, 255, if hover { 0.1 } else { 0.05 }) });
+                g.fill_style(if on { rgba(45, 91, 255, 0.34) } else { rgba(255, 255, 255, if hover { 0.1 } else { 0.05 }) });
                 g.fill_round_rect(r.x, r.y, r.w, r.h, 14.0);
                 text::draw(g, &t, r.cx(), r.cy(), Face::Regular, 11.5, hex(if on { pal::INK } else { pal::DIM2 }), Align::Center);
                 px += pw + 4.0;
@@ -930,10 +1000,10 @@ impl Win {
                     self.save();
                 }
             }
-            y += 38.0;
+            y += 40.0;
         }
         // Water: the daily goal and the size of one drink.
-        for (label, which, opts) in [("Target air", 0usize, [1500u32, 2000, 2500, 3000]), ("Satu minum", 1, [200, 250, 330, 500])] {
+        for (label, which, opts) in [("Target air", 0usize, [1500u32, 2000, 2500, 3000]), ("Satu minum", 1, [175, 250, 330, 500])] {
             text::draw(g, label, ix, y + 11.0, Face::Regular, 12.0, hex("#C5C8CD"), Align::Left);
             let cur = if which == 0 { self.settings.water_goal_ml } else { self.settings.water_bottle_ml };
             let mut px = ix + 112.0;
@@ -943,7 +1013,7 @@ impl Win {
                 let r = Rect::new(px, y - 2.0, pw, 28.0);
                 let (clicked, hover, _) = self.ui.click_region(id_of(&format!("water-{which}-{o}"), 85), r);
                 let on = cur == o;
-                g.fill_style(if on { hex("#252830") } else { rgba(255, 255, 255, if hover { 0.1 } else { 0.05 }) });
+                g.fill_style(if on { rgba(45, 91, 255, 0.34) } else { rgba(255, 255, 255, if hover { 0.1 } else { 0.05 }) });
                 g.fill_round_rect(r.x, r.y, r.w, r.h, 14.0);
                 text::draw(g, &t, r.cx(), r.cy(), Face::Regular, 11.5, hex(if on { pal::INK } else { pal::DIM2 }), Align::Center);
                 px += pw + 4.0;
@@ -952,11 +1022,11 @@ impl Win {
                     self.save();
                 }
             }
-            y += 38.0;
+            y += 40.0;
         }
 
         // The coach: both are estimates computed on this machine.
-        y += 8.0;
+        y += 10.0;
         for (i, (label, on)) in [
             ("Saran pekerjaan", self.settings.coach_suggestions),
             ("Alert limit Claude", self.settings.coach_limit),
@@ -975,26 +1045,25 @@ impl Win {
                 self.save();
             }
         }
-        y += 38.0;
-        let _ = Self::para(g, ix, y + 2.0, iw, "Mochi muncul dengan pengingat; kartunya punya tombol Tunda 10 menit. Semua mati secara bawaan. Lirik mengirim judul, artis, dan panjang lagu ke lrclib.net hanya saat panelnya dibuka. Overlay volume/Caps Lock memakai pengait keyboard yang hanya melihat empat tombol itu.");
-        y0 + h + 2.0 * pad + 16.0
+        let _ = iw;
+        let mut y = y0 + h + 2.0 * pad + 12.0;
+        y += Self::para(g, m + 4.0, y, cw - 8.0, "Mochi muncul dengan pengingat; kartunya punya tombol Tunda 10 menit. Semua mati secara bawaan. \"Sudah\" pada pengingat minum menambah satu minum ke halaman Air.");
+        y + 16.0
     }
 
     fn general(&mut self, g: &mut Gfx, m: f32, y0: f32, cw: f32) -> f32 {
         let pad = 18.0;
         let (ix, iw) = (m + pad, cw - 2.0 * pad);
-        let h = 28.0 + 6.0 * 38.0;
+        let h = 6.0 * 38.0 - 8.0;
         Self::card(g, m, y0, cw, h + 2.0 * pad);
         let mut y = y0 + pad;
-        Self::title(g, ix, y + 9.0, None, "General");
-        y += 32.0;
         let lab = |g: &mut Gfx, y: f32, s: &str| {
             text::draw(g, s, ix, y + 11.0, Face::Regular, 12.0, hex("#C5C8CD"), Align::Left);
         };
         let cx = ix + 150.0;
 
         // Sound.
-        lab(g, y, "Sound");
+        lab(g, y, "Suara");
         let on = self.settings.sound_enabled;
         if self.ui.switch(g, "set-sound", cx, y + 2.0, on) {
             self.settings.sound_enabled = !on;
@@ -1029,12 +1098,12 @@ impl Win {
         y += 38.0;
 
         // Auto-close.
-        lab(g, y, "Auto-close");
+        lab(g, y, "Tutup otomatis");
         let secs = self.settings.auto_close_interval.round() as i32;
         let (minus, _) = self.ui.button(g, cx, y - 4.0, "−", false, None);
         text::draw(g, &format!("{secs}"), cx + 60.0, y + 11.0, Face::Medium, 12.5, hex(pal::INK), Align::Center);
         let (plus, _) = self.ui.button(g, cx + 84.0, y - 4.0, "+", false, None);
-        text::draw(g, "seconds after you leave the island", cx + 130.0, y + 11.0, Face::Regular, 11.5, hex(pal::DIM3), Align::Left);
+        text::draw(g, "detik setelah kursor meninggalkan island", cx + 130.0, y + 11.0, Face::Regular, 11.5, hex(pal::DIM3), Align::Left);
         if minus || plus {
             let n = (secs + if plus { 5 } else { -5 }).clamp(5, 120);
             self.settings.auto_close_interval = n as f64;
@@ -1043,14 +1112,14 @@ impl Win {
         y += 38.0;
 
         // Screen.
-        lab(g, y, "Island lives on");
+        lab(g, y, "Island tampil di");
         let mut px = cx;
-        for (id, label) in [("primary", "Main display"), ("cursor", "Display under the cursor")] {
+        for (id, label) in [("primary", "Layar utama"), ("cursor", "Layar di bawah kursor")] {
             let pw = text::measure(label, Face::Regular, 11.5) + 22.0;
             let r = Rect::new(px, y - 2.0, pw, 28.0);
             let (clicked, hover, _) = self.ui.click_region(id_of(id, 79), r);
             let on = self.settings.screen == id;
-            g.fill_style(if on { hex("#252830") } else { rgba(255, 255, 255, if hover { 0.1 } else { 0.05 }) });
+            g.fill_style(if on { rgba(45, 91, 255, 0.34) } else { rgba(255, 255, 255, if hover { 0.1 } else { 0.05 }) });
             g.fill_round_rect(r.x, r.y, r.w, r.h, 14.0);
             text::draw(g, label, r.cx(), r.cy(), Face::Regular, 11.5, hex(if on { pal::INK } else { pal::DIM2 }), Align::Center);
             px += pw + 6.0;
@@ -1062,7 +1131,7 @@ impl Win {
         y += 38.0;
 
         // Autostart.
-        lab(g, y, "Launch at startup");
+        lab(g, y, "Jalan saat Windows mulai");
         let on = self.settings.autostart;
         if self.ui.switch(g, "set-auto", cx, y + 2.0, on) {
             self.settings.autostart = !on;
@@ -1072,13 +1141,13 @@ impl Win {
         y += 38.0;
 
         // Docked mode.
-        lab(g, y, "Stay on screen");
+        lab(g, y, "Tetap di layar");
         let on = self.settings.stay_visible;
         if self.ui.switch(g, "set-stay", cx, y + 2.0, on) {
             self.settings.stay_visible = !on;
             self.save();
         }
-        text::draw(g, "keep the compact bar visible when idle", cx + 48.0, y + 11.0, Face::Regular, 11.5, hex(pal::DIM3), Align::Left);
+        text::draw(g, "bar kecil tetap tampil saat diam", cx + 48.0, y + 11.0, Face::Regular, 11.5, hex(pal::DIM3), Align::Left);
         y += 38.0;
 
         // Look.
@@ -1212,3 +1281,36 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
 
 #[allow(dead_code)]
 fn _unused(_: PCWSTR) {}
+
+/// Snapshot builds only: every page of the window, rendered without a window.
+#[cfg(feature = "snapshot")]
+pub fn snapshot(dir: &str) {
+    let (cw, ch) = (920, 720);
+    let mut win = Win {
+        hwnd: HWND::default(),
+        gfx: Gfx::new(cw as u32, ch as u32, 1.0),
+        scale: 1.0,
+        cw,
+        ch,
+        ui: Ui::new(),
+        scroll: 0.0,
+        content_h: 0.0,
+        fields: HashMap::new(),
+        focused: None,
+        present: HashMap::new(),
+        notes: HashMap::new(),
+        status: hooks::status(),
+        mode: HooksMode::Normal,
+        settings: Settings::default(),
+        drag_slider: false,
+        reset_armed: -100.0,
+        timer: false,
+        section: 0,
+    };
+    win.build_fields();
+    for i in 0..SECTIONS.len() {
+        win.section = i;
+        win.render();
+        let _ = win.gfx.pm.save_png(format!("{dir}/settings_{i}.png"));
+    }
+}

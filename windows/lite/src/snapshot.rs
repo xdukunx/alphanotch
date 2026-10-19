@@ -183,6 +183,9 @@ fn views(dir: &str, want: &dyn Fn(&str) -> bool) {
         };
     }
 
+    if want("settings_win") {
+        crate::settings_win::snapshot(dir);
+    }
     scene!("compact_idle", Mode::Compact, View::Overview, |app| {}, 1.5);
     scene!("overview_idle", Mode::Expanded, View::Overview, |app| {}, 1.5);
     scene!("overview_session", Mode::Expanded, View::Overview, |app| {
