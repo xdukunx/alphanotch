@@ -57,6 +57,9 @@ mod unix;
 use unix::connect;
 
 fn main() {
+    if std::env::args().any(|a| a == "--statusline") {
+        statusline();
+    }
     let Some(Event { line: payload, name: event, ask }) = read_event() else { std::process::exit(0) };
 
     let waits_for_answer = event == "PermissionRequest" || ask.is_some();
@@ -127,6 +130,49 @@ fn ask_json(reply: &str, questions: &serde_json::Value) -> Option<String> {
         })
         .to_string(),
     )
+}
+
+/// `coucou-hook --statusline`: Claude Code's status line command. Claude Code hands it the
+/// session's JSON; only the plan limits (`rate_limits`) go on to the island, in the background,
+/// and the line printed back is those limits, short. Never more than 300 ms for the island.
+fn statusline() -> ! {
+    let mut raw = Vec::new();
+    let _ = std::io::stdin().read_to_end(&mut raw);
+    if raw.starts_with(&[0xEF, 0xBB, 0xBF]) {
+        raw.drain(..3);
+    }
+    let v: Option<serde_json::Value> = serde_json::from_slice(&raw).ok();
+    let mut out = String::new();
+    if let Some(limits) = v.as_ref().and_then(|v| v.get("rate_limits")).filter(|l| l.is_object()) {
+        let line = serde_json::json!({ "hook_event_name": "StatusLine", "rate_limits": limits }).to_string() + "\n";
+        let (tx, rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(talk(&line, false));
+        });
+        out = status_text(limits);
+        let _ = rx.recv_timeout(CONNECT_TIMEOUT);
+    }
+    if out.is_empty() {
+        if let Some(m) = v.as_ref().and_then(|v| v.pointer("/model/display_name")).and_then(|m| m.as_str()) {
+            out = m.to_string();
+        }
+    }
+    print!("{out}");
+    let _ = std::io::Write::flush(&mut std::io::stdout());
+    std::process::exit(0);
+}
+
+/// "5 jam 35% · minggu 54%".
+fn status_text(limits: &serde_json::Value) -> String {
+    let pct = |k: &str| limits.get(k).and_then(|w| w.get("used_percentage")).and_then(|p| p.as_f64());
+    let mut parts = Vec::new();
+    if let Some(p) = pct("five_hour") {
+        parts.push(format!("5 jam {:.0}%", p.min(100.0)));
+    }
+    if let Some(p) = pct("seven_day") {
+        parts.push(format!("minggu {:.0}%", p.min(100.0)));
+    }
+    parts.join(" · ")
 }
 
 struct Event {
@@ -462,6 +508,13 @@ mod tests {
         );
         // "always" is an island concept; Claude Code just gets an allow.
         assert!(decision_json("always").unwrap().contains(r#""behavior":"allow""#));
+    }
+
+    #[test]
+    fn the_status_line_shows_both_limits() {
+        let l = serde_json::json!({ "five_hour": { "used_percentage": 35.4, "resets_at": 1 }, "seven_day": { "used_percentage": 54, "resets_at": 2 } });
+        assert_eq!(status_text(&l), "5 jam 35% · minggu 54%");
+        assert_eq!(status_text(&serde_json::json!({})), "");
     }
 
     #[test]

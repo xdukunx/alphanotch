@@ -118,12 +118,12 @@ impl App {
         let configured = info.map(|i| i.configured).unwrap_or(false);
         let error = info.and_then(|i| i.error.clone());
         // The Claude Code pill is about hooks, not a key.
-        let missing = if id == CLAUDE_ID { "Hooks not installed" } else { "Key not configured" };
-        let label = error.clone().unwrap_or_else(|| if configured { "Connected · loading…".into() } else { missing.into() });
+        let missing = if id == CLAUDE_ID { "Hook belum dipasang" } else { "Kunci belum diatur" };
+        let label = error.clone().unwrap_or_else(|| if configured { "Terhubung · memuat…".into() } else { missing.into() });
         let status = if error.is_some() || !configured { pal::RED } else { pal::GREEN };
         let title = if id == CLAUDE_ID { "Claude Code" } else { name };
 
-        self.header(g, a, color, title, "Integration");
+        self.header(g, a, color, title, "Integrasi");
         let sy = a.y + 39.0;
         ui::dot(g, a.x + 3.0, sy, 5.0, hex(status));
         let label = text::ellipsize(&label, Face::Regular, 11.5, a.w - 14.0);
@@ -133,7 +133,7 @@ impl App {
         let mut x = a.x;
         let c = hex(color);
         if id == CLAUDE_ID {
-            let (clicked, w) = self.ui.link(g, x, ay, "Open Visual Studio Code", with_alpha(c, 0.7));
+            let (clicked, w) = self.ui.link(g, x, ay, "Buka VS Code", with_alpha(c, 0.7));
             if clicked {
                 let cwd = self.st.task(id).and_then(|t| t.session_cwd.clone());
                 open_in_vscode(cwd.as_deref());
@@ -155,7 +155,7 @@ impl App {
             x += w + 12.0;
         }
         if configured {
-            let (clicked, _) = self.ui.link(g, x, ay, "Refresh", with_alpha(c, 0.85));
+            let (clicked, _) = self.ui.link(g, x, ay, "Muat ulang", with_alpha(c, 0.85));
             if clicked {
                 let ctx = self.ctx.clone();
                 crate::rt::spawn(async move { crate::integrations::poll_once(ctx, id).await });
@@ -353,7 +353,7 @@ impl App {
             .collect();
         bookings.sort_by(|x, y| x.0.partial_cmp(&y.0).unwrap_or(std::cmp::Ordering::Equal));
         if bookings.is_empty() {
-            t(g, "No calls scheduled", a.x, a.y + 46.0, Face::Regular, 11.5, hex(pal::DIM3));
+            t(g, "Tidak ada jadwal", a.x, a.y + 46.0, Face::Regular, 11.5, hex(pal::DIM3));
             return;
         }
         for (i, (when, b)) in bookings.iter().take(3).enumerate() {
@@ -401,7 +401,7 @@ impl App {
                 }
             }
             None => {
-                let msg = if success { "Completed successfully." } else { "No error details available." };
+                let msg = if success { "Selesai tanpa masalah." } else { "Tidak ada detail error." };
                 t(g, msg, a.x, a.y + 46.0, Face::Regular, 11.5, hex(pal::DIM2));
             }
         }

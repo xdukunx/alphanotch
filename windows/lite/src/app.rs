@@ -44,6 +44,7 @@ pub enum Timer {
     OverlayEnd,
     DeviceCheck,
     KeyCheck(u32),
+    NetCheck,
     TaskIdle(&'static str),
     RemoveTask(&'static str),
     IntegrationClear(&'static str),
@@ -276,6 +277,9 @@ pub struct App {
     pub output_name: Option<String>,
     pub clock_min: i32,
     pub overlay_level: Option<f32>,
+    pub net_state: Option<crate::net::NetState>,
+    /// The task a "task due" reminder card is about.
+    pub reminder_task: Option<String>,
     /// The lyrics panel of the dashboard: open or not, and its smooth scroll position.
     pub lyrics_open: bool,
     pub lyrics_scroll: f32,
@@ -401,6 +405,8 @@ impl App {
             output_name: None,
             clock_min: -1,
             overlay_level: None,
+            net_state: None,
+            reminder_task: None,
             lyrics_open: false,
             lyrics_scroll: 0.0,
             lyrics_layout: None,
@@ -512,6 +518,7 @@ impl App {
             Timer::OverlayEnd => self.end_overlay(),
             Timer::DeviceCheck => self.check_headphones(),
             Timer::KeyCheck(vk) => self.key_check(vk),
+            Timer::NetCheck => self.net_check(),
             Timer::TaskIdle(id) => {
                 self.st.update_task(id, BotState::Idle);
                 self.st.set_pill_badge(id, None);
@@ -651,6 +658,16 @@ impl App {
             }
         }
 
+        // Far from the island and nothing moving: look at the pointer eight times a second
+        // instead of thirty. It speeds up again as soon as the pointer comes near.
+        if self.st.mode != Mode::Hidden {
+            let (ix, _, iw, ih) = self.island_rect();
+            let (mx, my) = self.st.mouse;
+            let near = mx > ix - 160.0 && mx < ix + iw + 160.0 && my < ih + 140.0;
+            let busy = self.st.mode == Mode::Expanded || self.running || self.drag_catch || platform::left_button_down() || self.pet_since.is_some();
+            self.platform.set_poll_rate(if near || busy { 33 } else { 125 });
+        }
+
         // Nothing left to watch: stop polling so a hidden island costs nothing.
         if self.st.mode == Mode::Hidden && self.timers.is_empty() && !self.fsm.has_deadline() {
             self.platform.set_poll_timer(false);
@@ -745,7 +762,9 @@ impl App {
                 || self.engine.in_transition();
             // Only the compact bar's equaliser moving: 15 fps is plenty.
             let only_activity = activity_on && !hard && !self.engine.busy() && !self.chat.sending;
-            self.platform.set_frame_interval(if hard { 16 } else if only_activity { 66 } else { 33 });
+            // Dancing to music is ambient too: 20 fps keeps the beat and costs a third less.
+            let dancing = self.engine.dancing && !hard && !self.chat.sending && !self.ui.input.down;
+            self.platform.set_frame_interval(if hard { 16 } else if only_activity { 66 } else if dancing { 50 } else { 33 });
         }
     }
 

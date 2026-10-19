@@ -608,9 +608,19 @@ impl App {
             }
 
             let show_star = (t.star || row_hover) && !more_chip;
+            let due_label = t.due.map(|d| crate::todos::hhmm(d, crate::util::local_offset_secs()));
             let chip_label = if below > 0 { format!("+{below}") } else { "atas".to_string() };
             let chip_w = text::measure(&chip_label, Face::Medium, 10.0) + 14.0;
-            let text_end = r.x + r.w - if more_chip { chip_w + 10.0 } else if show_star { 24.0 } else { 8.0 };
+            let mut text_end = r.x + r.w - if more_chip { chip_w + 10.0 } else if show_star { 24.0 } else { 8.0 };
+            if let Some(dl) = &due_label {
+                // The time the task taps you, as a small chip before the star.
+                let dw = text::measure(dl, Face::Medium, 9.5) + 10.0;
+                let chip = Rect::new(text_end - dw, y + 4.0, dw, row_h - 8.0);
+                g.fill_style(rgba(245, 165, 36, if t.notified { 0.10 } else { 0.20 }));
+                g.fill_round_rect(chip.x, chip.y, chip.w, chip.h, chip.h / 2.0);
+                text::draw(g, dl, chip.cx(), chip.cy(), Face::Medium, 9.5, hex(pal::AMBER), Align::Center);
+                text_end = chip.x - 6.0;
+            }
             crate::app::fading_text(g, &t.text, r.x + 24.0, cy, 11.5, hex(pal::INK), r.x + 24.0, text_end);
             if show_star {
                 let star = Rect::new(r.x + r.w - 21.0, y + 2.0, 18.0, 18.0);
@@ -721,8 +731,10 @@ impl App {
             if self.done_gids.contains(gid) {
                 continue;
             }
-            let star = old.iter().any(|t| t.gid.as_deref() == Some(gid) && t.star);
-            merged.push(crate::todos::Todo { text: title.clone(), star, gid: Some(gid.clone()) });
+            let mine = old.iter().find(|t| t.gid.as_deref() == Some(gid) || (t.gid.is_none() && t.text == *title));
+            let star = mine.map(|t| t.star).unwrap_or(false);
+            let (due, notified) = mine.map(|t| (t.due, t.notified)).unwrap_or((None, false));
+            merged.push(crate::todos::Todo { text: title.clone(), star, gid: Some(gid.clone()), due, notified });
         }
         for t in old {
             if t.gid.is_none() && !remote.iter().any(|(_, title)| *title == t.text) {
@@ -742,8 +754,10 @@ impl App {
             return;
         }
         let text: String = text.chars().take(120).collect();
+        let (text, at) = crate::todos::split_time(&text);
+        let due = at.map(|(h, m)| crate::todos::next_at(crate::util::unix_now(), crate::util::local_offset_secs(), h, m));
         crate::gtasks::enqueue_add(&text);
-        self.todos.push(crate::todos::Todo { text, star: false, gid: None });
+        self.todos.push(crate::todos::Todo { text, star: false, gid: None, due, notified: false });
         self.todo_input.clear();
         crate::todos::save(&self.todos);
         crate::sound::play("send");

@@ -50,6 +50,8 @@ pub struct HookStatus {
     pub hook_ready: bool,
     /// The dedicated hook that lets the island answer Claude's questions is present.
     pub ask_ready: bool,
+    /// Claude Code's status line goes through the relay (plan limits).
+    pub statusline_ready: bool,
 }
 
 #[derive(Serialize)]
@@ -127,6 +129,16 @@ fn ask_command() -> String {
     format!("\"{exe}\" --ask")
 }
 
+/// `"exe" --statusline`: Claude Code's status line, which carries the plan limits.
+fn statusline_command() -> String {
+    let exe = settings::hook_exe_path().to_string_lossy().replace('\\', "/");
+    format!("\"{exe}\" --statusline")
+}
+
+fn statusline_is_ours(v: Option<&Value>) -> bool {
+    v.and_then(|s| s.get("command")).and_then(Value::as_str).map(|c| c.contains(MARKER)).unwrap_or(false)
+}
+
 fn entry_is_ours(entry: &Value) -> bool {
     entry
         .get("hooks")
@@ -179,12 +191,19 @@ fn merged(existing: &Value) -> Value {
     }
 
     root.insert("hooks".into(), Value::Object(hooks));
+    // The status line only when there is none, or it is already ours: someone else's is kept.
+    if root.get("statusLine").is_none() || statusline_is_ours(root.get("statusLine")) {
+        root.insert("statusLine".into(), json!({ "type": "command", "command": statusline_command(), "padding": 0 }));
+    }
     Value::Object(root)
 }
 
 /// Settings with every Coucou entry removed, and nothing else changed.
 fn without_ours(existing: &Value) -> Value {
     let mut root = existing.as_object().cloned().unwrap_or_default();
+    if statusline_is_ours(root.get("statusLine")) {
+        root.remove("statusLine");
+    }
     let Some(hooks) = root.get("hooks").and_then(Value::as_object).cloned() else {
         return Value::Object(root);
     };
@@ -281,7 +300,9 @@ pub fn status() -> HookStatus {
         })
         .unwrap_or(false);
     let hook_path = settings::hook_exe_path();
+    let statusline_ready = statusline_is_ours(current.get("statusLine"));
     HookStatus {
+        statusline_ready,
         ask_ready,
         installed,
         settings_path: settings_path().to_string_lossy().to_string(),
@@ -505,6 +526,32 @@ mod tests {
         assert_eq!(parse_settings(b"", WHERE).unwrap(), json!({}));
         assert_eq!(parse_settings(b"  
 	 ", WHERE).unwrap(), json!({}));
+    }
+
+    #[test]
+    fn the_status_line_is_added_only_where_there_is_none() {
+        let after = merged(&serde_json::json!({}));
+        assert!(after["statusLine"]["command"].as_str().unwrap().ends_with(" --statusline"));
+        let theirs = serde_json::json!({ "statusLine": { "type": "command", "command": "my-line.sh" } });
+        assert_eq!(merged(&theirs)["statusLine"]["command"], "my-line.sh");
+        assert!(without_ours(&after).get("statusLine").is_none());
+        assert_eq!(without_ours(&theirs)["statusLine"]["command"], "my-line.sh");
+    }
+
+    /// Manual: `cargo test -p coucou-lite preview_on_this_machine -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn preview_on_this_machine() {
+        let p = preview(true).expect("preview");
+        println!("FINGERPRINT {}\nBACKUP {}\n{}", p.fingerprint, p.backup, p.diff);
+    }
+
+    /// Manual, after the diff was approved: COUCOU_FP=<fingerprint> cargo test … write_on_this_machine -- --ignored
+    #[test]
+    #[ignore]
+    fn write_on_this_machine() {
+        let fp = std::env::var("COUCOU_FP").expect("COUCOU_FP");
+        println!("{:?}", write(true, &fp));
     }
 
     #[test]

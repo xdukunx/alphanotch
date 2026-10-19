@@ -37,6 +37,8 @@ pub enum OverlayKind {
     Info,
     Volume,
     Caps,
+    Wifi,
+    WifiOff,
 }
 
 #[derive(Clone, Debug)]
@@ -201,6 +203,8 @@ impl App {
             OverlayKind::Low => "#F4505E",
             OverlayKind::Headphones | OverlayKind::Volume => "#38BDF8",
             OverlayKind::Caps => "#F5A524",
+            OverlayKind::Wifi => "#34D399",
+            OverlayKind::WifiOff => "#F4505E",
             OverlayKind::Unplugged | OverlayKind::HeadphonesOff | OverlayKind::Info => "#9398A1",
         };
         let cx = 66.0;
@@ -245,6 +249,25 @@ impl App {
             }
             OverlayKind::Caps => {
                 crate::icons::fill(g, crate::icons::Icon::ArrowUp, cx, cy, 13.0, c);
+            }
+            OverlayKind::Wifi | OverlayKind::WifiOff => {
+                g.line_width(1.7);
+                g.line_cap_round();
+                let base_y = cy + 4.5;
+                for r in [3.4f32, 6.6, 9.6] {
+                    g.begin_path();
+                    g.arc(cx, base_y, r, -std::f32::consts::PI * 0.78, -std::f32::consts::PI * 0.22, false);
+                    g.stroke();
+                }
+                g.begin_path();
+                g.circle(cx, base_y, 1.4);
+                g.fill();
+                if o.kind == OverlayKind::WifiOff {
+                    g.begin_path();
+                    g.move_to(cx - 8.0, cy - 7.0);
+                    g.line_to(cx + 8.0, cy + 7.0);
+                    g.stroke();
+                }
             }
         }
 
@@ -312,6 +335,10 @@ impl App {
             register_audio_notifications(self.platform.hwnd);
         }
         self.sync_key_hook();
+        self.net_state = Some(crate::net::state());
+        if !self.platform.hwnd.0.is_null() {
+            crate::net::watch(self.platform.hwnd);
+        }
     }
 
     /// Redraws the idle bar when the minute changes (the resting clock), and only then.

@@ -68,6 +68,8 @@ pub struct Platform {
     frame_timer: bool,
     frame_ms: u32,
     poll_timer: bool,
+    /// Current poll interval, ms (33 near the island, slower when the pointer is away).
+    poll_ms: u32,
     remind_timer: bool,
     headless: bool,
     /// Rows (device px) the last present converted; the next one must cover them too.
@@ -168,6 +170,7 @@ impl Platform {
                 frame_timer: false,
                 frame_ms: 16,
                 poll_timer: false,
+                poll_ms: 33,
                 remind_timer: false,
                 headless: false,
                 last_rows: 0,
@@ -190,6 +193,7 @@ impl Platform {
             frame_timer: false,
             frame_ms: 16,
             remind_timer: false,
+            poll_ms: 33,
             poll_timer: false,
             headless: true,
             last_rows: 0,
@@ -409,6 +413,19 @@ impl Platform {
         }
     }
 
+    /// Changes the poll interval while it runs.
+    pub fn set_poll_rate(&mut self, ms: u32) {
+        if self.headless || ms == self.poll_ms {
+            return;
+        }
+        self.poll_ms = ms;
+        if self.poll_timer {
+            unsafe {
+                SetTimer(Some(self.hwnd), TIMER_POLL, ms, None);
+            }
+        }
+    }
+
     pub fn set_poll_timer(&mut self, on: bool) {
         if self.headless || on == self.poll_timer {
             return;
@@ -416,7 +433,7 @@ impl Platform {
         self.poll_timer = on;
         unsafe {
             if on {
-                SetTimer(Some(self.hwnd), TIMER_POLL, 33, None);
+                SetTimer(Some(self.hwnd), TIMER_POLL, self.poll_ms, None);
             } else {
                 let _ = KillTimer(Some(self.hwnd), TIMER_POLL);
             }
@@ -497,6 +514,10 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
                 app::with_app(|a| a.on_power_status());
             }
             LRESULT(1)
+        }
+        crate::net::WM_NET => {
+            app::with_app(|a| a.on_net_change());
+            LRESULT(0)
         }
         crate::keys::WM_KEYS => {
             app::with_app(|a| a.on_special_key(wp.0 as u32));

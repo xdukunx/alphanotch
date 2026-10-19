@@ -502,8 +502,8 @@ impl Win {
                 if !ready {
                     y += Self::notice(g, x, y, w, "coucou-hook.exe is not in place yet. Restart AlphaNotch; if it still fails, build it with `cargo build -p coucou-hook`.", false, true) + 10.0;
                 }
-                if installed && ready && !self.status.ask_ready {
-                    y += Self::notice(g, x, y, w, "Pasang ulang hooks (Reinstall) agar pertanyaan Claude bisa dijawab dari island.", false, true) + 10.0;
+                if installed && ready && (!self.status.ask_ready || !self.status.statusline_ready) {
+                    y += Self::notice(g, x, y, w, "Pasang ulang hook agar pertanyaan Claude bisa dijawab dari island dan limit Claude resmi terbaca.", false, true) + 10.0;
                 }
                 let label = if installed { "Pasang ulang hook…" } else { "Pasang hook…" };
                 let (clicked, bw) = if live {

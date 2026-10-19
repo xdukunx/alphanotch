@@ -30,7 +30,7 @@ pub struct ChatUi {
 impl ChatUi {
     pub fn new() -> Self {
         Self {
-            input: TextField::new("Ask me anything…", false),
+            input: TextField::new("Tanya apa saja…", false),
             scroll: 0.0,
             scroll_to_end: false,
             sending: false,
@@ -212,7 +212,33 @@ impl App {
             let t = unsafe { windows::Win32::System::SystemInformation::GetLocalTime() };
             let (_, _, short) = crate::dashboard::greeting(&self.st.settings.display_name);
             let label = format!("{short}  {:02}:{:02}", t.wHour, t.wMinute);
-            text::draw(g, &label, iw - 51.0 - 8.0 - 16.0, cy, Face::Regular, 11.0, hex(pal::DIM2), Align::Right);
+            let right = iw - 51.0 - 8.0 - 16.0;
+            text::draw(g, &label, right, cy, Face::Regular, 11.0, hex(pal::DIM2), Align::Right);
+            // Claude's plan, when Claude Code has reported it: "5j 35% · mgg 54%" with a dot.
+            let now_s = crate::util::unix_now();
+            if let Some(p) = crate::coach::plan(now_s) {
+                let five = p.five.map(|w| crate::coach::effective(w, now_s));
+                let week = p.week.map(|w| crate::coach::effective(w, now_s));
+                let mut parts = Vec::new();
+                if let Some(f) = five {
+                    parts.push(format!("5j {:.0}%", f));
+                }
+                if let Some(w) = week {
+                    parts.push(format!("mgg {:.0}%", w));
+                }
+                let top = five.unwrap_or(0.0).max(week.unwrap_or(0.0));
+                let col = if top < 50.0 { "#22C55E" } else if top < 80.0 { "#F5A524" } else { "#F4505E" };
+                let usage = parts.join(" · ");
+                let lw = text::measure(&label, Face::Regular, 11.0);
+                let uw = text::measure(&usage, Face::Medium, 10.5);
+                let pill = Rect::new(right - lw - 14.0 - uw - 24.0, cy - 9.0, uw + 24.0, 18.0);
+                if pill.x > 14.0 + 8.0 * 31.0 {
+                    g.fill_style(rgba(255, 255, 255, 0.06));
+                    g.fill_round_rect(pill.x, pill.y, pill.w, pill.h, 9.0);
+                    ui::dot(g, pill.x + 10.0, pill.cy(), 6.0, hex(col));
+                    text::draw(g, &usage, pill.x + 18.0, pill.cy(), Face::Medium, 10.5, hex("#C5C8CD"), Align::Left);
+                }
+            }
         }
         let gear = Rect::new(iw - 51.0 - 8.0, cy - 8.0, 16.0, 16.0);
         let on = v == View::Settings;
@@ -401,7 +427,7 @@ impl App {
     fn draw_empty(&mut self, g: &mut Gfx, v: Rect) {
         ui::card(g, v, Wash::None, false);
         let x = v.x + 118.0;
-        t(g, "Nothing running right now.", x, v.cy() - 11.0, Face::Medium, 15.0, hex(pal::INK));
+        t(g, "Belum ada yang berjalan.", x, v.cy() - 11.0, Face::Medium, 15.0, hex(pal::INK));
         t(g, "Drop a file or window, or ask me anything.", x, v.cy() + 11.0, Face::Regular, 13.0, hex(pal::DIM));
         let w = text::measure("Ask Claude", Face::Medium, 12.5) + 26.0;
         let (clicked, _) = self.ui.button(g, v.x + v.w - 18.0 - w, v.cy() - 15.0, "Ask Claude", true, None);
@@ -655,7 +681,7 @@ impl App {
             RemKind::Stretch => Wash::Green,
             RemKind::Eyes | RemKind::Suggest => Wash::Indigo,
             RemKind::LimitPlenty => Wash::Green,
-            RemKind::LimitFast => Wash::Amber,
+            RemKind::LimitFast | RemKind::Task => Wash::Amber,
         };
         ui::card(g, v, wash, false);
         let x = v.x + 116.0;
@@ -679,8 +705,9 @@ impl App {
         }
         let by = y + 8.0;
         let interval = card.kind.is_interval();
-        let (ok, ow) = self.ui.button(g, x, by, if interval { "Sudah" } else { "Oke" }, true, None);
-        let later = if interval {
+        let task = card.kind == RemKind::Task;
+        let (ok, ow) = self.ui.button(g, x, by, if interval { "Sudah" } else if task { "Selesai" } else { "Oke" }, true, None);
+        let later = if interval || task {
             self.ui.button(g, x + ow + 8.0, by, "Tunda 10 menit", false, None).0
         } else {
             false
@@ -787,13 +814,13 @@ impl App {
         };
         let title = title_owned.as_str();
         t(g, title, x, top + 16.0 + 5.0 + 10.0, Face::Medium, 15.0, hex(pal::INK));
-        let detail = task.and_then(|t| t.steps.last().cloned()).unwrap_or_else(|| "No detail available.".into());
+        let detail = task.and_then(|t| t.steps.last().cloned()).unwrap_or_else(|| "Tidak ada detail.".into());
         let detail = text::ellipsize(&detail.replace('\n', " "), Face::Regular, 12.0, w);
         t(g, &detail, x, top + 16.0 + 20.0 + 10.0 + 8.0 + 5.0, Face::Regular, 12.0, hex(pal::RED_TEXT));
 
         let by = top + 16.0 + 20.0 + 16.0 + 15.0;
-        let (retry, rw) = self.ui.button(g, x, by, "Retry", true, None);
-        let second = if n8n { "Open in n8n" } else { "Open terminal" };
+        let (retry, rw) = self.ui.button(g, x, by, "Coba lagi", true, None);
+        let second = if n8n { "Buka n8n" } else { "Buka terminal" };
         let (other, _) = self.ui.button(g, x + rw + 8.0, by, second, false, None);
         if retry {
             let v = self.st.default_view();
@@ -846,7 +873,7 @@ impl App {
     fn draw_confused(&mut self, g: &mut Gfx, v: Rect) {
         ui::card(g, v, Wash::Pink, false);
         let x = v.x + 128.0;
-        t(g, "Too many hits at once.", x, v.cy() - 9.0, Face::Medium, 15.0, hex(pal::INK));
+        t(g, "Aduh, kebanyakan dipukul.", x, v.cy() - 9.0, Face::Medium, 15.0, hex(pal::INK));
         t(g, "Give me a sec — back to work in three seconds.", x, v.cy() + 11.0, Face::Regular, 13.0, hex(pal::DIM));
     }
 
@@ -1005,7 +1032,7 @@ impl App {
         if field.contains(self.ui.input.mouse.0, self.ui.input.mouse.1) {
             self.ui.hovering_text = true;
         }
-        self.chat.input.placeholder = if self.st.chat_history.is_empty() { "Ask me anything…".into() } else { "Continue…".into() };
+        self.chat.input.placeholder = if self.st.chat_history.is_empty() { "Tanya apa saja…".into() } else { "Lanjutkan…".into() };
         self.chat.input.draw(g, field, 13.0, pal::INK);
 
         let (clicked, hover, pressed) = self.ui.click_region(id_of("send", 23), send_r);
@@ -1126,7 +1153,7 @@ impl App {
         }
         g.restore();
         let x = v.x + 196.0;
-        t(g, "Drop your files here", x, v.cy() - 12.0, Face::Medium, 13.0, if over { hex(pal::GREEN2) } else { hex("#D5D7DB") });
+        t(g, "Lepaskan file di sini", x, v.cy() - 12.0, Face::Medium, 13.0, if over { hex(pal::GREEN2) } else { hex("#D5D7DB") });
         let mut tx = x;
         for tag in ["PDF", "Images", "Code", "Docs"] {
             let w = text::measure(tag, Face::Regular, 11.0) + 16.0;
@@ -1159,9 +1186,9 @@ impl App {
         let nm = text::ellipsize(&name, Face::Medium, 15.0, v.w - 98.0 - 120.0);
         let w = t(g, &nm, x, top + 10.0, Face::Medium, 15.0, hex(pal::INK));
         t(g, " is ready.", x + w, top + 10.0, Face::Regular, 15.0, hex(pal::INK));
-        t(g, "What do you want to do with it?", x, top + 20.0 + 5.0 + 9.0, Face::Regular, 13.0, hex(pal::DIM));
+        t(g, "Mau diapakan file ini?", x, top + 20.0 + 5.0 + 9.0, Face::Regular, 13.0, hex(pal::DIM));
         let by = top + 20.0 + 18.0 + 10.0;
-        let (ask, aw) = self.ui.button(g, x, by, "Ask a question", true, None);
+        let (ask, aw) = self.ui.button(g, x, by, "Tanyakan sesuatu", true, None);
         let (cancel, _) = self.ui.button(g, x + aw + 8.0, by, "Cancel", false, None);
         if ask {
             self.set_view(View::Prompt);

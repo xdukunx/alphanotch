@@ -19,6 +19,8 @@ pub enum RemKind {
     /// Claude usage: plenty of room / careful.
     LimitPlenty,
     LimitFast,
+    /// A task whose time has come.
+    Task,
 }
 
 const KINDS: [RemKind; 3] = [RemKind::Water, RemKind::Stretch, RemKind::Eyes];
@@ -74,6 +76,7 @@ pub fn card_for(kind: RemKind, name: &str) -> ReminderCard {
         RemKind::Suggest => (format!("Saran hari ini{who}"), String::new()),
         RemKind::LimitPlenty => (String::new(), String::new()),
         RemKind::LimitFast => (String::new(), String::new()),
+        RemKind::Task => (format!("Pengingat tugas{who}"), String::new()),
     };
     ReminderCard { kind, title, body }
 }
@@ -91,6 +94,24 @@ pub fn limit_card(alert: crate::coach::LimitAlert) -> ReminderCard {
             kind: RemKind::LimitFast,
             title: "Hati-hati, pemakaian Claude ngebut".into(),
             body: format!("Sudah ±{pct}% dari puncak pemakaianmu. Pelan-pelan biar tidak habis sebelum limit reset. (perkiraan)"),
+        },
+    }
+}
+
+/// The card for Claude's real 5-hour limit.
+pub fn official_card(alert: crate::coach::LimitAlert, mins: i64) -> ReminderCard {
+    use crate::coach::LimitAlert::*;
+    let when = if mins >= 60 { format!("{} jam {} menit", mins / 60, mins % 60) } else { format!("{mins} menit") };
+    match alert {
+        Plenty { pct } => ReminderCard {
+            kind: RemKind::LimitPlenty,
+            title: "Limit Claude masih banyak".into(),
+            body: format!("Baru {pct}% dari jatah 5 jam, dan reset {when} lagi. Pakai dong, sayang kalau hangus."),
+        },
+        Fast { pct } => ReminderCard {
+            kind: RemKind::LimitFast,
+            title: "Hati-hati, limit Claude menipis".into(),
+            body: format!("Sudah {pct}% dari jatah 5 jam, padahal reset masih {when} lagi. Pelan-pelan ya."),
         },
     }
 }
@@ -126,6 +147,9 @@ impl App {
             return;
         }
         let now = util::unix_now();
+        if self.check_task_due(now) {
+            return;
+        }
         for k in KINDS {
             let i = k.idx();
             let e = every(&self.st.settings, k);
@@ -161,7 +185,19 @@ impl App {
         let name = self.st.settings.display_name.trim().to_string();
 
         if want_lim {
-            if let Some(a) = crate::coach::limit_alert(now) {
+            // Real limits first; the estimate only when Claude Code has not reported any.
+            let hour_now = ((now + off) / 3600.0).floor() as i64 % 24;
+            if let Some((a, mins)) = crate::coach::official_alert(now, hour_now) {
+                let slot = matches!(a, crate::coach::LimitAlert::Fast { .. }) as usize;
+                if now - self.coach_alert_at[slot] > 4.0 * 3600.0 {
+                    self.coach_alert_at[slot] = now;
+                    self.coach_popups += 1;
+                    self.show_coach_card(official_card(a, mins), if slot == 1 { Emote::Surprised } else { Emote::Happy });
+                    return;
+                }
+            } else if crate::coach::plan(now).is_some() {
+                // Real numbers exist and say nothing worth a card: no estimate either.
+            } else if let Some(a) = crate::coach::limit_alert(now) {
                 let slot = matches!(a, crate::coach::LimitAlert::Fast { .. }) as usize;
                 if now - self.coach_alert_at[slot] > 4.0 * 3600.0 {
                     self.coach_alert_at[slot] = now;
@@ -182,6 +218,21 @@ impl App {
                 self.show_coach_card(card, Emote::Proud);
             }
         }
+    }
+
+    /// A task with a time that has come: one card, marked so it is not shown again.
+    fn check_task_due(&mut self, now: f64) -> bool {
+        let Some(i) = self.todos.iter().position(|t| !t.notified && t.due.map(|d| d as f64 <= now).unwrap_or(false)) else {
+            return false;
+        };
+        self.todos[i].notified = true;
+        crate::todos::save(&self.todos);
+        let name = self.st.settings.display_name.trim().to_string();
+        let mut card = card_for(RemKind::Task, &name);
+        card.body = self.todos[i].text.clone();
+        self.reminder_task = Some(self.todos[i].text.clone());
+        self.show_coach_card(card, Emote::Surprised);
+        true
     }
 
     fn show_coach_card(&mut self, card: ReminderCard, emote: Emote) {
@@ -216,6 +267,28 @@ impl App {
     pub fn dismiss_reminder(&mut self, snooze: bool) {
         let mut cared = false;
         let mut cared_water = false;
+        if self.reminder.as_ref().map(|c| c.kind == RemKind::Task).unwrap_or(false) {
+            self.reminder = None;
+            if let Some(text) = self.reminder_task.take() {
+                if let Some(i) = self.todos.iter().position(|t| t.text == text) {
+                    if snooze {
+                        self.todos[i].due = Some(util::unix_now() as i64 + 600);
+                        self.todos[i].notified = false;
+                    } else {
+                        let done = self.todos.remove(i);
+                        if let Some(gid) = done.gid {
+                            crate::gtasks::enqueue_complete(&gid);
+                            self.done_gids.push(gid);
+                        }
+                        self.buddy_task_done();
+                    }
+                    crate::todos::save(&self.todos);
+                }
+            }
+            sound::play("blip");
+            self.collapse();
+            return;
+        }
         if let Some(card) = self.reminder.take() {
             cared_water = !snooze && card.kind == RemKind::Water;
             if snooze && card.kind.is_interval() {

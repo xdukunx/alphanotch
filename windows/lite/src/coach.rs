@@ -249,6 +249,71 @@ pub fn ready() -> bool {
     with_usage(|u| u.last_scan > 0.0)
 }
 
+// ── Plan limits, as Claude Code reports them ──────────────────────────────────
+
+/// One window of the plan: used share (0–100) and when it resets (unix seconds).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Window {
+    pub pct: f32,
+    pub resets: f64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Plan {
+    pub five: Option<Window>,
+    pub week: Option<Window>,
+    pub at: f64,
+}
+
+static PLAN: Mutex<Option<Plan>> = Mutex::new(None);
+
+fn window_of(v: Option<&serde_json::Value>) -> Option<Window> {
+    let v = v?;
+    let pct = v.get("used_percentage")?.as_f64()? as f32;
+    let resets = v.get("resets_at")?.as_f64()?;
+    (pct >= 0.0 && resets > 0.0 && resets < 1.0e11).then_some(Window { pct: pct.min(100.0), resets })
+}
+
+pub fn parse_plan(limits: &serde_json::Value, now: f64) -> Option<Plan> {
+    let five = window_of(limits.get("five_hour"));
+    let week = window_of(limits.get("seven_day"));
+    (five.is_some() || week.is_some()).then_some(Plan { five, week, at: now })
+}
+
+pub fn set_plan(p: Plan) {
+    if let Ok(mut s) = PLAN.lock() {
+        *s = Some(p);
+    }
+}
+
+/// The last reading, if it is less than six hours old.
+pub fn plan(now: f64) -> Option<Plan> {
+    PLAN.lock().ok()?.filter(|p| now - p.at < 6.0 * 3600.0)
+}
+
+/// A window's share now: zero once it has reset.
+pub fn effective(w: Window, now: f64) -> f32 {
+    if w.resets <= now { 0.0 } else { w.pct }
+}
+
+/// With real limits: (alert, minutes until the 5-hour window resets).
+pub fn official_alert(now: f64, local_hour: i64) -> Option<(LimitAlert, i64)> {
+    let p = plan(now)?;
+    let w = p.five?;
+    let pct = effective(w, now);
+    let mins = ((w.resets - now) / 60.0).round() as i64;
+    if w.resets <= now {
+        return None;
+    }
+    if pct >= 80.0 && mins > 30 {
+        return Some((LimitAlert::Fast { pct: pct.round() as u32 }, mins));
+    }
+    if pct <= 40.0 && mins <= 60 && (8..22).contains(&local_hour) {
+        return Some((LimitAlert::Plenty { pct: pct.round() as u32 }, mins));
+    }
+    None
+}
+
 // ── Limit estimate ────────────────────────────────────────────────────────────
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -445,6 +510,22 @@ mod tests {
 
     fn buckets(spec: &[(i64, f64)]) -> HashMap<i64, f64> {
         spec.iter().copied().collect()
+    }
+
+    #[test]
+    fn real_limits_parse_and_drive_the_alerts() {
+        let now = 1_000_000.0;
+        let l = serde_json::json!({ "five_hour": { "used_percentage": 86, "resets_at": now + 7200.0 }, "seven_day": { "used_percentage": 54, "resets_at": now + 86_400.0 } });
+        let p = parse_plan(&l, now).unwrap();
+        assert_eq!(p.five.unwrap().pct, 86.0);
+        set_plan(p);
+        assert!(matches!(official_alert(now, 14), Some((LimitAlert::Fast { .. }, 120))));
+        set_plan(parse_plan(&serde_json::json!({ "five_hour": { "used_percentage": 20, "resets_at": now + 1800.0 } }), now).unwrap());
+        assert!(matches!(official_alert(now, 14), Some((LimitAlert::Plenty { pct: 20 }, 30))));
+        assert!(official_alert(now, 3).is_none());
+        // A window that has reset counts as empty.
+        assert_eq!(effective(Window { pct: 90.0, resets: now - 1.0 }, now), 0.0);
+        assert!(parse_plan(&serde_json::json!({}), now).is_none());
     }
 
     #[test]

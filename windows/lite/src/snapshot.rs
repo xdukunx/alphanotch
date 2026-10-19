@@ -187,7 +187,21 @@ fn views(dir: &str, want: &dyn Fn(&str) -> bool) {
         crate::settings_win::snapshot(dir);
     }
     scene!("compact_idle", Mode::Compact, View::Overview, |app| {}, 1.5);
-    scene!("overview_idle", Mode::Expanded, View::Overview, |app| {}, 1.5);
+    scene!("overview_idle", Mode::Expanded, View::Overview, |app| {
+        let now = crate::util::unix_now();
+        if let Some(p) = crate::coach::parse_plan(&serde_json::json!({ "five_hour": { "used_percentage": 35, "resets_at": now + 1800.0 }, "seven_day": { "used_percentage": 54, "resets_at": now + 86_400.0 } }), now) {
+            crate::coach::set_plan(p);
+        }
+    }, 1.5);
+    scene!("ov_wifi", Mode::Compact, View::Overview, |app| {
+        app.show_overlay(crate::overlay::Overlay { kind: crate::overlay::OverlayKind::Wifi, title: "Rumah 5G".into(), sub: "Tersambung".into(), metric: String::new() });
+    }, 1.0);
+    scene!("task_due", Mode::Expanded, View::Reminder, |app| {
+        let mut c = crate::reminders::card_for(crate::reminders::RemKind::Task, "Dhana");
+        c.body = "Kirim laporan magang ke Bu Rina".into();
+        app.reminder = Some(c);
+        app.debug_show(Mode::Expanded, View::Reminder);
+    }, 1.5);
     scene!("overview_session", Mode::Expanded, View::Overview, |app| {
         hook(&mut app, json!({"hook_event_name":"SessionStart","cwd":"C:/Users/me/Project/coucou"}));
         hook(&mut app, json!({"hook_event_name":"UserPromptSubmit","cwd":"C:/Users/me/Project/coucou","prompt":"Port the island to native Rust"}));
@@ -316,7 +330,7 @@ Kosong ~150 menit sebelum Rapat tim (14:00) — cocok untuk: Kirim laporan".into
         app.todos = ["Bikin thumbnail ICATAM", "Edit video wisuda", "Deal vendor boneka", "Kirim laporan magang", "Balas email dosen"]
             .iter()
             .enumerate()
-            .map(|(i, t)| crate::todos::Todo { text: t.to_string(), star: i == 1, gid: None })
+            .map(|(i, t)| crate::todos::Todo { text: t.to_string(), star: i == 1, gid: None, due: if i == 2 { Some(crate::todos::next_at(crate::util::unix_now(), crate::util::local_offset_secs(), 16, 30)) } else { None }, notified: false })
             .collect();
     }, 1.5);
     scene!("stocks", Mode::Expanded, View::Stocks, |app| { crate::stocks::set_demo(); }, 1.5);

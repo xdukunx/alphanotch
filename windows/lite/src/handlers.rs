@@ -32,17 +32,17 @@ fn alias_project(name: &str) -> String {
 /// frenchStep() — same labels as the macOS app.
 fn tool_label(tool: &str) -> &str {
     match tool {
-        "Bash" | "PowerShell" => "Exécute",
-        "Read" => "Lit",
-        "Write" => "Écrit",
-        "Edit" | "MultiEdit" => "Modifie",
-        "Glob" => "Cherche",
-        "Grep" => "Recherche",
-        "WebSearch" => "Recherche web",
-        "WebFetch" => "Récupère",
-        "TodoWrite" => "Tâches",
-        "Task" => "Agent",
-        "LS" => "Liste",
+        "Bash" | "PowerShell" => "Jalankan",
+        "Read" => "Baca",
+        "Write" => "Tulis",
+        "Edit" | "MultiEdit" => "Ubah",
+        "Glob" => "Cari file",
+        "Grep" => "Cari teks",
+        "WebSearch" => "Cari di web",
+        "WebFetch" => "Buka web",
+        "TodoWrite" => "Daftar tugas",
+        "Task" => "Subagen",
+        "LS" => "Lihat folder",
         "NotebookEdit" => "Notebook",
         other => other,
     }
@@ -161,6 +161,13 @@ impl App {
             self.ensure_running();
             return;
         }
+        // Plan limits from Claude Code's status line: kept, nothing else happens.
+        if name == "StatusLine" {
+            if let Some(p) = payload.get("rate_limits").and_then(|l| crate::coach::parse_plan(l, crate::util::unix_now())) {
+                crate::coach::set_plan(p);
+            }
+            return;
+        }
         self.note_activity();
         if payload.get("coucou_agent").is_none() {
             self.buddy_session_event(&name);
@@ -266,7 +273,7 @@ impl App {
             "PostToolUse" | "PostInvocation" => self.st.update_task(target, BotState::Working),
             "PostToolUseFailure" => {
                 self.st.update_task(target, BotState::Working);
-                self.st.append_step(target, "⚠ failed".into());
+                self.st.append_step(target, "⚠ gagal".into());
             }
             "Notification" => {
                 let lower = message.to_lowercase();
@@ -319,8 +326,8 @@ impl App {
                     t.pill_badge = None;
                 }
             }
-            "SubagentStart" => self.st.append_step(target, "+ subagent".into()),
-            "SubagentStop" => self.st.append_step(target, "• subagent done".into()),
+            "SubagentStart" => self.st.append_step(target, "+ subagen".into()),
+            "SubagentStop" => self.st.append_step(target, "• subagen selesai".into()),
             "PermissionRequest" if is_external => {
                 // An external agent gets no approval card — it would look like a Claude
                 // Code request. Hand it back so the agent asks in its own terminal.

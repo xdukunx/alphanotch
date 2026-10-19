@@ -29,6 +29,7 @@ mod layout;
 mod lyrics;
 mod log;
 mod mochi;
+mod net;
 mod nusapages;
 mod ole;
 mod overlay;
