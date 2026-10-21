@@ -108,7 +108,7 @@ pub fn register_audio_notifications(hwnd: windows::Win32::Foundation::HWND) {
 impl App {
     /// Starts the overlay; skipped while the island is open for something else.
     pub fn show_overlay(&mut self, o: Overlay) {
-        if self.st.mode == Mode::Expanded || self.st.paused {
+        if self.st.mode == Mode::Expanded || self.quiet() {
             return;
         }
         self.overlay = Some(o);
@@ -335,6 +335,7 @@ impl App {
             register_audio_notifications(self.platform.hwnd);
         }
         self.sync_key_hook();
+        self.sync_fullscreen_hook();
         self.net_state = Some(crate::net::state());
         if !self.platform.hwnd.0.is_null() {
             crate::net::watch(self.platform.hwnd);

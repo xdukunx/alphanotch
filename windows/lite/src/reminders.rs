@@ -141,6 +141,11 @@ impl App {
     }
 
     pub fn reminder_tick(&mut self) {
+        // The fall-back look at the full-screen state, in case the foreground hook missed a change.
+        self.fullscreen_check();
+        if self.game_hidden {
+            return; // reminders keep their place and show when the game is gone
+        }
         // The idle bar names the next prayer; look it up here, twice a minute, not per frame.
         let next = if self.st.settings.prayer_alarm { crate::prayer::next_label(util::unix_now()) } else { None };
         if next != self.prayer_next {

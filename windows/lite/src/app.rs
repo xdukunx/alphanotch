@@ -16,7 +16,7 @@ use crate::layout::{
 use crate::mochi::engine::{BotEngine, BotState, Emote};
 use crate::mochi::greeting::Greeting;
 use crate::mochi::upload::{UploadSeq, USC};
-use crate::platform::{self, Platform, TIMER_FRAME, TIMER_POLL, TIMER_REMIND};
+use crate::platform::{self, Platform, TIMER_FRAME, TIMER_FS, TIMER_POLL, TIMER_REMIND};
 use crate::settings;
 use crate::sound;
 use crate::state::{DroppedInfo, State, CLAUDE_ID};
@@ -185,7 +185,7 @@ pub struct App {
     pub bot_cy: Spring,
     pub bot_size: Spring,
 
-    running: bool,
+    pub running: bool,
     last_frame: f32,
     timers: Vec<(f32, Timer)>,
     /// Window collapsed to the wake strip?
@@ -281,6 +281,9 @@ pub struct App {
     pub output_name: Option<String>,
     pub clock_min: i32,
     pub overlay_level: Option<f32>,
+    /// A full-screen app is in front and the island is hidden.
+    pub game_hidden: bool,
+    pub fs_rechecks: u8,
     pub net_state: Option<crate::net::NetState>,
     /// The task a "task due" reminder card is about.
     pub reminder_task: Option<String>,
@@ -415,6 +418,8 @@ impl App {
             output_name: None,
             clock_min: -1,
             overlay_level: None,
+            game_hidden: false,
+            fs_rechecks: 0,
             net_state: None,
             reminder_task: None,
             prayer_again: None,
@@ -592,6 +597,14 @@ impl App {
             TIMER_FRAME => self.frame(),
             TIMER_POLL => self.poll(),
             TIMER_REMIND => self.reminder_tick(),
+            TIMER_FS => {
+                self.platform.kill_fs_timer();
+                self.fullscreen_check();
+                if self.fs_rechecks > 0 {
+                    self.fs_rechecks -= 1;
+                    self.platform.arm_fs_timer(3000);
+                }
+            }
             _ => {}
         }
     }
@@ -1480,6 +1493,7 @@ impl App {
         crate::stocks::set_symbols(&self.st.settings.stocks);
         crate::ui::set_nusa(self.st.settings.theme_nusa);
         self.sync_key_hook();
+        self.sync_fullscreen_hook();
         self.sync_reminder_timer();
         self.process_transitions();
         self.st.load_integration_tasks();

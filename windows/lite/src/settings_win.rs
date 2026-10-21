@@ -1127,7 +1127,7 @@ impl Win {
     fn general(&mut self, g: &mut Gfx, m: f32, y0: f32, cw: f32) -> f32 {
         let pad = 18.0;
         let (ix, iw) = (m + pad, cw - 2.0 * pad);
-        let h = 6.0 * 38.0 - 8.0;
+        let h = 7.0 * 38.0 - 8.0;
         Self::card(g, m, y0, cw, h + 2.0 * pad);
         let mut y = y0 + pad;
         let lab = |g: &mut Gfx, y: f32, s: &str| {
@@ -1232,6 +1232,16 @@ impl Win {
             self.save();
         }
         text::draw(g, "biru-hitam pekat dan panel bergaris tipis", cx + 48.0, y + 11.0, Face::Regular, 11.5, hex(pal::DIM3), Align::Left);
+        y += 38.0;
+
+        // Games and full-screen apps.
+        lab(g, y, "Sembunyi saat game");
+        let on = self.settings.hide_in_fullscreen;
+        if self.ui.switch(g, "set-fullscreen", cx, y + 2.0, on) {
+            self.settings.hide_in_fullscreen = !on;
+            self.save();
+        }
+        text::draw(g, "juga video layar penuh dan presentasi", cx + 48.0, y + 11.0, Face::Regular, 11.5, hex(pal::DIM3), Align::Left);
         let _ = iw;
         y0 + h + 2.0 * pad + 16.0
     }

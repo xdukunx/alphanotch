@@ -309,7 +309,7 @@ impl App {
 
     /// Mood emotes, idle hobbies and falling asleep. Called from the 30 Hz poll.
     pub fn buddy_poll(&mut self) {
-        if self.st.mode == Mode::Hidden || self.st.paused {
+        if self.st.mode == Mode::Hidden || self.quiet() {
             return;
         }
         let n = now();

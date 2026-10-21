@@ -44,6 +44,8 @@ pub const TIMER_FRAME: usize = 1;
 pub const TIMER_POLL: usize = 2;
 /// Wellness reminders: one wake-up every 30 s, nothing else runs while the island is hidden.
 pub const TIMER_REMIND: usize = 3;
+/// A one-shot look at the full-screen state, which has to work while the window is hidden.
+pub const TIMER_FS: usize = 4;
 
 pub const WM_TRAY: u32 = 0x8000 + 2;
 pub const WM_OPEN: u32 = 0x8000 + 3;
@@ -413,6 +415,33 @@ impl Platform {
         }
     }
 
+    /// Arms (or re-arms) the one-shot full-screen check.
+    pub fn arm_fs_timer(&self, ms: u32) {
+        if !self.headless {
+            unsafe {
+                SetTimer(Some(self.hwnd), TIMER_FS, ms, None);
+            }
+        }
+    }
+
+    pub fn kill_fs_timer(&self) {
+        if !self.headless {
+            unsafe {
+                let _ = KillTimer(Some(self.hwnd), TIMER_FS);
+            }
+        }
+    }
+
+    /// Hides or shows the island's window (for a full-screen game).
+    pub fn set_visible(&mut self, on: bool) {
+        if self.headless {
+            return;
+        }
+        unsafe {
+            let _ = ShowWindow(self.hwnd, if on { SW_SHOWNOACTIVATE } else { windows::Win32::UI::WindowsAndMessaging::SW_HIDE });
+        }
+    }
+
     /// Changes the poll interval while it runs.
     pub fn set_poll_rate(&mut self, ms: u32) {
         if self.headless || ms == self.poll_ms {
@@ -514,6 +543,10 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
                 app::with_app(|a| a.on_power_status());
             }
             LRESULT(1)
+        }
+        crate::fullscreen::WM_FG => {
+            app::with_app(|a| a.on_foreground_change());
+            LRESULT(0)
         }
         crate::net::WM_NET => {
             app::with_app(|a| a.on_net_change());

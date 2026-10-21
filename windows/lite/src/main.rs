@@ -19,6 +19,7 @@ mod dashboard;
 mod files;
 mod fsm;
 mod gtasks;
+mod fullscreen;
 mod gfx;
 mod handlers;
 mod hooks;

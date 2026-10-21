@@ -142,7 +142,7 @@ fn parse_questions(input: &Value) -> Vec<AskQuestion> {
 impl App {
     pub fn handle_hook(&mut self, payload: Value) {
         let request_id = payload.get("request_id").and_then(Value::as_str).unwrap_or("").to_string();
-        if self.st.paused {
+        if self.quiet() {
             if !request_id.is_empty() {
                 pipe::decline(&self.ctx, &request_id);
             }
