@@ -45,6 +45,12 @@ pub struct Quote {
     pub candles: Vec<Candle>,
     /// The exchange's offset from UTC, seconds (25200 for Jakarta).
     pub offset: i32,
+    /// When the price was last updated by the exchange (unix seconds), and the day's high,
+    /// low and volume as it reports them (0 when it does not).
+    pub market_time: i64,
+    pub day_high: f32,
+    pub day_low: f32,
+    pub volume: f32,
     pub currency: String,
     pub error: Option<String>,
 }
@@ -153,7 +159,7 @@ pub fn set_demo() {
             .collect()
     };
     let mk = |sym: &str, price: f32, prev: f32, series: Vec<f32>| Quote {
-        symbol: sym.into(), price, prev, candles: candles_of(&series), series, offset: 25_200, currency: "IDR".into(), error: None,
+        symbol: sym.into(), price, prev, candles: candles_of(&series), series, offset: 25_200, market_time: 1_792_000_000 + 59 * 300, day_high: price * 1.004, day_low: price * 0.994, volume: 293_260_200.0, currency: "IDR".into(), error: None,
     };
     if let Ok(mut s) = S.lock() {
         s.quotes = vec![
@@ -236,7 +242,7 @@ pub fn start(symbols: &[String]) {
                                 q.error = Some(e);
                                 q
                             }
-                            None => Quote { symbol: sym.clone(), price: 0.0, prev: 0.0, series: Vec::new(), candles: Vec::new(), offset: 0, currency: String::new(), error: Some(e) },
+                            None => Quote { symbol: sym.clone(), price: 0.0, prev: 0.0, series: Vec::new(), candles: Vec::new(), offset: 0, market_time: 0, day_high: 0.0, day_low: 0.0, volume: 0.0, currency: String::new(), error: Some(e) },
                         });
                     }
                 }
@@ -336,8 +342,37 @@ fn parse(symbol: &str, v: &Value) -> Result<Quote, String> {
         series,
         candles: parse_candles(res),
         offset: meta["gmtoffset"].as_i64().unwrap_or(0) as i32,
+        market_time: meta["regularMarketTime"].as_i64().unwrap_or(0),
+        day_high: meta["regularMarketDayHigh"].as_f64().unwrap_or(0.0) as f32,
+        day_low: meta["regularMarketDayLow"].as_f64().unwrap_or(0.0) as f32,
+        volume: meta["regularMarketVolume"].as_f64().unwrap_or(0.0) as f32,
         currency: meta["currency"].as_str().unwrap_or("").to_string(),
         error: None,
+    })
+}
+
+/// How old the price is, as the header says it: "Tertunda 10 mnt · 11:49" while the market is
+/// open (every free IDX feed is ten minutes behind), "Penutupan · Rab 15:50" once it is not.
+/// `offset` is the exchange's offset from UTC.
+pub fn freshness(market_time: i64, now: i64, offset: i32) -> Option<String> {
+    if market_time <= 0 {
+        return None;
+    }
+    let lag = (now - market_time).max(0);
+    let clock = |with_day: bool| {
+        const DAYS: [&str; 7] = ["Kam", "Jum", "Sab", "Min", "Sen", "Sel", "Rab"];
+        let local = market_time + offset as i64;
+        let days = local.div_euclid(86_400);
+        let secs = local.rem_euclid(86_400);
+        let hm = format!("{:02}:{:02}", secs / 3600, (secs % 3600) / 60);
+        if with_day { format!("{} {hm}", DAYS[days.rem_euclid(7) as usize]) } else { hm }
+    };
+    Some(if lag < 20 * 60 {
+        format!("Tertunda {} mnt · {}", (lag as f32 / 60.0).round() as i64, clock(false))
+    } else if lag < 6 * 3600 {
+        format!("Data {}", clock(false))
+    } else {
+        format!("Penutupan · {}", clock(true))
     })
 }
 
@@ -412,7 +447,7 @@ mod tests {
 
     #[test]
     fn parses_candles_and_fills_what_is_missing() {
-        let v: Value = serde_json::from_str(r#"{"chart":{"result":[{"meta":{"regularMarketPrice":10.0,"gmtoffset":25200},
+        let v: Value = serde_json::from_str(r#"{"chart":{"result":[{"meta":{"regularMarketPrice":10.0,"gmtoffset":25200,"regularMarketTime":1792558171,"regularMarketDayHigh":10.8,"regularMarketDayLow":8.8,"regularMarketVolume":1800},
             "timestamp":[100,200,300,400],
             "indicators":{"quote":[{"open":[9.0,null,10.0,10.5],"high":[9.5,10.0,10.8,10.6],"low":[8.8,9.5,9.9,10.2],
             "close":[9.4,9.9,null,10.4],"volume":[1000,null,300,500]}]}}]}}"#).unwrap();
@@ -420,11 +455,22 @@ mod tests {
         // The bar without a close is dropped.
         assert_eq!(q.candles.len(), 3);
         assert_eq!(q.offset, 25_200);
+        assert_eq!((q.market_time, q.day_high, q.day_low, q.volume), (1_792_558_171, 10.8, 8.8, 1800.0));
         assert_eq!(q.candles[0], Candle { t: 100, o: 9.0, h: 9.5, l: 8.8, c: 9.4, v: 1000.0 });
         // No open: the close stands in; no volume: zero.
         assert_eq!((q.candles[1].o, q.candles[1].v), (9.9, 0.0));
         // A high or low that the open or close would break is widened.
         assert!(q.candles.iter().all(|c| c.h >= c.o.max(c.c) && c.l <= c.o.min(c.c)));
+    }
+
+    #[test]
+    fn the_header_says_how_old_the_price_is() {
+        // 11:49 Jakarta on a Wednesday is 04:49 UTC; 1_792_558_171 s is that moment.
+        let t = 1_792_558_171;
+        assert_eq!(freshness(t, t + 601, 25_200).as_deref(), Some("Tertunda 10 mnt · 11:49"));
+        assert_eq!(freshness(t, t + 2 * 3600, 25_200).as_deref(), Some("Data 11:49"));
+        assert_eq!(freshness(t, t + 9 * 3600, 25_200).as_deref(), Some("Penutupan · Rab 11:49"));
+        assert_eq!(freshness(0, t, 25_200), None);
     }
 
     #[test]

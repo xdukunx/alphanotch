@@ -316,8 +316,19 @@ impl App {
         text::draw(g, &price, x, r.y + 44.0, Face::Bold, 22.0, hex(pal::INK), Align::Left);
         let sign = if q.change() >= 0.0 { "+" } else { "" };
         text::draw(g, &format!("{sign}{}  {sign}{:.2}%", stocks::fmt_price(q.change()), q.pct()), x + pw + 10.0, r.y + 45.0, Face::Medium, 11.5, col, Align::Left);
+        // Top right: how old the price is. Every free feed for the Jakarta exchange is ten
+        // minutes behind, and the header says so instead of letting it pass for live.
+        let now_s = crate::util::unix_now() as i64;
+        let fresh = stocks::freshness(q.market_time, now_s, q.offset);
         if q.error.is_some() {
-            text::draw(g, "data lama", r.x + r.w - 16.0, r.y + 20.0, Face::Regular, 9.5, hex(pal::AMBER), Align::Right);
+            text::draw(g, "data lama", r.x + r.w - 16.0, r.y + 18.0, Face::Regular, 9.5, hex(pal::AMBER), Align::Right);
+        } else if let Some(f) = fresh {
+            text::draw(g, &f, r.x + r.w - 16.0, r.y + 18.0, Face::Regular, 9.5, hex(pal::DIM3), Align::Right);
+        }
+        // The day as the exchange reports it: high, low, volume.
+        if q.day_high > 0.0 && q.day_low > 0.0 {
+            let line = format!("H {}   L {}   Vol {}", stocks::fmt_price(q.day_high), stocks::fmt_price(q.day_low), stocks::fmt_volume(q.volume));
+            text::draw(g, &line, r.x + r.w - 16.0, r.y + 31.0, Face::Regular, 10.0, hex(pal::DIM), Align::Right);
         }
 
         // Range tabs on the left, candle / line on the right.
