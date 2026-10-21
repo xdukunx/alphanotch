@@ -1048,6 +1048,78 @@ impl Win {
         let _ = iw;
         let mut y = y0 + h + 2.0 * pad + 12.0;
         y += Self::para(g, m + 4.0, y, cw - 8.0, "Mochi muncul dengan pengingat; kartunya punya tombol Tunda 10 menit. Semua mati secara bawaan. \"Sudah\" pada pengingat minum menambah satu minum ke halaman Air.");
+        self.prayer_settings(g, m, y + 12.0, cw)
+    }
+
+    /// Prayer alarms: on/off, which of the five, how early, and today's times as a check.
+    fn prayer_settings(&mut self, g: &mut Gfx, m: f32, y0: f32, cw: f32) -> f32 {
+        let pad = 18.0;
+        let (ix, iw) = (m + pad, cw - 2.0 * pad);
+        let today = crate::prayer::today(crate::util::unix_now());
+        let h = 38.0 + 38.0 + 38.0 + 40.0;
+        Self::card(g, m, y0, cw, h + 2.0 * pad);
+        let mut y = y0 + pad + 4.0;
+
+        text::draw(g, "Alarm shalat", ix, y + 11.0, Face::Medium, 13.0, hex("#D5D8DE"), Align::Left);
+        let on = self.settings.prayer_alarm;
+        if self.ui.switch(g, "prayer-on", ix + iw - 36.0, y + 2.0, on) {
+            self.settings.prayer_alarm = !on;
+            self.save();
+        }
+        y += 38.0;
+
+        let mut px = ix;
+        for (i, name) in crate::prayer::NAMES.iter().enumerate() {
+            let pw = text::measure(name, Face::Regular, 11.5) + 22.0;
+            let r = Rect::new(px, y - 2.0, pw, 28.0);
+            let (clicked, hover, _) = self.ui.click_region(id_of(&format!("prayer-{i}"), 87), r);
+            let sel = self.settings.prayer_mask & (1 << i) != 0;
+            g.fill_style(if sel { rgba(45, 91, 255, 0.34) } else { rgba(255, 255, 255, if hover { 0.1 } else { 0.05 }) });
+            g.fill_round_rect(r.x, r.y, r.w, r.h, 14.0);
+            text::draw(g, name, r.cx(), r.cy(), Face::Regular, 11.5, hex(if sel { pal::INK } else { pal::DIM2 }), Align::Center);
+            px += pw + 6.0;
+            if clicked {
+                self.settings.prayer_mask ^= 1 << i;
+                self.save();
+            }
+        }
+        y += 38.0;
+
+        text::draw(g, "Lebih awal", ix, y + 11.0, Face::Regular, 12.0, hex("#C5C8CD"), Align::Left);
+        let mut px = ix + 112.0;
+        for lead in [0u32, 5, 10, 15] {
+            let t = if lead == 0 { "Tepat waktu".to_string() } else { format!("{lead} mnt") };
+            let pw = text::measure(&t, Face::Regular, 11.5) + 16.0;
+            let r = Rect::new(px, y - 2.0, pw, 28.0);
+            let (clicked, hover, _) = self.ui.click_region(id_of(&format!("prayer-lead-{lead}"), 88), r);
+            let sel = self.settings.prayer_lead_min == lead;
+            g.fill_style(if sel { rgba(45, 91, 255, 0.34) } else { rgba(255, 255, 255, if hover { 0.1 } else { 0.05 }) });
+            g.fill_round_rect(r.x, r.y, r.w, r.h, 14.0);
+            text::draw(g, &t, r.cx(), r.cy(), Face::Regular, 11.5, hex(if sel { pal::INK } else { pal::DIM2 }), Align::Center);
+            px += pw + 4.0;
+            if clicked && !sel {
+                self.settings.prayer_lead_min = lead;
+                self.save();
+            }
+        }
+        y += 38.0;
+
+        let line = match &today {
+            Some((t, tz, place)) => {
+                let five = t.five();
+                let times: Vec<String> = crate::prayer::NAMES.iter().enumerate().map(|(i, n)| format!("{n} {}", crate::prayer::hhmm(five[i]))).collect();
+                let zone = match *tz as i64 { 7 => "WIB", 8 => "WITA", 9 => "WIT", _ => "" };
+                format!("Hari ini di {place} ({zone}): {}", times.join(" · "))
+            }
+            None => "Menunggu lokasi dari halaman Cuaca…".to_string(),
+        };
+        let lines = text::wrap(&line, Face::Regular, 11.0, iw);
+        for (i, l) in lines.iter().take(2).enumerate() {
+            text::draw(g, l, ix, y + 6.0 + i as f32 * 16.0, Face::Regular, 11.0, hex(pal::DIM), Align::Left);
+        }
+
+        let mut y = y0 + h + 2.0 * pad + 12.0;
+        y += Self::para(g, m + 4.0, y, cw - 8.0, "Waktu dihitung di komputer ini dengan metode Kemenag RI (Subuh 20°, Isya 18°, Ashar mazhab Syafi'i, ihtiyat 2 menit) dari lokasi yang dipakai halaman Cuaca. Ini perkiraan: bandingkan dengan jadwal masjid atau Kemenag setempat. Tidak ada suara adzan, hanya kartu di island.");
         y + 16.0
     }
 
@@ -1103,7 +1175,7 @@ impl Win {
         let (minus, _) = self.ui.button(g, cx, y - 4.0, "−", false, None);
         text::draw(g, &format!("{secs}"), cx + 60.0, y + 11.0, Face::Medium, 12.5, hex(pal::INK), Align::Center);
         let (plus, _) = self.ui.button(g, cx + 84.0, y - 4.0, "+", false, None);
-        text::draw(g, "detik setelah kursor meninggalkan island", cx + 130.0, y + 11.0, Face::Regular, 11.5, hex(pal::DIM3), Align::Left);
+        text::draw(g, "detik setelah kursor pergi", cx + 130.0, y + 11.0, Face::Regular, 11.5, hex(pal::DIM3), Align::Left);
         if minus || plus {
             let n = (secs + if plus { 5 } else { -5 }).clamp(5, 120);
             self.settings.auto_close_interval = n as f64;

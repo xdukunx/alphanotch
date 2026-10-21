@@ -62,6 +62,18 @@ pub struct Settings {
     pub water_goal_ml: u32,
     #[serde(default = "default_bottle")]
     pub water_bottle_ml: u32,
+    /// Prayer time alarms (off until switched on), which of the five (bit 0 = Subuh … bit 4 =
+    /// Isya), and how many minutes ahead to say so (0 = at the time).
+    #[serde(default)]
+    pub prayer_alarm: bool,
+    #[serde(default = "default_prayers")]
+    pub prayer_mask: u8,
+    #[serde(default)]
+    pub prayer_lead_min: u32,
+}
+
+fn default_prayers() -> u8 {
+    0b11111
 }
 
 fn default_goal() -> u32 {
@@ -126,6 +138,9 @@ impl Default for Settings {
             theme_nusa: true,
             water_goal_ml: 2000,
             water_bottle_ml: 250,
+            prayer_alarm: false,
+            prayer_mask: 0b11111,
+            prayer_lead_min: 0,
         }
     }
 }

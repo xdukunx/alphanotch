@@ -21,6 +21,8 @@ pub enum RemKind {
     LimitFast,
     /// A task whose time has come.
     Task,
+    /// A prayer time.
+    Prayer,
 }
 
 const KINDS: [RemKind; 3] = [RemKind::Water, RemKind::Stretch, RemKind::Eyes];
@@ -77,6 +79,7 @@ pub fn card_for(kind: RemKind, name: &str) -> ReminderCard {
         RemKind::LimitPlenty => (String::new(), String::new()),
         RemKind::LimitFast => (String::new(), String::new()),
         RemKind::Task => (format!("Pengingat tugas{who}"), String::new()),
+        RemKind::Prayer => (String::new(), String::new()),
     };
     ReminderCard { kind, title, body }
 }
@@ -148,6 +151,9 @@ impl App {
         }
         let now = util::unix_now();
         if self.check_task_due(now) {
+            return;
+        }
+        if self.prayer_tick(now) {
             return;
         }
         for k in KINDS {
@@ -267,6 +273,16 @@ impl App {
     pub fn dismiss_reminder(&mut self, snooze: bool) {
         let mut cared = false;
         let mut cared_water = false;
+        if self.reminder.as_ref().map(|c| c.kind == RemKind::Prayer).unwrap_or(false) {
+            if let Some(card) = self.reminder.take() {
+                if snooze {
+                    self.prayer_again = Some((util::unix_now() + 600.0, card));
+                }
+            }
+            sound::play("blip");
+            self.collapse();
+            return;
+        }
         if self.reminder.as_ref().map(|c| c.kind == RemKind::Task).unwrap_or(false) {
             self.reminder = None;
             if let Some(text) = self.reminder_task.take() {

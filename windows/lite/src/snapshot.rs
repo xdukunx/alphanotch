@@ -196,6 +196,10 @@ fn views(dir: &str, want: &dyn Fn(&str) -> bool) {
     scene!("ov_wifi", Mode::Compact, View::Overview, |app| {
         app.show_overlay(crate::overlay::Overlay { kind: crate::overlay::OverlayKind::Wifi, title: "Rumah 5G".into(), sub: "Tersambung".into(), metric: String::new() });
     }, 1.0);
+    scene!("prayer", Mode::Expanded, View::Reminder, |app| {
+        app.reminder = Some(crate::prayer::card(1, 11.0 + 15.0 / 60.0, 7.0, "Surabaya", 0));
+        app.debug_show(Mode::Expanded, View::Reminder);
+    }, 1.5);
     scene!("task_due", Mode::Expanded, View::Reminder, |app| {
         let mut c = crate::reminders::card_for(crate::reminders::RemKind::Task, "Dhana");
         c.body = "Kirim laporan magang ke Bu Rina".into();

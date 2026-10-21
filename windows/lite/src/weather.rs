@@ -40,6 +40,9 @@ pub struct Report {
     pub estimated: bool,
     pub now: Now,
     pub days: Vec<Day>,
+    /// Where it is (also used for the prayer times).
+    pub lat: f64,
+    pub lon: f64,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -205,7 +208,7 @@ async fn forecast(lat: f64, lon: f64, place: &str, estimated: bool) -> Result<Re
             rain: d["precipitation_probability_max"][i].as_u64().unwrap_or(0) as u32,
         });
     }
-    Ok(Report { place: place.to_string(), estimated, now, days })
+    Ok(Report { place: place.to_string(), estimated, now, days, lat, lon })
 }
 
 /// 0 = Sunday … 6 = Saturday for "YYYY-MM-DD" (Sakamoto's method).

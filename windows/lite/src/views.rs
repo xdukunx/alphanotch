@@ -682,6 +682,7 @@ impl App {
             RemKind::Eyes | RemKind::Suggest => Wash::Indigo,
             RemKind::LimitPlenty => Wash::Green,
             RemKind::LimitFast | RemKind::Task => Wash::Amber,
+            RemKind::Prayer => Wash::Cyan,
         };
         ui::card(g, v, wash, false);
         let x = v.x + 116.0;
@@ -706,9 +707,10 @@ impl App {
         let by = y + 8.0;
         let interval = card.kind.is_interval();
         let task = card.kind == RemKind::Task;
+        let prayer = card.kind == RemKind::Prayer;
         let (ok, ow) = self.ui.button(g, x, by, if interval { "Sudah" } else if task { "Selesai" } else { "Oke" }, true, None);
-        let later = if interval || task {
-            self.ui.button(g, x + ow + 8.0, by, "Tunda 10 menit", false, None).0
+        let later = if interval || task || prayer {
+            self.ui.button(g, x + ow + 8.0, by, if prayer { "Ingatkan 10 menit" } else { "Tunda 10 menit" }, false, None).0
         } else {
             false
         };

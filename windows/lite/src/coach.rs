@@ -57,7 +57,7 @@ fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
 }
 
 /// The inverse: days since the epoch → (year, month, day).
-fn civil_from_days(z: i64) -> (i64, i64, i64) {
+pub(crate) fn civil_from_days(z: i64) -> (i64, i64, i64) {
     let z = z + 719_468;
     let era = z.div_euclid(146_097);
     let doe = z - era * 146_097;

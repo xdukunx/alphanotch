@@ -34,6 +34,7 @@ mod nusapages;
 mod ole;
 mod overlay;
 mod pipe;
+mod prayer;
 mod reminders;
 mod platform;
 mod rt;
