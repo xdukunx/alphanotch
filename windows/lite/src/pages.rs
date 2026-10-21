@@ -178,47 +178,24 @@ impl App {
         self.dash_page_title(g, v, "Saham", &format!("{n} di watchlist · IHSG"));
         stocks::touch();
         let quotes = stocks::quotes();
-        let left = Rect::new(v.x, v.y, 250.0, v.h);
-        let right = Rect::new(v.x + 260.0, v.y, v.w - 260.0, v.h);
+        let right_w = 190.0;
+        let left = Rect::new(v.x, v.y, v.w - right_w - 8.0, v.h);
+        let right = Rect::new(left.x + left.w + 8.0, v.y, right_w, v.h);
         ui::card(g, left, Wash::None, false);
         ui::card(g, right, Wash::None, false);
+        self.chart_rect = Rect::default();
 
         let order = self.st.settings.stocks.clone();
         if self.stock_sel >= order.len() {
             self.stock_sel = 0;
         }
 
-        // Left: the selected ticker and its chart.
-        let sel = order.get(self.stock_sel).and_then(|s| quotes.iter().find(|q| &q.symbol == s));
+        // Left: the selected ticker, with its chart.
+        let sel = order.get(self.stock_sel).and_then(|s| quotes.iter().find(|q| &q.symbol == s)).cloned();
         match sel {
-            Some(q) if q.error.is_none() || q.price > 0.0 => {
-                text::draw(g, &stocks::display(&q.symbol), left.x + 18.0, left.y + 24.0, Face::Bold, 15.0, hex(pal::INK), Align::Left);
-                if !q.currency.is_empty() {
-                    text::draw(g, &q.currency, left.x + left.w - 18.0, left.y + 24.0, Face::Regular, 10.5, hex(pal::DIM3), Align::Right);
-                }
-                text::draw(g, &stocks::fmt_price(q.price), left.x + 18.0, left.y + 56.0, Face::Bold, 26.0, hex(pal::INK), Align::Left);
-                let col = updown(q.change());
-                text::draw(g, &format!("{}{}  ({}{:.2}%)", if q.change() >= 0.0 { "+" } else { "" }, stocks::fmt_price(q.change()), if q.pct() >= 0.0 { "+" } else { "" }, q.pct()), left.x + 18.0, left.y + 82.0, Face::Medium, 12.0, col, Align::Left);
-                // Key figures of the day, from the intraday series, in a column beside the price.
-                if q.series.len() >= 2 {
-                    let open = q.series[0];
-                    let hi = q.series.iter().cloned().fold(f32::MIN, f32::max);
-                    let lo = q.series.iter().cloned().fold(f32::MAX, f32::min);
-                    let (sx, sr) = (left.x + 150.0, left.x + left.w - 16.0);
-                    for (i, (lab, val)) in [("Buka", open), ("Tinggi", hi), ("Rendah", lo), ("Kemarin", q.prev)].iter().enumerate() {
-                        let yy = left.y + 42.0 + i as f32 * 14.0;
-                        text::draw(g, lab, sx, yy, Face::Regular, 9.5, hex(pal::DIM3), Align::Left);
-                        text::draw(g, &stocks::fmt_price(*val), sr, yy, Face::Medium, 10.5, hex(pal::INK2), Align::Right);
-                    }
-                }
-                let chart = Rect::new(left.x + 16.0, left.y + 100.0, left.w - 32.0, left.h - 100.0 - 16.0);
-                chart_area(g, chart, &q.series, q.prev, col);
-                if let Some(e) = &q.error {
-                    text::draw(g, &format!("data lama ({e})"), left.x + left.w - 18.0, left.y + 82.0, Face::Regular, 10.0, hex(pal::AMBER), Align::Right);
-                }
-            }
+            Some(q) if q.error.is_none() || q.price > 0.0 => self.draw_stock_detail(g, left, &q),
             Some(q) => {
-                text::draw(g, &stocks::display(&q.symbol), left.x + 18.0, left.y + 24.0, Face::Bold, 15.0, hex(pal::INK), Align::Left);
+                text::draw(g, &stocks::display(&q.symbol), left.x + 16.0, left.y + 22.0, Face::Bold, 15.0, hex(pal::INK), Align::Left);
                 text::draw(g, "Tidak bisa memuat data", left.cx(), left.cy(), Face::Medium, 13.0, hex(pal::DIM), Align::Center);
                 text::draw(g, q.error.as_deref().unwrap_or(""), left.cx(), left.cy() + 20.0, Face::Regular, 10.5, hex(pal::DIM3), Align::Center);
             }
@@ -227,13 +204,11 @@ impl App {
             }
         }
 
-        // Right: watchlist rows and the add field.
-        let rows_max = (((right.h - 12.0 - 44.0) / 30.0).floor() as usize).clamp(2, 6);
-        let mut y = right.y + 12.0;
-        let mut act: Option<(usize, bool)> = None; // (index, remove)
-        // The wheel scrolls the list a row at a time when it does not all fit.
+        // Right: the watchlist (two lines a row) and the add field.
+        let pitch = 38.0;
+        let rows_max = (((right.h - 10.0 - 42.0) / pitch).floor() as usize).clamp(2, 6);
         let max_off = order.len().saturating_sub(rows_max);
-        let list = Rect::new(right.x, right.y + 12.0, right.w, rows_max as f32 * 30.0);
+        let list = Rect::new(right.x, right.y + 8.0, right.w, rows_max as f32 * pitch);
         if max_off > 0 && self.ui.input.wheel != 0.0 && list.contains(self.ui.input.mouse.0, self.ui.input.mouse.1) {
             if self.ui.input.wheel > 0.0 {
                 self.stock_scroll = self.stock_scroll.saturating_sub(1);
@@ -243,45 +218,47 @@ impl App {
         }
         self.stock_scroll = self.stock_scroll.min(max_off);
         let off = self.stock_scroll;
+        let mut y = right.y + 8.0;
+        let mut act: Option<(usize, bool)> = None; // (index, remove)
         for (i, sym) in order.iter().enumerate().skip(off).take(rows_max) {
-            let row = Rect::new(right.x + 8.0, y, right.w - 16.0, 28.0);
+            let row = Rect::new(right.x + 6.0, y, right.w - 12.0, pitch - 4.0);
             let (clicked, hover, _) = self.ui.click_region(id_of(&format!("stk-row{i}"), 98), row);
-            if i == self.stock_sel || hover {
-                g.fill_style(rgba(255, 255, 255, if i == self.stock_sel { 0.09 } else { 0.05 }));
+            let selected = i == self.stock_sel;
+            if selected || hover {
+                g.fill_style(rgba(255, 255, 255, if selected { 0.09 } else { 0.05 }));
                 g.fill_round_rect(row.x, row.y, row.w, row.h, 10.0);
             }
             let q = quotes.iter().find(|q| &q.symbol == sym);
-            if i == self.stock_sel {
-                let c = q.map(|q| updown(q.change())).unwrap_or(hex(pal::DIM3));
-                g.fill_style(c);
-                g.fill_round_rect(row.x + 2.0, row.y + 8.0, 2.5, row.h - 16.0, 1.25);
+            let col = q.map(|q| updown(q.change())).unwrap_or(hex(pal::DIM3));
+            if selected {
+                g.fill_style(col);
+                g.fill_round_rect(row.x + 2.0, row.y + 7.0, 2.5, row.h - 14.0, 1.25);
             }
-            text::draw(g, &stocks::display(sym), row.x + 10.0, row.cy(), Face::Medium, 12.0, hex(pal::INK), Align::Left);
+            let (l1, l2) = (row.y + 12.0, row.y + 27.0);
+            text::draw(g, &stocks::display(sym), row.x + 12.0, l1, Face::Medium, 12.0, hex(pal::INK), Align::Left);
             if let Some(q) = q.filter(|q| q.price > 0.0) {
-                let col = updown(q.change());
-                spark(g, Rect::new(row.x + 62.0, row.y + 6.0, 54.0, 16.0), &q.series, col);
-                text::draw(g, &stocks::fmt_price(q.price), row.x + row.w - 66.0, row.cy(), Face::Regular, 11.5, hex(pal::INK), Align::Right);
+                text::draw(g, &stocks::fmt_price(q.price), row.x + 12.0, l2, Face::Regular, 10.5, hex(pal::DIM), Align::Left);
+                spark(g, Rect::new(row.x + row.w - 62.0, row.y + 20.0, 52.0, 13.0), &q.series, col);
                 if hover {
-                    let x_r = Rect::new(row.x + row.w - 24.0, row.y + 3.0, 22.0, 22.0);
+                    let x_r = Rect::new(row.x + row.w - 24.0, row.y + 2.0, 22.0, 20.0);
                     let (xc, xh, _) = self.ui.click_region(id_of(&format!("stk-del{i}"), 99), x_r);
                     text::draw(g, "×", x_r.cx(), x_r.cy(), Face::Bold, 14.0, if xh { hex(RED) } else { hex(pal::DIM) }, Align::Center);
                     if xc {
                         act = Some((i, true));
                     }
                 } else {
-                    text::draw(g, &format!("{}{:.2}%", if q.pct() >= 0.0 { "+" } else { "" }, q.pct()), row.x + row.w - 8.0, row.cy(), Face::Medium, 11.0, col, Align::Right);
+                    text::draw(g, &format!("{}{:.2}%", if q.pct() >= 0.0 { "+" } else { "" }, q.pct()), row.x + row.w - 8.0, l1, Face::Medium, 11.0, col, Align::Right);
                 }
             } else {
-                text::draw(g, "…", row.x + row.w - 10.0, row.cy(), Face::Regular, 11.5, hex(pal::DIM3), Align::Right);
+                text::draw(g, "…", row.x + row.w - 10.0, l1, Face::Regular, 11.5, hex(pal::DIM3), Align::Right);
             }
             if clicked && act.is_none() {
                 act = Some((i, false));
             }
-            y += 30.0;
+            y += pitch;
         }
         if max_off > 0 {
-            // A thin scrollbar, so it is clear there is more below.
-            let track_h = rows_max as f32 * 30.0 - 4.0;
+            let track_h = rows_max as f32 * pitch - 6.0;
             let thumb_h = (track_h * rows_max as f32 / order.len() as f32).max(14.0);
             let thumb_y = list.y + 2.0 + (track_h - thumb_h) * off as f32 / max_off as f32;
             g.fill_style(rgba(255, 255, 255, 0.28));
@@ -289,10 +266,10 @@ impl App {
         }
 
         // Add field.
-        let fb = Rect::new(right.x + 12.0, right.y + right.h - 38.0, right.w - 24.0, 26.0);
+        let fb = Rect::new(right.x + 10.0, right.y + right.h - 34.0, right.w - 20.0, 24.0);
         g.fill_style(rgba(255, 255, 255, if self.stock_input.focused { 0.11 } else { 0.06 }));
-        g.fill_round_rect(fb.x, fb.y, fb.w, fb.h, 13.0);
-        let field = Rect::new(fb.x + 12.0, fb.y + 4.0, fb.w - 24.0, 18.0);
+        g.fill_round_rect(fb.x, fb.y, fb.w, fb.h, 12.0);
+        let field = Rect::new(fb.x + 12.0, fb.y + 3.0, fb.w - 24.0, 18.0);
         let (mx, my) = self.ui.input.mouse;
         let over = field.contains(mx, my);
         self.ui.note_region(id_of("stock-field", 111), field);
@@ -321,6 +298,98 @@ impl App {
                 self.stock_sel = i;
             }
         }
+    }
+
+    /// The selected stock: name, price and change, the range tabs, the candle / line switch and
+    /// the chart with its axes, volume, last-price tag and the crosshair under the pointer.
+    fn draw_stock_detail(&mut self, g: &mut Gfx, r: Rect, q: &stocks::Quote) {
+        let col = updown(q.change());
+        let x = r.x + 16.0;
+
+        text::draw(g, &stocks::display(&q.symbol), x, r.y + 18.0, Face::Bold, 14.0, hex(pal::INK), Align::Left);
+        if !q.currency.is_empty() {
+            let w = text::measure(&stocks::display(&q.symbol), Face::Bold, 14.0);
+            text::draw(g, &q.currency, x + w + 8.0, r.y + 19.0, Face::Regular, 9.5, hex(pal::DIM3), Align::Left);
+        }
+        let price = stocks::fmt_price(q.price);
+        let pw = text::measure(&price, Face::Bold, 22.0);
+        text::draw(g, &price, x, r.y + 44.0, Face::Bold, 22.0, hex(pal::INK), Align::Left);
+        let sign = if q.change() >= 0.0 { "+" } else { "" };
+        text::draw(g, &format!("{sign}{}  {sign}{:.2}%", stocks::fmt_price(q.change()), q.pct()), x + pw + 10.0, r.y + 45.0, Face::Medium, 11.5, col, Align::Left);
+        if q.error.is_some() {
+            text::draw(g, "data lama", r.x + r.w - 16.0, r.y + 20.0, Face::Regular, 9.5, hex(pal::AMBER), Align::Right);
+        }
+
+        // Range tabs on the left, candle / line on the right.
+        let ty = r.y + 62.0;
+        let mut tx = x - 6.0;
+        for (i, (label, _, _)) in stocks::RANGES.iter().enumerate() {
+            let w = text::measure(label, Face::Medium, 10.5) + 16.0;
+            let tab = Rect::new(tx, ty, w, 18.0);
+            let (clicked, hover, _) = self.ui.click_region(id_of(&format!("range-{i}"), 121), tab);
+            let on = self.stock_range == i;
+            if on {
+                g.fill_style(rgba(45, 91, 255, 0.34));
+                g.fill_round_rect(tab.x, tab.y, tab.w, tab.h, 9.0);
+            } else if hover {
+                g.fill_style(rgba(255, 255, 255, 0.07));
+                g.fill_round_rect(tab.x, tab.y, tab.w, tab.h, 9.0);
+            }
+            text::draw(g, label, tab.cx(), tab.cy(), Face::Medium, 10.5, hex(if on { pal::INK } else { pal::DIM2 }), Align::Center);
+            if clicked && !on {
+                self.stock_range = i;
+                crate::sound::play("blip");
+            }
+            tx += w + 2.0;
+        }
+        for (k, candles) in [(0usize, true), (1usize, false)] {
+            let b = Rect::new(r.x + r.w - 16.0 - 52.0 + k as f32 * 26.0, ty - 1.0, 24.0, 20.0);
+            let (clicked, hover, _) = self.ui.click_region(id_of(&format!("ctype-{k}"), 122), b);
+            let on = self.st.settings.stocks_candles == candles;
+            g.fill_style(rgba(255, 255, 255, if on { 0.16 } else if hover { 0.09 } else { 0.04 }));
+            g.fill_round_rect(b.x, b.y, b.w, b.h, 7.0);
+            let ink = if on { hex(pal::INK) } else { hex(pal::DIM2) };
+            if candles {
+                for (dx, up) in [(-4.5f32, true), (0.0, false), (4.5, true)] {
+                    let top = if up { -4.0 } else { -2.0 };
+                    g.fill_style(ink);
+                    g.fill_rect(b.cx() + dx - 0.5, b.cy() - 6.0, 1.0, 12.0);
+                    g.fill_rect(b.cx() + dx - 1.8, b.cy() + top, 3.6, 6.0);
+                }
+            } else {
+                g.stroke_style(ink);
+                g.line_width(1.6);
+                g.line_cap_round();
+                g.line_join_round();
+                g.begin_path();
+                g.move_to(b.x + 5.0, b.cy() + 3.5);
+                g.line_to(b.x + 10.0, b.cy() - 1.0);
+                g.line_to(b.x + 14.0, b.cy() + 1.5);
+                g.line_to(b.x + 19.0, b.cy() - 4.0);
+                g.stroke();
+            }
+            if clicked && !on {
+                self.st.settings.stocks_candles = candles;
+                self.save_settings();
+            }
+        }
+
+        // The data: today's candles come with the quote, the other ranges are fetched.
+        let detail = if self.stock_range == 0 {
+            stocks::Detail { candles: q.candles.clone(), offset: q.offset, prev: q.prev, loading: false, error: None }
+        } else {
+            stocks::detail(&q.symbol, self.stock_range)
+        };
+        let area = Rect::new(r.x + 8.0, ty + 26.0, r.w - 16.0, r.y + r.h - 10.0 - (ty + 26.0));
+        if detail.candles.len() < 2 {
+            let msg = if detail.loading { "Memuat grafik…" } else if let Some(e) = &detail.error { e.as_str() } else { "Belum ada data" };
+            text::draw(g, msg, area.cx(), area.cy(), Face::Regular, 11.0, hex(pal::DIM3), Align::Center);
+            return;
+        }
+        let mouse = self.ui.input.mouse;
+        self.chart_rect = area;
+        let mouse_in = area.contains(mouse.0, mouse.1).then_some(mouse);
+        draw_candles(g, area, &detail, if self.stock_range == 0 { Some(detail.prev).filter(|p| *p > 0.0) } else { None }, self.st.settings.stocks_candles, col, self.stock_range, mouse_in);
     }
 
     /// Enter in the add-ticker field.
@@ -484,44 +553,200 @@ fn plot(g: &mut Gfx, r: Rect, series: &[f32], lo: f32, hi: f32) -> Vec<(f32, f32
         .collect()
 }
 
-/// Intraday line with a soft fill and a faint line at the previous close.
-fn chart_area(g: &mut Gfx, r: Rect, series: &[f32], prev: f32, col: Color) {
-    if series.len() < 2 {
-        text::draw(g, "Belum ada data intraday", r.cx(), r.cy(), Face::Regular, 11.0, hex(pal::DIM3), Align::Center);
-        return;
+/// "11:15" / "Sel 14:30" / "21 Okt" for a bar's start, in the exchange's time.
+fn bar_time(t: i64, offset: i32, range: usize) -> String {
+    const MONTHS: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"];
+    const DAYS: [&str; 7] = ["Kam", "Jum", "Sab", "Min", "Sen", "Sel", "Rab"]; // 1970-01-01 was a Thursday
+    let local = t + offset as i64;
+    let days = local.div_euclid(86_400);
+    let secs = local.rem_euclid(86_400);
+    let (_, m, d) = crate::coach::civil_from_days(days);
+    let clock = format!("{:02}:{:02}", secs / 3600, (secs % 3600) / 60);
+    let month = MONTHS[(m as usize).clamp(1, 12) - 1];
+    match range {
+        0 => clock,
+        1 => format!("{} {clock}", DAYS[days.rem_euclid(7) as usize]),
+        2 => format!("{d} {month} {clock}"),
+        _ => format!("{d} {month}"),
     }
-    let (lo, hi) = range_of(series, prev);
-    let pts = plot(g, r, series, lo, hi);
-    let yp = r.y + r.h * (1.0 - (prev - lo) / (hi - lo));
-    g.fill_style(rgba(255, 255, 255, 0.10));
-    g.fill_rect(r.x, yp, r.w, 1.0);
+}
 
-    let fill = g.linear(0.0, r.y, 0.0, r.y + r.h, &[(0.0, crate::gfx::with_alpha(col, 0.28)), (1.0, crate::gfx::with_alpha(col, 0.0))]);
-    g.fill_style(fill);
-    g.begin_path();
-    g.move_to(pts[0].0, r.y + r.h);
-    for p in &pts {
-        g.line_to(p.0, p.1);
-    }
-    g.line_to(pts[pts.len() - 1].0, r.y + r.h);
-    g.close_path();
-    g.fill();
+/// Where each of `n` slots is, left to right, in `plot` (a slot is one bar wide).
+fn slot_x(plot: Rect, n: usize, i: usize) -> f32 {
+    plot.x + plot.w * (i as f32 + 0.5) / n.max(1) as f32
+}
 
-    g.stroke_style(col);
-    g.line_width(1.8);
-    g.line_join_round();
-    g.line_cap_round();
-    g.begin_path();
-    g.move_to(pts[0].0, pts[0].1);
-    for p in pts.iter().skip(1) {
-        g.line_to(p.0, p.1);
+/// A TradingView-like chart: grid and price axis on the right, candles (or a line with a soft
+/// fill), the volume under them, the last price as a tag on the axis, the previous close as a
+/// dashed line, and a crosshair with a tooltip when the pointer is over it.
+fn draw_candles(g: &mut Gfx, area: Rect, d: &stocks::Detail, prev: Option<f32>, candles: bool, up_col: Color, range: usize, mouse: Option<(f32, f32)>) {
+    let cs = &d.candles;
+    let n = cs.len();
+    // Today: the slots of the whole session (about 84 five-minute bars), so a morning chart
+    // fills from the left and leaves the afternoon empty, as on TradingView.
+    let slots = if range == 0 { n.max(84) } else { n };
+    let axis_w = 44.0;
+    let time_h = 13.0;
+    let vol_h = (area.h * 0.17).clamp(14.0, 26.0);
+    let plot = Rect::new(area.x, area.y, area.w - axis_w, area.h - time_h - vol_h - 3.0);
+    let vol = Rect::new(plot.x, plot.y + plot.h + 3.0, plot.w, vol_h);
+
+    // Price range: the lows and highs (or just the closes for a line), the previous close, a margin.
+    let (mut lo, mut hi) = (f32::MAX, f32::MIN);
+    for c in cs {
+        let (a, b) = if candles { (c.l, c.h) } else { (c.c, c.c) };
+        lo = lo.min(a);
+        hi = hi.max(b);
     }
-    g.stroke();
-    let last = pts[pts.len() - 1];
-    g.fill_style(col);
-    g.begin_path();
-    g.circle(last.0, last.1, 3.0);
-    g.fill();
+    if let Some(p) = prev {
+        lo = lo.min(p);
+        hi = hi.max(p);
+    }
+    if (hi - lo).abs() < 1e-6 {
+        hi = lo + 1.0;
+    }
+    let pad = (hi - lo) * 0.07;
+    let (lo, hi) = (lo - pad, hi + pad);
+    let ypx = |p: f32| plot.y + plot.h * (1.0 - (p - lo) / (hi - lo));
+
+    // Grid and the price axis (a label the last-price tag would sit on is left out).
+    let tag_y = ypx(cs[n - 1].c).clamp(plot.y + 6.0, plot.y + plot.h - 6.0);
+    for i in 0..=4 {
+        let y = plot.y + plot.h * i as f32 / 4.0;
+        g.fill_style(rgba(255, 255, 255, 0.05));
+        g.fill_rect(plot.x, y, plot.w, 1.0);
+        let p = hi - (hi - lo) * i as f32 / 4.0;
+        let ly = y.clamp(plot.y + 5.0, plot.y + plot.h - 5.0);
+        if (ly - tag_y).abs() > 10.0 {
+            text::draw(g, &stocks::fmt_price(p), plot.x + plot.w + 6.0, ly, Face::Regular, 9.0, hex(pal::DIM3), Align::Left);
+        }
+    }
+    // The previous close, dashed.
+    if let Some(p) = prev {
+        let y = ypx(p);
+        g.fill_style(rgba(255, 255, 255, 0.22));
+        let mut x = plot.x;
+        while x < plot.x + plot.w {
+            g.fill_rect(x, y, 3.0, 1.0);
+            x += 7.0;
+        }
+    }
+
+    // The bars: candles, or a line over a soft fill.
+    let slot = plot.w / slots as f32;
+    let (green, red) = (hex(GREEN), hex(RED));
+    if candles {
+        let bw = (slot * 0.64).clamp(1.0, 9.0);
+        for (i, c) in cs.iter().enumerate() {
+            let cx = slot_x(plot, slots, i).floor() + 0.5;
+            let col = if c.c >= c.o { green } else { red };
+            g.fill_style(col);
+            g.fill_rect(cx - 0.5, ypx(c.h), 1.0, (ypx(c.l) - ypx(c.h)).max(1.0));
+            let (top, bot) = (ypx(c.o.max(c.c)), ypx(c.o.min(c.c)));
+            g.fill_rect((cx - bw / 2.0).floor(), top, bw.floor().max(1.0), (bot - top).max(1.0));
+        }
+    } else {
+        let pts: Vec<(f32, f32)> = cs.iter().enumerate().map(|(i, c)| (slot_x(plot, slots, i), ypx(c.c))).collect();
+        let fill = g.linear(0.0, plot.y, 0.0, plot.y + plot.h, &[(0.0, crate::gfx::with_alpha(up_col, 0.26)), (1.0, crate::gfx::with_alpha(up_col, 0.0))]);
+        g.fill_style(fill);
+        g.begin_path();
+        g.move_to(pts[0].0, plot.y + plot.h);
+        for p in &pts {
+            g.line_to(p.0, p.1);
+        }
+        g.line_to(pts[n - 1].0, plot.y + plot.h);
+        g.close_path();
+        g.fill();
+        g.stroke_style(up_col);
+        g.line_width(1.6);
+        g.line_join_round();
+        g.begin_path();
+        g.move_to(pts[0].0, pts[0].1);
+        for p in pts.iter().skip(1) {
+            g.line_to(p.0, p.1);
+        }
+        g.stroke();
+    }
+
+    // Volume under the price.
+    let vmax = cs.iter().map(|c| c.v).fold(0.0f32, f32::max);
+    if vmax > 0.0 {
+        let bw = (slot * 0.64).clamp(1.0, 9.0);
+        for (i, c) in cs.iter().enumerate() {
+            let h = (vol.h * (c.v / vmax)).max(if c.v > 0.0 { 1.0 } else { 0.0 });
+            let col = if c.c >= c.o { green } else { red };
+            g.fill_style(crate::gfx::with_alpha(col, 0.42));
+            g.fill_rect((slot_x(plot, slots, i) - bw / 2.0).floor(), vol.y + vol.h - h, bw.floor().max(1.0), h);
+        }
+    }
+
+    // The last price: a dotted line to the axis and a tag on it, in the colour of the day.
+    let last = cs[n - 1].c;
+    let ly = ypx(last).clamp(plot.y + 6.0, plot.y + plot.h - 6.0);
+    g.fill_style(crate::gfx::with_alpha(up_col, 0.5));
+    let mut x = slot_x(plot, slots, n - 1);
+    while x < plot.x + plot.w {
+        g.fill_rect(x, ly, 2.0, 1.0);
+        x += 5.0;
+    }
+    let tag = stocks::fmt_price(last);
+    let tw = text::measure(&tag, Face::Medium, 9.5) + 8.0;
+    g.fill_style(up_col);
+    g.fill_round_rect(plot.x + plot.w + 2.0, ly - 7.0, tw.max(axis_w - 4.0), 14.0, 4.0);
+    text::draw(g, &tag, plot.x + plot.w + 2.0 + tw.max(axis_w - 4.0) / 2.0, ly, Face::Medium, 9.5, hex("#0B0C0E"), Align::Center);
+
+    // The time axis: first, middle, last.
+    let t0 = cs[0].t;
+    let step = if range == 0 && n > 1 { (cs[n - 1].t - t0) / (n as i64 - 1) } else { 0 };
+    for (frac, a) in [(0.0f32, Align::Left), (0.5, Align::Center), (1.0, Align::Right)] {
+        let (x, t) = match a {
+            Align::Left => (plot.x, t0),
+            Align::Center => (plot.x + plot.w * 0.5, if range == 0 { t0 + step * (slots as i64 / 2) } else { cs[n / 2].t }),
+            _ => (plot.x + plot.w, if range == 0 { t0 + step * slots as i64 } else { cs[n - 1].t }),
+        };
+        let _ = frac;
+        text::draw(g, &bar_time(t, d.offset, range), x, area.y + area.h - 5.0, Face::Regular, 9.0, hex(pal::DIM3), a);
+    }
+
+    // The crosshair and its tooltip.
+    if let Some((mx, my)) = mouse {
+        if mx >= plot.x && mx <= plot.x + plot.w {
+            let i = (((mx - plot.x) / plot.w * slots as f32).floor() as usize).min(slots - 1);
+            if i >= n {
+                return;
+            }
+            let c = cs[i];
+            let cx = slot_x(plot, slots, i);
+            g.fill_style(rgba(255, 255, 255, 0.28));
+            g.fill_rect(cx - 0.5, plot.y, 1.0, plot.h + vol.h + 3.0);
+            if my >= plot.y && my <= plot.y + plot.h {
+                g.fill_rect(plot.x, my - 0.5, plot.w, 1.0);
+                let p = lo + (hi - lo) * (1.0 - (my - plot.y) / plot.h);
+                let label = stocks::fmt_price(p);
+                let w = text::measure(&label, Face::Medium, 9.0) + 8.0;
+                g.fill_style(rgba(236, 239, 247, 0.9));
+                g.fill_round_rect(plot.x + plot.w + 2.0, my - 7.0, w.max(axis_w - 4.0), 14.0, 4.0);
+                text::draw(g, &label, plot.x + plot.w + 2.0 + w.max(axis_w - 4.0) / 2.0, my, Face::Medium, 9.0, hex("#0B0C0E"), Align::Center);
+            }
+            let col = if c.c >= c.o { green } else { red };
+            let chg = if c.o.abs() > 1e-9 { (c.c - c.o) / c.o * 100.0 } else { 0.0 };
+            let l1 = bar_time(c.t, d.offset, range);
+            let l2 = format!("O {}  H {}  L {}  C {}", stocks::fmt_price(c.o), stocks::fmt_price(c.h), stocks::fmt_price(c.l), stocks::fmt_price(c.c));
+            let l3 = format!("{}{chg:.2}%   Vol {}", if chg >= 0.0 { "+" } else { "" }, stocks::fmt_volume(c.v));
+            let bw = text::measure(&l2, Face::Regular, 9.5).max(text::measure(&l1, Face::Medium, 10.0)) + 16.0;
+            let bx = if cx > plot.x + plot.w / 2.0 { plot.x + 6.0 } else { plot.x + plot.w - bw - 6.0 };
+            let by = plot.y + 4.0;
+            g.fill_style(rgba(3, 4, 10, 0.88));
+            g.fill_round_rect(bx, by, bw, 44.0, 7.0);
+            g.stroke_style(rgba(236, 239, 247, 0.12));
+            g.line_width(1.0);
+            g.round_rect(bx + 0.5, by + 0.5, bw - 1.0, 43.0, 6.5);
+            g.stroke();
+            text::draw(g, &l1, bx + 8.0, by + 11.0, Face::Medium, 10.0, hex(pal::INK), Align::Left);
+            text::draw(g, &l2, bx + 8.0, by + 24.0, Face::Regular, 9.5, hex(pal::DIM), Align::Left);
+            text::draw(g, &l3, bx + 8.0, by + 37.0, Face::Medium, 9.5, col, Align::Left);
+        }
+    }
 }
 
 fn spark(g: &mut Gfx, r: Rect, series: &[f32], col: Color) {

@@ -118,7 +118,7 @@ pub fn layout(v: View) -> ViewLayout {
         // The pages of the group keep a 14 px strip at the bottom for the chevrons and dots.
         View::Dashboard | View::Focus | View::Water => l(210.0, 286.0, Some(21.0), 26.0),
         // Four watchlist rows fit; more scroll.
-        View::Stocks => l(250.0, 286.0, Some(21.0), 26.0),
+        View::Stocks => l(272.0, 286.0, Some(21.0), 26.0),
         View::Weather | View::Teleprompter => l(220.0, 286.0, Some(21.0), 26.0),
     }
 }

@@ -5,6 +5,7 @@
 // ticker symbols the user typed. Polled once a minute while the Stocks page is open, every ten
 // minutes otherwise, and never while paused.
 
+use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -13,6 +14,26 @@ use tokio::sync::Notify;
 
 use crate::log;
 
+/// One candle: open, high, low, close and volume of a bar that started at `t` (unix seconds).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Candle {
+    pub t: i64,
+    pub o: f32,
+    pub h: f32,
+    pub l: f32,
+    pub c: f32,
+    pub v: f32,
+}
+
+/// (label, Yahoo range, Yahoo bar size) of each chart range.
+pub const RANGES: [(&str, &str, &str); 5] = [
+    ("1D", "1d", "5m"),
+    ("5D", "5d", "15m"),
+    ("1M", "1mo", "60m"),
+    ("6M", "6mo", "1d"),
+    ("1Y", "1y", "1wk"),
+];
+
 #[derive(Clone, Debug)]
 pub struct Quote {
     pub symbol: String,
@@ -20,6 +41,10 @@ pub struct Quote {
     pub prev: f32,
     /// Intraday closes, oldest first (gaps removed).
     pub series: Vec<f32>,
+    /// Today's candles (5-minute bars), the same data as `series` with the rest of each bar.
+    pub candles: Vec<Candle>,
+    /// The exchange's offset from UTC, seconds (25200 for Jakarta).
+    pub offset: i32,
     pub currency: String,
     pub error: Option<String>,
 }
@@ -42,6 +67,68 @@ struct Shared {
 static S: Mutex<Shared> = Mutex::new(Shared { symbols: Vec::new(), quotes: Vec::new(), touched: None });
 static KICK: Notify = Notify::const_new();
 
+/// What the chart shows for a symbol and a range, and whether more is on its way.
+#[derive(Clone, Debug, Default)]
+pub struct Detail {
+    pub candles: Vec<Candle>,
+    pub offset: i32,
+    /// The previous close, for the dashed line (only meaningful on the 1D range).
+    pub prev: f32,
+    pub loading: bool,
+    pub error: Option<String>,
+}
+
+struct DetailEntry {
+    at: Instant,
+    detail: Detail,
+}
+
+static DETAILS: Mutex<Option<HashMap<(String, usize), DetailEntry>>> = Mutex::new(None);
+
+/// The candles for `symbol` on range `range` (index into `RANGES`). Starts a fetch when there
+/// is nothing yet or the data is a minute old; the answer arrives in a later call.
+pub fn detail(symbol: &str, range: usize) -> Detail {
+    let range = range.min(RANGES.len() - 1);
+    let key = (symbol.to_string(), range);
+    let mut start = false;
+    let out = {
+        let Ok(mut g) = DETAILS.lock() else { return Detail::default() };
+        let map = g.get_or_insert_with(HashMap::new);
+        match map.get_mut(&key) {
+            Some(e) => {
+                let stale = e.at.elapsed() > Duration::from_secs(if e.detail.error.is_some() { 20 } else { 60 });
+                if stale && !e.detail.loading {
+                    e.detail.loading = true;
+                    start = true;
+                }
+                e.detail.clone()
+            }
+            None => {
+                let d = Detail { loading: true, ..Default::default() };
+                map.insert(key.clone(), DetailEntry { at: Instant::now(), detail: d.clone() });
+                start = true;
+                d
+            }
+        }
+    };
+    if start {
+        crate::rt::spawn(async move {
+            let result = fetch_range(&key.0, key.1).await;
+            if let Ok(mut g) = DETAILS.lock() {
+                let map = g.get_or_insert_with(HashMap::new);
+                let old = map.get(&key).map(|e| e.detail.clone()).unwrap_or_default();
+                let detail = match result {
+                    Ok(d) => d,
+                    // Keep what was shown, marked as old.
+                    Err(e) => Detail { error: Some(e), loading: false, ..old },
+                };
+                map.insert(key, DetailEntry { at: Instant::now(), detail });
+            }
+        });
+    }
+    out
+}
+
 pub fn quotes() -> Vec<Quote> {
     S.lock().map(|s| s.quotes.clone()).unwrap_or_default()
 }
@@ -52,8 +139,21 @@ pub fn set_demo() {
     let wave = |base: f32, amp: f32, drift: f32| -> Vec<f32> {
         (0..60).map(|i| base + (i as f32 * 0.35).sin() * amp + i as f32 * drift).collect()
     };
+    // A day of 5-minute candles around `series`, with a volume that peaks at the open and the close.
+    let candles_of = |series: &Vec<f32>| -> Vec<Candle> {
+        series
+            .iter()
+            .enumerate()
+            .map(|(i, &c)| {
+                let o = if i == 0 { c } else { series[i - 1] };
+                let wick = (c - o).abs() * 0.6 + c * 0.0008;
+                let edge = ((i as f32 / series.len() as f32) - 0.5).abs() * 2.0;
+                Candle { t: 1_792_000_000 + i as i64 * 300, o, h: o.max(c) + wick, l: o.min(c) - wick, c, v: (900.0 + 2200.0 * edge * edge + (i as f32 * 1.7).sin().abs() * 800.0) * 1000.0 }
+            })
+            .collect()
+    };
     let mk = |sym: &str, price: f32, prev: f32, series: Vec<f32>| Quote {
-        symbol: sym.into(), price, prev, series, currency: "IDR".into(), error: None,
+        symbol: sym.into(), price, prev, candles: candles_of(&series), series, offset: 25_200, currency: "IDR".into(), error: None,
     };
     if let Ok(mut s) = S.lock() {
         s.quotes = vec![
@@ -136,7 +236,7 @@ pub fn start(symbols: &[String]) {
                                 q.error = Some(e);
                                 q
                             }
-                            None => Quote { symbol: sym.clone(), price: 0.0, prev: 0.0, series: Vec::new(), currency: String::new(), error: Some(e) },
+                            None => Quote { symbol: sym.clone(), price: 0.0, prev: 0.0, series: Vec::new(), candles: Vec::new(), offset: 0, currency: String::new(), error: Some(e) },
                         });
                     }
                 }
@@ -177,6 +277,49 @@ async fn fetch(symbol: &str) -> Result<Quote, String> {
     parse(symbol, &v)
 }
 
+/// Yahoo's parallel arrays (`timestamp`, `open`, `high`, `low`, `close`, `volume`) as candles.
+/// A bar without a close is dropped; a missing open, high or low falls back on the close.
+pub fn parse_candles(res: &Value) -> Vec<Candle> {
+    let q = &res["indicators"]["quote"][0];
+    let stamps = res["timestamp"].as_array().cloned().unwrap_or_default();
+    let col = |k: &str| q[k].as_array().cloned().unwrap_or_default();
+    let (open, high, low, close, vol) = (col("open"), col("high"), col("low"), col("close"), col("volume"));
+    let mut out = Vec::with_capacity(stamps.len());
+    for (i, t) in stamps.iter().enumerate() {
+        let Some(t) = t.as_i64() else { continue };
+        let Some(c) = close.get(i).and_then(|x| x.as_f64()) else { continue };
+        let c = c as f32;
+        let get = |a: &Vec<Value>| a.get(i).and_then(|x| x.as_f64()).map(|x| x as f32);
+        let (o, h, l) = (get(&open).unwrap_or(c), get(&high).unwrap_or(c), get(&low).unwrap_or(c));
+        out.push(Candle { t, o, h: h.max(o).max(c), l: l.min(o).min(c), c, v: get(&vol).unwrap_or(0.0).max(0.0) });
+    }
+    out
+}
+
+async fn fetch_range(symbol: &str, range: usize) -> Result<Detail, String> {
+    let (_, r, interval) = RANGES[range.min(RANGES.len() - 1)];
+    let url = format!("https://query1.finance.yahoo.com/v8/finance/chart/{}?range={r}&interval={interval}", enc(symbol));
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(15))
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AlphaNotch")
+        .build()
+        .map_err(|e| e.to_string())?;
+    let resp = client.get(&url).send().await.map_err(|e| e.to_string())?;
+    if !resp.status().is_success() {
+        return Err(format!("HTTP {}", resp.status().as_u16()));
+    }
+    let v: Value = resp.json().await.map_err(|e| e.to_string())?;
+    let res = v["chart"]["result"].get(0).ok_or_else(|| v["chart"]["error"]["description"].as_str().unwrap_or("no data").to_string())?;
+    let meta = &res["meta"];
+    Ok(Detail {
+        candles: parse_candles(res),
+        offset: meta["gmtoffset"].as_i64().unwrap_or(0) as i32,
+        prev: meta["chartPreviousClose"].as_f64().or_else(|| meta["previousClose"].as_f64()).unwrap_or(0.0) as f32,
+        loading: false,
+        error: None,
+    })
+}
+
 fn parse(symbol: &str, v: &Value) -> Result<Quote, String> {
     let res = v["chart"]["result"].get(0).ok_or_else(|| v["chart"]["error"]["description"].as_str().unwrap_or("no data").to_string())?;
     let meta = &res["meta"];
@@ -191,9 +334,24 @@ fn parse(symbol: &str, v: &Value) -> Result<Quote, String> {
         price,
         prev,
         series,
+        candles: parse_candles(res),
+        offset: meta["gmtoffset"].as_i64().unwrap_or(0) as i32,
         currency: meta["currency"].as_str().unwrap_or("").to_string(),
         error: None,
     })
+}
+
+/// 12_345_678 → "12.3M", 845_000 → "845K".
+pub fn fmt_volume(v: f32) -> String {
+    if v >= 1.0e9 {
+        format!("{:.1}B", v / 1.0e9)
+    } else if v >= 1.0e6 {
+        format!("{:.1}M", v / 1.0e6)
+    } else if v >= 1.0e3 {
+        format!("{:.0}K", v / 1.0e3)
+    } else {
+        format!("{v:.0}")
+    }
 }
 
 /// 7234.56 → "7,234.56" (grouping with commas, two decimals under 1000 or for indices).
@@ -232,6 +390,50 @@ mod tests {
         assert_eq!(fmt_price(7234.56), "7,234.56");
         assert_eq!(fmt_price(9825.0), "9,825");
         assert_eq!(fmt_price(65.5), "65.50");
+    }
+
+    /// Manual: `cargo test -p coucou-lite candles_from_yahoo -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn candles_from_yahoo() {
+        let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        for sym in ["BBCA.JK", "^JKSE"] {
+            for (i, (label, _, _)) in RANGES.iter().enumerate() {
+                match rt.block_on(fetch_range(sym, i)) {
+                    Ok(d) => {
+                        let (first, last) = (d.candles.first(), d.candles.last());
+                        println!("{sym} {label}: {} candles, offset {}, prev {}, first {:?}, last {:?}", d.candles.len(), d.offset, d.prev, first.map(|c| (c.t, c.c)), last.map(|c| (c.t, c.c, c.v)));
+                    }
+                    Err(e) => println!("{sym} {label}: ERROR {e}"),
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn parses_candles_and_fills_what_is_missing() {
+        let v: Value = serde_json::from_str(r#"{"chart":{"result":[{"meta":{"regularMarketPrice":10.0,"gmtoffset":25200},
+            "timestamp":[100,200,300,400],
+            "indicators":{"quote":[{"open":[9.0,null,10.0,10.5],"high":[9.5,10.0,10.8,10.6],"low":[8.8,9.5,9.9,10.2],
+            "close":[9.4,9.9,null,10.4],"volume":[1000,null,300,500]}]}}]}}"#).unwrap();
+        let q = parse("X", &v).unwrap();
+        // The bar without a close is dropped.
+        assert_eq!(q.candles.len(), 3);
+        assert_eq!(q.offset, 25_200);
+        assert_eq!(q.candles[0], Candle { t: 100, o: 9.0, h: 9.5, l: 8.8, c: 9.4, v: 1000.0 });
+        // No open: the close stands in; no volume: zero.
+        assert_eq!((q.candles[1].o, q.candles[1].v), (9.9, 0.0));
+        // A high or low that the open or close would break is widened.
+        assert!(q.candles.iter().all(|c| c.h >= c.o.max(c.c) && c.l <= c.o.min(c.c)));
+    }
+
+    #[test]
+    fn volumes_and_ranges_read_well() {
+        assert_eq!(fmt_volume(845_000.0), "845K");
+        assert_eq!(fmt_volume(12_345_678.0), "12.3M");
+        assert_eq!(fmt_volume(2.5e9), "2.5B");
+        assert_eq!(RANGES.len(), 5);
+        assert!(RANGES.iter().all(|r| !r.1.is_empty() && !r.2.is_empty()));
     }
 
     #[test]

@@ -338,6 +338,12 @@ Kosong ~150 menit sebelum Rapat tim (14:00) — cocok untuk: Kirim laporan".into
             .collect();
     }, 1.5);
     scene!("stocks", Mode::Expanded, View::Stocks, |app| { crate::stocks::set_demo(); }, 1.5);
+    scene!("stocks_line", Mode::Expanded, View::Stocks, |app| { crate::stocks::set_demo(); app.st.settings.stocks_candles = false; }, 1.5);
+    scene!("stocks_hover", Mode::Expanded, View::Stocks, |app| {
+        crate::stocks::set_demo();
+        app.ui.input.mouse = (150.0, 190.0);
+        app.ui.input.inside = true;
+    }, 1.5);
     scene!("error", Mode::Expanded, View::Error, |app| {
         hook(&mut app, json!({"hook_event_name":"PreToolUse","cwd":"C:/p/coucou","tool_name":"Bash","tool_input":{"command":"cargo test"}}));
         hook(&mut app, json!({"hook_event_name":"StopFailure","cwd":"C:/p/coucou"}));

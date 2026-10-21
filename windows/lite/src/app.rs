@@ -229,6 +229,10 @@ pub struct App {
     pub stock_sel: usize,
     /// First visible watchlist row (the list scrolls with the wheel).
     pub stock_scroll: usize,
+    /// The chart: which range (index into `stocks::RANGES`) and where it is on screen, so the
+    /// pointer moving over it redraws the crosshair.
+    pub stock_range: usize,
+    pub chart_rect: crate::ui::Rect,
     pub stock_input: crate::textfield::TextField,
     pub tp_text: String,
     pub tp_lines: Vec<String>,
@@ -368,6 +372,8 @@ impl App {
             task_scroll: 0,
             stock_sel: 0,
             stock_scroll: 0,
+            stock_range: 0,
+            chart_rect: crate::ui::Rect::default(),
             stock_input: crate::textfield::TextField::new("Tambah ticker (mis. BBCA)", false),
             tp_text: String::new(),
             tp_lines: Vec::new(),
@@ -1114,7 +1120,8 @@ impl App {
         }
         self.on_cursor(x, y);
         // Nothing changes under the cursor (same widgets hovered as in the last frame): no redraw.
-        if self.st.mode == Mode::Expanded && self.ui.hover_signature() == self.last_hover_sig && !self.ui.input.down {
+        let over_chart = self.st.view == View::Stocks && self.chart_rect.contains(self.ui.input.mouse.0, self.ui.input.mouse.1);
+        if self.st.mode == Mode::Expanded && self.ui.hover_signature() == self.last_hover_sig && !self.ui.input.down && !over_chart {
             return;
         }
         if self.st.mode != Mode::Hidden {
