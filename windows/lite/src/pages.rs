@@ -303,8 +303,27 @@ impl App {
     /// The selected stock: name, price and change, the range tabs, the candle / line switch and
     /// the chart with its axes, volume, last-price tag and the crosshair under the pointer.
     fn draw_stock_detail(&mut self, g: &mut Gfx, r: Rect, q: &stocks::Quote) {
-        let col = updown(q.change());
         let x = r.x + 16.0;
+
+        // The data first: today's candles come with the quote, the other ranges are fetched.
+        // The change in the header is over the chosen range: from the close before it began
+        // (or the first bar's open) to the price now. Until a range has arrived it says so
+        // instead of showing today's figures under another tab.
+        let detail = if self.stock_range == 0 {
+            stocks::Detail { candles: q.candles.clone(), offset: q.offset, prev: q.prev, loading: false, error: None }
+        } else {
+            stocks::detail(&q.symbol, self.stock_range)
+        };
+        let ready = self.stock_range == 0 || !detail.candles.is_empty();
+        let base = if self.stock_range == 0 {
+            q.prev
+        } else if detail.prev > 0.0 {
+            detail.prev
+        } else {
+            detail.candles.first().map(|c| c.o).unwrap_or(0.0)
+        };
+        let (chg, pct) = if base.abs() > 1e-9 { (q.price - base, (q.price - base) / base * 100.0) } else { (0.0, 0.0) };
+        let col = if ready { updown(chg) } else { hex(pal::DIM) };
 
         text::draw(g, &stocks::display(&q.symbol), x, r.y + 18.0, Face::Bold, 14.0, hex(pal::INK), Align::Left);
         if !q.currency.is_empty() {
@@ -314,8 +333,17 @@ impl App {
         let price = stocks::fmt_price(q.price);
         let pw = text::measure(&price, Face::Bold, 22.0);
         text::draw(g, &price, x, r.y + 44.0, Face::Bold, 22.0, hex(pal::INK), Align::Left);
-        let sign = if q.change() >= 0.0 { "+" } else { "" };
-        text::draw(g, &format!("{sign}{}  {sign}{:.2}%", stocks::fmt_price(q.change()), q.pct()), x + pw + 10.0, r.y + 45.0, Face::Medium, 11.5, col, Align::Left);
+        let sign = if chg >= 0.0 { "+" } else { "" };
+        if ready {
+            let line = format!("{sign}{}  {sign}{pct:.2}%", stocks::fmt_price(chg));
+            let lw = text::measure(&line, Face::Medium, 11.5);
+            text::draw(g, &line, x + pw + 10.0, r.y + 45.0, Face::Medium, 11.5, col, Align::Left);
+            if self.stock_range > 0 {
+                text::draw(g, stocks::RANGES[self.stock_range].0, x + pw + 10.0 + lw + 6.0, r.y + 45.0, Face::Regular, 10.0, hex(pal::DIM3), Align::Left);
+            }
+        } else {
+            text::draw(g, "memuat…", x + pw + 10.0, r.y + 45.0, Face::Regular, 11.0, hex(pal::DIM3), Align::Left);
+        }
         // Top right: how old the price is. Every free feed for the Jakarta exchange is ten
         // minutes behind, and the header says so instead of letting it pass for live.
         let now_s = crate::util::unix_now() as i64;
@@ -325,9 +353,20 @@ impl App {
         } else if let Some(f) = fresh {
             text::draw(g, &f, r.x + r.w - 16.0, r.y + 18.0, Face::Regular, 9.5, hex(pal::DIM3), Align::Right);
         }
-        // The day as the exchange reports it: high, low, volume.
-        if q.day_high > 0.0 && q.day_low > 0.0 {
-            let line = format!("H {}   L {}   Vol {}", stocks::fmt_price(q.day_high), stocks::fmt_price(q.day_low), stocks::fmt_volume(q.volume));
+        // High, low and volume: the exchange's own figures for today, and over the chosen range
+        // for the others (from its bars).
+        let (hi, lo, vol) = if self.stock_range == 0 {
+            (q.day_high, q.day_low, q.volume)
+        } else {
+            let cs = &detail.candles;
+            (
+                cs.iter().map(|c| c.h).fold(0.0f32, f32::max),
+                cs.iter().map(|c| c.l).fold(f32::MAX, f32::min),
+                cs.iter().map(|c| c.v).sum::<f32>(),
+            )
+        };
+        if ready && hi > 0.0 && lo > 0.0 && lo < f32::MAX {
+            let line = format!("H {}   L {}   Vol {}", stocks::fmt_price(hi), stocks::fmt_price(lo), stocks::fmt_volume(vol));
             text::draw(g, &line, r.x + r.w - 16.0, r.y + 31.0, Face::Regular, 10.0, hex(pal::DIM), Align::Right);
         }
 
@@ -385,12 +424,6 @@ impl App {
             }
         }
 
-        // The data: today's candles come with the quote, the other ranges are fetched.
-        let detail = if self.stock_range == 0 {
-            stocks::Detail { candles: q.candles.clone(), offset: q.offset, prev: q.prev, loading: false, error: None }
-        } else {
-            stocks::detail(&q.symbol, self.stock_range)
-        };
         let area = Rect::new(r.x + 8.0, ty + 26.0, r.w - 16.0, (r.y + r.h - 10.0 - (ty + 26.0)).max(0.0));
         if detail.candles.len() < 2 {
             let msg = if detail.loading { "Memuat grafik…" } else if let Some(e) = &detail.error { e.as_str() } else { "Belum ada data" };

@@ -338,6 +338,7 @@ Kosong ~150 menit sebelum Rapat tim (14:00) — cocok untuk: Kirim laporan".into
             .collect();
     }, 1.5);
     scene!("stocks", Mode::Expanded, View::Stocks, |app| { crate::stocks::set_demo(); }, 1.5);
+    scene!("stocks_5d", Mode::Expanded, View::Stocks, |app| { crate::stocks::set_demo(); app.stock_range = 1; }, 1.5);
     scene!("stocks_line", Mode::Expanded, View::Stocks, |app| { crate::stocks::set_demo(); app.st.settings.stocks_candles = false; }, 1.5);
     scene!("stocks_hover", Mode::Expanded, View::Stocks, |app| {
         crate::stocks::set_demo();

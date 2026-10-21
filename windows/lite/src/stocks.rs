@@ -161,6 +161,24 @@ pub fn set_demo() {
     let mk = |sym: &str, price: f32, prev: f32, series: Vec<f32>| Quote {
         symbol: sym.into(), price, prev, candles: candles_of(&series), series, offset: 25_200, market_time: 1_792_000_000 + 59 * 300, day_high: price * 1.004, day_low: price * 0.994, volume: 293_260_200.0, currency: "IDR".into(), error: None,
     };
+    // Longer ranges too, falling, so the header's change over a range can be told from today's.
+    if let Ok(mut g) = DETAILS.lock() {
+        let map = g.get_or_insert_with(HashMap::new);
+        for sym in ["^JKSE", "BBCA.JK", "BBRI.JK", "BMRI.JK", "TLKM.JK"] {
+            for range in 1..RANGES.len() {
+                let n = [90usize, 150, 120, 54][range - 1];
+                let top = 7_800.0f32;
+                let candles: Vec<Candle> = (0..n)
+                    .map(|i| {
+                        let c = top - (top - 7_234.5) * i as f32 / n as f32 + (i as f32 * 0.9).sin() * 60.0;
+                        let o = c + (i as f32 * 1.7).sin() * 25.0;
+                        Candle { t: 1_790_000_000 + i as i64 * 3600, o, h: o.max(c) + 30.0, l: o.min(c) - 30.0, c, v: 1.0e6 + (i as f32 * 0.7).sin().abs() * 2.0e6 }
+                    })
+                    .collect();
+                map.insert((sym.to_string(), range), DetailEntry { at: Instant::now(), detail: Detail { candles, offset: 25_200, prev: top, loading: false, error: None } });
+            }
+        }
+    }
     if let Ok(mut s) = S.lock() {
         s.quotes = vec![
             mk("^JKSE", 7234.5, 7190.2, wave(7190.0, 18.0, 0.7)),
