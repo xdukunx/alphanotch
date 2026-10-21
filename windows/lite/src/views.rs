@@ -687,6 +687,38 @@ impl App {
         ui::card(g, v, wash, false);
         let x = v.x + 116.0;
         let w = v.w - 116.0 - 16.0;
+        if card.kind == RemKind::Prayer {
+            if let Some((where_, now_idx, rows)) = crate::prayer::parse_card(&card.body) {
+                let top = stack_top(v, &[22.0, 42.0, 30.0], 10.0);
+                t(g, &text::ellipsize(&card.title, Face::Medium, 15.0, w * 0.55), x, top + 11.0, Face::Medium, 15.0, hex(pal::INK));
+                text::draw(g, &where_, x + w, top + 12.0, Face::Regular, 11.0, hex(pal::DIM2), Align::Right);
+                let gap = 6.0;
+                let cw = (w - gap * 4.0) / 5.0;
+                for (i, (name, time)) in rows.iter().enumerate() {
+                    let r = Rect::new(x + i as f32 * (cw + gap), top + 22.0 + 10.0, cw, 42.0);
+                    let on = i == now_idx;
+                    g.fill_style(if on { rgba(45, 91, 255, 0.34) } else { rgba(255, 255, 255, 0.06) });
+                    g.fill_round_rect(r.x, r.y, r.w, r.h, 10.0);
+                    if on {
+                        g.stroke_style(rgba(120, 160, 255, 0.55));
+                        g.line_width(1.0);
+                        g.round_rect(r.x + 0.5, r.y + 0.5, r.w - 1.0, r.h - 1.0, 9.5);
+                        g.stroke();
+                    }
+                    text::draw(g, name, r.cx(), r.y + 13.0, Face::Regular, 10.5, hex(if on { pal::INK } else { pal::DIM2 }), Align::Center);
+                    text::draw(g, time, r.cx(), r.y + 29.0, Face::Bold, 15.0, hex(if on { pal::INK } else { "#C5C8CD" }), Align::Center);
+                }
+                let by = top + 22.0 + 10.0 + 42.0 + 10.0;
+                let (ok, ow) = self.ui.button(g, x, by, "Oke", true, None);
+                let (later, _) = self.ui.button(g, x + ow + 8.0, by, "Ingatkan 10 menit", false, None);
+                if ok {
+                    self.dismiss_reminder(false);
+                } else if later {
+                    self.dismiss_reminder(true);
+                }
+                return;
+            }
+        }
         // Suggestions arrive one per line; everything else is a paragraph.
         let body: Vec<String> = if card.body.contains('\n') {
             card.body

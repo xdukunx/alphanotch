@@ -391,7 +391,7 @@ impl App {
         } else {
             stocks::detail(&q.symbol, self.stock_range)
         };
-        let area = Rect::new(r.x + 8.0, ty + 26.0, r.w - 16.0, r.y + r.h - 10.0 - (ty + 26.0));
+        let area = Rect::new(r.x + 8.0, ty + 26.0, r.w - 16.0, (r.y + r.h - 10.0 - (ty + 26.0)).max(0.0));
         if detail.candles.len() < 2 {
             let msg = if detail.loading { "Memuat grafik…" } else if let Some(e) = &detail.error { e.as_str() } else { "Belum ada data" };
             text::draw(g, msg, area.cx(), area.cy(), Face::Regular, 11.0, hex(pal::DIM3), Align::Center);
@@ -582,6 +582,11 @@ fn bar_time(t: i64, offset: i32, range: usize) -> String {
     }
 }
 
+/// `f32::clamp` panics when min > max, which a small box does while the island is still growing.
+fn safe_clamp(x: f32, lo: f32, hi: f32) -> f32 {
+    x.max(lo).min(hi.max(lo))
+}
+
 /// Where each of `n` slots is, left to right, in `plot` (a slot is one bar wide).
 fn slot_x(plot: Rect, n: usize, i: usize) -> f32 {
     plot.x + plot.w * (i as f32 + 0.5) / n.max(1) as f32
@@ -593,6 +598,10 @@ fn slot_x(plot: Rect, n: usize, i: usize) -> f32 {
 fn draw_candles(g: &mut Gfx, area: Rect, d: &stocks::Detail, prev: Option<f32>, candles: bool, up_col: Color, range: usize, mouse: Option<(f32, f32)>) {
     let cs = &d.candles;
     let n = cs.len();
+    // Mid-animation the box can be a sliver: nothing sensible fits in it yet.
+    if n < 2 || area.h < 70.0 || area.w < 120.0 {
+        return;
+    }
     // Today: the slots of the whole session (about 84 five-minute bars), so a morning chart
     // fills from the left and leaves the afternoon empty, as on TradingView.
     let slots = if range == 0 { n.max(84) } else { n };
@@ -621,13 +630,13 @@ fn draw_candles(g: &mut Gfx, area: Rect, d: &stocks::Detail, prev: Option<f32>, 
     let ypx = |p: f32| plot.y + plot.h * (1.0 - (p - lo) / (hi - lo));
 
     // Grid and the price axis (a label the last-price tag would sit on is left out).
-    let tag_y = ypx(cs[n - 1].c).clamp(plot.y + 6.0, plot.y + plot.h - 6.0);
+    let tag_y = safe_clamp(ypx(cs[n - 1].c), plot.y + 6.0, plot.y + plot.h - 6.0);
     for i in 0..=4 {
         let y = plot.y + plot.h * i as f32 / 4.0;
         g.fill_style(rgba(255, 255, 255, 0.05));
         g.fill_rect(plot.x, y, plot.w, 1.0);
         let p = hi - (hi - lo) * i as f32 / 4.0;
-        let ly = y.clamp(plot.y + 5.0, plot.y + plot.h - 5.0);
+        let ly = safe_clamp(y, plot.y + 5.0, plot.y + plot.h - 5.0);
         if (ly - tag_y).abs() > 10.0 {
             text::draw(g, &stocks::fmt_price(p), plot.x + plot.w + 6.0, ly, Face::Regular, 9.0, hex(pal::DIM3), Align::Left);
         }
@@ -693,7 +702,7 @@ fn draw_candles(g: &mut Gfx, area: Rect, d: &stocks::Detail, prev: Option<f32>, 
 
     // The last price: a dotted line to the axis and a tag on it, in the colour of the day.
     let last = cs[n - 1].c;
-    let ly = ypx(last).clamp(plot.y + 6.0, plot.y + plot.h - 6.0);
+    let ly = safe_clamp(ypx(last), plot.y + 6.0, plot.y + plot.h - 6.0);
     g.fill_style(crate::gfx::with_alpha(up_col, 0.5));
     let mut x = slot_x(plot, slots, n - 1);
     while x < plot.x + plot.w {
@@ -775,4 +784,34 @@ fn spark(g: &mut Gfx, r: Rect, series: &[f32], col: Color) {
         g.line_to(p.0, p.1);
     }
     g.stroke();
+}
+
+#[cfg(test)]
+mod chart_tests {
+    use super::*;
+
+    #[test]
+    fn a_clamp_with_inverted_bounds_does_not_panic() {
+        // The crash: min = 136, max = 134 while the island was still growing.
+        assert_eq!(safe_clamp(120.0, 136.0, 134.0), 136.0);
+        assert_eq!(safe_clamp(500.0, 136.0, 134.0), 136.0);
+        assert_eq!(safe_clamp(10.0, 0.0, 20.0), 10.0);
+        assert_eq!(safe_clamp(30.0, 0.0, 20.0), 20.0);
+    }
+
+    #[test]
+    fn the_chart_survives_every_box_size_the_animation_passes_through() {
+        let cs: Vec<stocks::Candle> = (0..90)
+            .map(|i| stocks::Candle { t: 1_792_000_000 + i * 300, o: 100.0 + i as f32, h: 103.0 + i as f32, l: 98.0 + i as f32, c: 101.0 + i as f32, v: 1000.0 })
+            .collect();
+        let d = stocks::Detail { candles: cs, offset: 25_200, prev: 100.0, loading: false, error: None };
+        let mut g = Gfx::new(600, 400, 1.0);
+        for h in [0.0f32, 5.0, 20.0, 60.0, 69.0, 70.0, 71.0, 90.0, 120.0, 200.0] {
+            for w in [0.0f32, 60.0, 119.0, 120.0, 300.0] {
+                for candles in [true, false] {
+                    draw_candles(&mut g, Rect::new(10.0, 130.0, w, h), &d, Some(100.0), candles, hex(GREEN), 0, Some((50.0, 140.0)));
+                }
+            }
+        }
+    }
 }

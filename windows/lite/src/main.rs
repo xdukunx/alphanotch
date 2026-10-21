@@ -65,6 +65,57 @@ use windows::Win32::UI::WindowsAndMessaging::{
     DispatchMessageW, FindWindowW, GetMessageW, PostMessageW, TranslateMessage, MSG,
 };
 
+/// After a panic the process is about to abort: ask a tiny detached shell to start the island
+/// again in a couple of seconds (the single-instance lock goes with the dying process). Three
+/// crashes within two minutes stop the loop, so a bug on start-up cannot spin forever.
+fn relaunch_after_crash() {
+    use std::os::windows::process::CommandExt;
+    // The test hook below must not carry over to the island that is started again.
+    std::env::remove_var("COUCOU_TEST_PANIC");
+    let Ok(exe) = std::env::current_exe() else { return };
+    let file = settings::local_dir().join("restarts.txt");
+    let now = util::unix_now();
+    let mut recent: Vec<f64> = std::fs::read_to_string(&file)
+        .unwrap_or_default()
+        .split_whitespace()
+        .filter_map(|t| t.parse::<f64>().ok())
+        .filter(|t| now - t < 120.0)
+        .collect();
+    if recent.len() >= 3 {
+        log::line("not restarting: three crashes in two minutes");
+        return;
+    }
+    recent.push(now);
+    let _ = std::fs::write(&file, recent.iter().map(|t| format!("{t:.0}")).collect::<Vec<_>>().join(" "));
+    // The new copy waits for this one to be gone (`--after <pid>`), so the single-instance lock
+    // is free when it starts. No shell and no quoting involved.
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    let _ = std::process::Command::new(&exe)
+        .arg("--after")
+        .arg(std::process::id().to_string())
+        .creation_flags(CREATE_NO_WINDOW)
+        .spawn();
+}
+
+/// `--after <pid>`: wait (up to 15 s) for that process to exit before going on.
+fn wait_for_previous_instance() {
+    use windows::Win32::Foundation::CloseHandle;
+    use windows::Win32::System::Threading::{OpenProcess, WaitForSingleObject, PROCESS_SYNCHRONIZE};
+    let mut args = std::env::args().skip(1);
+    while let Some(a) = args.next() {
+        if a == "--after" {
+            if let Some(pid) = args.next().and_then(|p| p.parse::<u32>().ok()) {
+                unsafe {
+                    if let Ok(h) = OpenProcess(PROCESS_SYNCHRONIZE, false, pid) {
+                        WaitForSingleObject(h, 15_000);
+                        let _ = CloseHandle(h);
+                    }
+                }
+            }
+        }
+    }
+}
+
 fn main() {
     #[cfg(feature = "snapshot")]
     {
@@ -86,9 +137,20 @@ fn main() {
     // A panic aborts (release profile), so say why in the log before it does.
     std::panic::set_hook(Box::new(|info| {
         log::line(format!("PANIC: {info}"));
+        relaunch_after_crash();
     }));
 
+    wait_for_previous_instance();
     platform::init_dpi();
+
+    // Test hook: `COUCOU_TEST_PANIC=1` crashes five seconds after the start, to check that the
+    // island comes back by itself.
+    if std::env::var_os("COUCOU_TEST_PANIC").is_some() {
+        std::thread::spawn(|| {
+            std::thread::sleep(std::time::Duration::from_secs(5));
+            panic!("test panic requested by COUCOU_TEST_PANIC");
+        });
+    }
 
     // One island per user: a second launch just asks the first to open.
     unsafe {

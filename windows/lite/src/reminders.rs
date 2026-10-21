@@ -141,6 +141,14 @@ impl App {
     }
 
     pub fn reminder_tick(&mut self) {
+        // The idle bar names the next prayer; look it up here, twice a minute, not per frame.
+        let next = if self.st.settings.prayer_alarm { crate::prayer::next_label(util::unix_now()) } else { None };
+        if next != self.prayer_next {
+            self.prayer_next = next;
+            if self.st.mode == Mode::Compact && self.overlay.is_none() {
+                self.ensure_running();
+            }
+        }
         self.clock_tick();
         // Never over a decision somebody has to make, and not while one is already up.
         if self.st.paused || self.st.pending_approval.is_some() || self.st.pending_question.is_some() {

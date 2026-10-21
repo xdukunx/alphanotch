@@ -362,6 +362,10 @@ impl App {
         let mid = (x0 + x1) / 2.0;
         let cy = ih / 2.0;
         let tw = text::measure(&label, Face::Medium, 12.5);
+        // With prayer times on, the next one follows the clock; the pair stays centred.
+        let next = self.prayer_next.clone().filter(|_| self.st.settings.prayer_alarm);
+        let nw = next.as_ref().map(|n| text::measure(n, Face::Regular, 11.0) + 18.0).unwrap_or(0.0);
+        let mid = mid - nw / 2.0;
         let ring_cx = mid - tw / 2.0 - 11.0;
         g.line_width(1.8);
         g.line_cap_round();
@@ -376,5 +380,11 @@ impl App {
         g.arc(ring_cx, cy, 5.2, a0, a0 + frac.max(0.02) * std::f32::consts::TAU, false);
         g.stroke();
         text::draw(g, &label, mid + 4.0, cy, Face::Medium, 12.5, hex(pal::INK), Align::Center);
+        if let Some(n) = next {
+            let sx = mid + 4.0 + tw / 2.0 + 9.0;
+            g.fill_style(rgba(255, 255, 255, 0.22));
+            g.fill_rect(sx, cy - 5.0, 1.0, 10.0);
+            text::draw(g, &n, sx + 8.0, cy, Face::Regular, 11.0, hex(pal::DIM), Align::Left);
+        }
     }
 }

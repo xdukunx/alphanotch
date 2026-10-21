@@ -41,7 +41,7 @@ const SIDEBAR_W: f32 = 200.0;
 const SECTIONS: [(&str, &str, Icon); 7] = [
     ("Umum", "Suara, perilaku island, layar, dan tampilan.", Icon::Gear),
     ("Fitur", "Pilih tab dan fitur yang tampil di island. Yang dimatikan tidak muncul sama sekali.", Icon::Star),
-    ("Pengingat", "Minum, peregangan, istirahat mata, target air, dan saran dari Mochi.", Icon::Timer),
+    ("Pengingat", "Minum, peregangan, istirahat mata, jadwal shalat, target air, dan saran dari Mochi.", Icon::Timer),
     ("Claude Code", "Hook untuk sesi, izin, dan pertanyaan Claude Code.", Icon::Lines),
     ("Chat AI", "Kunci API dan model untuk chat di island.", Icon::Bubble),
     ("Integrasi", "Resend, n8n, Vercel, GitHub, Notion, Cal.com, dan Stripe.", Icon::Stack),
@@ -1060,7 +1060,8 @@ impl Win {
         Self::card(g, m, y0, cw, h + 2.0 * pad);
         let mut y = y0 + pad + 4.0;
 
-        text::draw(g, "Alarm shalat", ix, y + 11.0, Face::Medium, 13.0, hex("#D5D8DE"), Align::Left);
+        text::draw(g, "Jadwal shalat", ix, y + 11.0, Face::Medium, 13.0, hex("#D5D8DE"), Align::Left);
+        text::draw(g, "kartu berisi 5 waktu saat tiba, dan waktu berikutnya di bar", ix + 110.0, y + 11.5, Face::Regular, 11.0, hex(pal::DIM3), Align::Left);
         let on = self.settings.prayer_alarm;
         if self.ui.switch(g, "prayer-on", ix + iw - 36.0, y + 2.0, on) {
             self.settings.prayer_alarm = !on;
@@ -1119,7 +1120,7 @@ impl Win {
         }
 
         let mut y = y0 + h + 2.0 * pad + 12.0;
-        y += Self::para(g, m + 4.0, y, cw - 8.0, "Waktu dihitung di komputer ini dengan metode Kemenag RI (Subuh 20°, Isya 18°, Ashar mazhab Syafi'i, ihtiyat 2 menit) dari lokasi yang dipakai halaman Cuaca. Ini perkiraan: bandingkan dengan jadwal masjid atau Kemenag setempat. Tidak ada suara adzan, hanya kartu di island.");
+        y += Self::para(g, m + 4.0, y, cw - 8.0, "Waktu dihitung di komputer ini dengan metode Kemenag RI (Subuh 20°, Isya 18°, Ashar mazhab Syafi'i, ihtiyat 2 menit) dari lokasi yang dipakai halaman Cuaca. Ini perkiraan: bandingkan dengan jadwal masjid atau Kemenag setempat. Tanpa suara adzan: hanya kartu jadwal yang turun seperti pengingat minum, dan waktu berikutnya di bar saat island diam.");
         y + 16.0
     }
 

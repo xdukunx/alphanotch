@@ -286,6 +286,8 @@ pub struct App {
     pub reminder_task: Option<String>,
     /// A prayer card put off for ten minutes: when to show it again, and the card.
     pub prayer_again: Option<(f64, crate::reminders::ReminderCard)>,
+    /// "Dzuhur 11:16", refreshed every half minute, for the idle bar.
+    pub prayer_next: Option<String>,
     /// The lyrics panel of the dashboard: open or not, and its smooth scroll position.
     pub lyrics_open: bool,
     pub lyrics_scroll: f32,
@@ -416,6 +418,7 @@ impl App {
             net_state: None,
             reminder_task: None,
             prayer_again: None,
+            prayer_next: None,
             lyrics_open: false,
             lyrics_scroll: 0.0,
             lyrics_layout: None,
