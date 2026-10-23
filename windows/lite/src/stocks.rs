@@ -190,6 +190,14 @@ pub fn set_demo() {
     }
 }
 
+/// Snapshot builds only: one more row, for a code the data source does not know.
+#[cfg(feature = "snapshot")]
+pub fn set_demo_missing() {
+    if let Ok(mut s) = S.lock() {
+        s.quotes.push(Quote { symbol: "ZZZZ.JK".into(), price: 0.0, prev: 0.0, series: Vec::new(), candles: Vec::new(), offset: 0, market_time: 0, day_high: 0.0, day_low: 0.0, volume: 0.0, currency: String::new(), error: Some("HTTP 404".into()) });
+    }
+}
+
 /// The UI calls this every frame the Stocks page is on screen: it keeps the fast poll going.
 pub fn touch() {
     if let Ok(mut s) = S.lock() {
@@ -214,7 +222,14 @@ pub fn set_symbols(list: &[String]) {
 
 /// "bbca" → "BBCA.JK" (Jakarta); "^jkse" stays an index; anything with a dot is left alone.
 pub fn normalize(raw: &str) -> Option<String> {
-    let t = raw.trim().to_uppercase();
+    let mut t = raw.trim().to_uppercase();
+    // "$AAPL" means exactly AAPL (a US or other ticker), without ".JK" added.
+    if let Some(rest) = t.strip_prefix('$') {
+        let rest = rest.trim().to_string();
+        let ok = !rest.is_empty() && rest.len() <= 16 && rest.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '^' | '.' | '-' | '='));
+        return ok.then_some(rest);
+    }
+    t = t.trim().to_string();
     if t.is_empty() || t.len() > 16 || !t.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '^' | '.' | '-' | '=')) {
         return None;
     }
@@ -225,6 +240,12 @@ pub fn normalize(raw: &str) -> Option<String> {
         return Some(t);
     }
     Some(format!("{t}.JK"))
+}
+
+/// The data source's way of saying it does not know the symbol (a 404, or its own wording).
+pub fn is_not_found(error: &str) -> bool {
+    let e = error.to_lowercase();
+    e.contains("404") || e.contains("not found") || e.contains("no data") || e.contains("delisted") || e.contains("no price")
 }
 
 /// What the list shows for a symbol.
@@ -436,6 +457,19 @@ mod tests {
         assert_eq!(normalize("^gspc").as_deref(), Some("^GSPC"));
         assert_eq!(normalize("AAPL.US").as_deref(), Some("AAPL.US"));
         assert_eq!(normalize("bad ticker!"), None);
+        // "$" leaves the code as typed: a US ticker, not a Jakarta one.
+        assert_eq!(normalize("$aapl").as_deref(), Some("AAPL"));
+        assert_eq!(normalize("$ msft").as_deref(), Some("MSFT"));
+        assert_eq!(normalize("$"), None);
+    }
+
+    #[test]
+    fn a_missing_ticker_is_recognised_by_what_the_source_says() {
+        assert!(is_not_found("HTTP 404"));
+        assert!(is_not_found("No data found, symbol may be delisted"));
+        assert!(is_not_found("no price"));
+        assert!(!is_not_found("HTTP 429"));
+        assert!(!is_not_found("error sending request: timed out"));
     }
 
     #[test]

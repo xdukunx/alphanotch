@@ -339,6 +339,12 @@ Kosong ~150 menit sebelum Rapat tim (14:00) — cocok untuk: Kirim laporan".into
     }, 1.5);
     scene!("stocks", Mode::Expanded, View::Stocks, |app| { crate::stocks::set_demo(); }, 1.5);
     scene!("stocks_5d", Mode::Expanded, View::Stocks, |app| { crate::stocks::set_demo(); app.stock_range = 1; }, 1.5);
+    scene!("stocks_missing", Mode::Expanded, View::Stocks, |app| {
+        crate::stocks::set_demo();
+        crate::stocks::set_demo_missing();
+        app.st.settings.stocks = vec!["ZZZZ.JK".into(), "^JKSE".into(), "BBCA.JK".into(), "BBRI.JK".into(), "BMRI.JK".into()];
+        app.stock_sel = 0;
+    }, 1.5);
     scene!("stocks_line", Mode::Expanded, View::Stocks, |app| { crate::stocks::set_demo(); app.st.settings.stocks_candles = false; }, 1.5);
     scene!("stocks_hover", Mode::Expanded, View::Stocks, |app| {
         crate::stocks::set_demo();

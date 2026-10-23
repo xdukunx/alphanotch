@@ -196,8 +196,16 @@ impl App {
             Some(q) if q.error.is_none() || q.price > 0.0 => self.draw_stock_detail(g, left, &q),
             Some(q) => {
                 text::draw(g, &stocks::display(&q.symbol), left.x + 16.0, left.y + 22.0, Face::Bold, 15.0, hex(pal::INK), Align::Left);
-                text::draw(g, "Tidak bisa memuat data", left.cx(), left.cy(), Face::Medium, 13.0, hex(pal::DIM), Align::Center);
-                text::draw(g, q.error.as_deref().unwrap_or(""), left.cx(), left.cy() + 20.0, Face::Regular, 10.5, hex(pal::DIM3), Align::Center);
+                let missing = q.error.as_deref().map(stocks::is_not_found).unwrap_or(false);
+                text::draw(g, if missing { "Kode tidak ditemukan" } else { "Tidak bisa memuat data" }, left.cx(), left.cy() - 6.0, Face::Medium, 13.0, hex(pal::INK), Align::Center);
+                let lines: Vec<&str> = if missing {
+                    vec!["Hapus dengan tombol × di daftar.", "Saham bursa lain: tulis $KODE, mis. $AAPL."]
+                } else {
+                    vec![q.error.as_deref().unwrap_or("")]
+                };
+                for (k, l) in lines.iter().enumerate() {
+                    text::draw(g, &text::ellipsize(l, Face::Regular, 10.5, left.w - 40.0), left.cx(), left.cy() + 16.0 + k as f32 * 15.0, Face::Regular, 10.5, hex(pal::DIM3), Align::Center);
+                }
             }
             None => {
                 text::draw(g, if order.is_empty() { "Watchlist kosong. Tambah ticker di kanan." } else { "Memuat harga…" }, left.cx(), left.cy(), Face::Medium, 13.0, hex(pal::DIM), Align::Center);
@@ -240,17 +248,29 @@ impl App {
                 text::draw(g, &stocks::fmt_price(q.price), row.x + 12.0, l2, Face::Regular, 10.5, hex(pal::DIM), Align::Left);
                 spark(g, Rect::new(row.x + row.w - 62.0, row.y + 20.0, 52.0, 13.0), &q.series, col);
                 if hover {
-                    let x_r = Rect::new(row.x + row.w - 24.0, row.y + 2.0, 22.0, 20.0);
-                    let (xc, xh, _) = self.ui.click_region(id_of(&format!("stk-del{i}"), 99), x_r);
-                    text::draw(g, "×", x_r.cx(), x_r.cy(), Face::Bold, 14.0, if xh { hex(RED) } else { hex(pal::DIM) }, Align::Center);
-                    if xc {
+                    if self.stock_remove_button(g, i, row) {
                         act = Some((i, true));
                     }
                 } else {
                     text::draw(g, &format!("{}{:.2}%", if q.pct() >= 0.0 { "+" } else { "" }, q.pct()), row.x + row.w - 8.0, l1, Face::Medium, 11.0, col, Align::Right);
                 }
             } else {
-                text::draw(g, "…", row.x + row.w - 10.0, l1, Face::Regular, 11.5, hex(pal::DIM3), Align::Right);
+                // No data: still loading, or the code is not one the data source knows. A code
+                // that failed can always be removed, with the button in plain sight.
+                let failed = q.and_then(|q| q.error.clone());
+                let (label, colour) = match &failed {
+                    Some(e) if stocks::is_not_found(e) => ("tidak ditemukan", hex(pal::RED_TEXT)),
+                    Some(_) => ("gagal memuat", hex(pal::AMBER)),
+                    None => ("memuat…", hex(pal::DIM3)),
+                };
+                text::draw(g, label, row.x + 12.0, l2, Face::Regular, 10.5, colour, Align::Left);
+                if failed.is_some() || hover {
+                    if self.stock_remove_button(g, i, row) {
+                        act = Some((i, true));
+                    }
+                } else {
+                    text::draw(g, "…", row.x + row.w - 10.0, l1, Face::Regular, 11.5, hex(pal::DIM3), Align::Right);
+                }
             }
             if clicked && act.is_none() {
                 act = Some((i, false));
@@ -298,6 +318,18 @@ impl App {
                 self.stock_sel = i;
             }
         }
+    }
+
+    /// The "×" at the right end of a watchlist row. True when it was clicked.
+    fn stock_remove_button(&mut self, g: &mut Gfx, i: usize, row: Rect) -> bool {
+        let x_r = Rect::new(row.x + row.w - 26.0, row.y + 2.0, 24.0, 22.0);
+        let (clicked, hover, _) = self.ui.click_region(id_of(&format!("stk-del{i}"), 99), x_r);
+        if hover {
+            g.fill_style(rgba(244, 80, 94, 0.18));
+            g.fill_round_rect(x_r.x + 2.0, x_r.y + 1.0, x_r.w - 4.0, x_r.h - 2.0, 8.0);
+        }
+        text::draw(g, "×", x_r.cx(), x_r.cy(), Face::Bold, 15.0, if hover { hex(RED) } else { hex(pal::DIM) }, Align::Center);
+        clicked
     }
 
     /// The selected stock: name, price and change, the range tabs, the candle / line switch and

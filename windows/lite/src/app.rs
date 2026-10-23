@@ -379,7 +379,7 @@ impl App {
             stock_scroll: 0,
             stock_range: 0,
             chart_rect: crate::ui::Rect::default(),
-            stock_input: crate::textfield::TextField::new("Tambah ticker (mis. BBCA)", false),
+            stock_input: crate::textfield::TextField::new("Tambah kode (BBCA, $AAPL)", false),
             tp_text: String::new(),
             tp_lines: Vec::new(),
             tp_scroll: 0.0,
