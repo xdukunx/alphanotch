@@ -170,6 +170,9 @@ fn main() {
     activity::start();
     gtasks::start();
     let loaded = settings::load();
+    // The registry follows the setting on every start, not only when the switch is clicked: an
+    // entry that went missing (a reinstall, a clean-up tool) would otherwise stay missing.
+    settings::set_autostart(loaded.autostart);
     weather::start(&loaded.weather_city);
     stocks::start(&loaded.stocks);
     let handle = ctx::AppHandle::new(loaded);
