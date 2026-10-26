@@ -662,6 +662,36 @@ fn slot_x(plot: Rect, n: usize, i: usize) -> f32 {
 /// dashed line, and a crosshair with a tooltip when the pointer is over it.
 fn draw_candles(g: &mut Gfx, area: Rect, d: &stocks::Detail, prev: Option<f32>, candles: bool, up_col: Color, range: usize, mouse: Option<(f32, f32)>) {
     let cs = &d.candles;
+    if cs.len() < 2 || area.h < 70.0 || area.w < 120.0 {
+        return;
+    }
+    // Everything but the crosshair is the same from frame to frame: paint it once into a bitmap
+    // and blit it (the page redraws at the frame rate, the chart changes once a minute).
+    let bits = |v: f32| f32::from_bits(v.to_bits());
+    let sum = cs.iter().fold(0.0f32, |a, c| a + c.o * 1.3 + c.h * 1.7 + c.l * 1.9 + c.c * 2.3 + c.v * 0.001);
+    let key = crate::gfx::layer_key(&[
+        bits(sum),
+        cs.len() as f32,
+        f32::from_bits(cs[0].t as u32),
+        f32::from_bits(cs[cs.len() - 1].t as u32),
+        f32::from_bits(d.offset as u32),
+        range as f32,
+        candles as u8 as f32,
+        prev.unwrap_or(-1.0),
+        up_col.red(), up_col.green(), up_col.blue(),
+        area.w, area.h,
+    ]);
+    g.cached_layer(key, area.w, area.h, area.x, area.y, |l| {
+        paint_chart(l, Rect::new(0.0, 0.0, area.w, area.h), d, prev, candles, up_col, range, None, 0)
+    });
+    if mouse.is_some() {
+        paint_chart(g, area, d, prev, candles, up_col, range, mouse, 1);
+    }
+}
+
+/// `pass` 0 paints the static chart, 1 the crosshair and tooltip.
+fn paint_chart(g: &mut Gfx, area: Rect, d: &stocks::Detail, prev: Option<f32>, candles: bool, up_col: Color, range: usize, mouse: Option<(f32, f32)>, pass: u8) {
+    let cs = &d.candles;
     let n = cs.len();
     // Mid-animation the box can be a sliver: nothing sensible fits in it yet.
     if n < 2 || area.h < 70.0 || area.w < 120.0 {
@@ -694,106 +724,112 @@ fn draw_candles(g: &mut Gfx, area: Rect, d: &stocks::Detail, prev: Option<f32>, 
     let (lo, hi) = (lo - pad, hi + pad);
     let ypx = |p: f32| plot.y + plot.h * (1.0 - (p - lo) / (hi - lo));
 
-    // Grid and the price axis (a label the last-price tag would sit on is left out).
-    let tag_y = safe_clamp(ypx(cs[n - 1].c), plot.y + 6.0, plot.y + plot.h - 6.0);
-    for i in 0..=4 {
-        let y = plot.y + plot.h * i as f32 / 4.0;
-        g.fill_style(rgba(255, 255, 255, 0.05));
-        g.fill_rect(plot.x, y, plot.w, 1.0);
-        let p = hi - (hi - lo) * i as f32 / 4.0;
-        let ly = safe_clamp(y, plot.y + 5.0, plot.y + plot.h - 5.0);
-        if (ly - tag_y).abs() > 10.0 {
-            text::draw(g, &stocks::fmt_price(p), plot.x + plot.w + 6.0, ly, Face::Regular, 9.0, hex(pal::DIM3), Align::Left);
-        }
-    }
-    // The previous close, dashed.
-    if let Some(p) = prev {
-        let y = ypx(p);
-        g.fill_style(rgba(255, 255, 255, 0.22));
-        let mut x = plot.x;
-        while x < plot.x + plot.w {
-            g.fill_rect(x, y, 3.0, 1.0);
-            x += 7.0;
-        }
-    }
-
-    // The bars: candles, or a line over a soft fill.
-    let slot = plot.w / slots as f32;
     let (green, red) = (hex(GREEN), hex(RED));
-    if candles {
-        let bw = (slot * 0.64).clamp(1.0, 9.0);
-        for (i, c) in cs.iter().enumerate() {
-            let cx = slot_x(plot, slots, i).floor() + 0.5;
-            let col = if c.c >= c.o { green } else { red };
-            g.fill_style(col);
-            g.fill_rect(cx - 0.5, ypx(c.h), 1.0, (ypx(c.l) - ypx(c.h)).max(1.0));
-            let (top, bot) = (ypx(c.o.max(c.c)), ypx(c.o.min(c.c)));
-            g.fill_rect((cx - bw / 2.0).floor(), top, bw.floor().max(1.0), (bot - top).max(1.0));
+    if pass == 0 {
+        // Grid and the price axis (a label the last-price tag would sit on is left out).
+        let tag_y = safe_clamp(ypx(cs[n - 1].c), plot.y + 6.0, plot.y + plot.h - 6.0);
+        for i in 0..=4 {
+            let y = plot.y + plot.h * i as f32 / 4.0;
+            g.fill_style(rgba(255, 255, 255, 0.05));
+            g.fill_rect(plot.x, y, plot.w, 1.0);
+            let p = hi - (hi - lo) * i as f32 / 4.0;
+            let ly = safe_clamp(y, plot.y + 5.0, plot.y + plot.h - 5.0);
+            if (ly - tag_y).abs() > 10.0 {
+                text::draw(g, &stocks::fmt_price(p), plot.x + plot.w + 6.0, ly, Face::Regular, 9.0, hex(pal::DIM3), Align::Left);
+            }
         }
-    } else {
-        let pts: Vec<(f32, f32)> = cs.iter().enumerate().map(|(i, c)| (slot_x(plot, slots, i), ypx(c.c))).collect();
-        let fill = g.linear(0.0, plot.y, 0.0, plot.y + plot.h, &[(0.0, crate::gfx::with_alpha(up_col, 0.26)), (1.0, crate::gfx::with_alpha(up_col, 0.0))]);
-        g.fill_style(fill);
-        g.begin_path();
-        g.move_to(pts[0].0, plot.y + plot.h);
-        for p in &pts {
-            g.line_to(p.0, p.1);
+        // The previous close, dashed.
+        if let Some(p) = prev {
+            let y = ypx(p);
+            g.fill_style(rgba(255, 255, 255, 0.22));
+            let mut x = plot.x;
+            while x < plot.x + plot.w {
+                g.fill_rect(x, y, 3.0, 1.0);
+                x += 7.0;
+            }
         }
-        g.line_to(pts[n - 1].0, plot.y + plot.h);
-        g.close_path();
-        g.fill();
-        g.stroke_style(up_col);
-        g.line_width(1.6);
-        g.line_join_round();
-        g.begin_path();
-        g.move_to(pts[0].0, pts[0].1);
-        for p in pts.iter().skip(1) {
-            g.line_to(p.0, p.1);
-        }
-        g.stroke();
-    }
 
-    // Volume under the price.
-    let vmax = cs.iter().map(|c| c.v).fold(0.0f32, f32::max);
-    if vmax > 0.0 {
-        let bw = (slot * 0.64).clamp(1.0, 9.0);
-        for (i, c) in cs.iter().enumerate() {
-            let h = (vol.h * (c.v / vmax)).max(if c.v > 0.0 { 1.0 } else { 0.0 });
-            let col = if c.c >= c.o { green } else { red };
-            g.fill_style(crate::gfx::with_alpha(col, 0.42));
-            g.fill_rect((slot_x(plot, slots, i) - bw / 2.0).floor(), vol.y + vol.h - h, bw.floor().max(1.0), h);
+        // The bars: candles, or a line over a soft fill.
+        let slot = plot.w / slots as f32;
+        if candles {
+            let bw = (slot * 0.64).clamp(1.0, 9.0);
+            for (i, c) in cs.iter().enumerate() {
+                let cx = slot_x(plot, slots, i).floor() + 0.5;
+                let col = if c.c >= c.o { green } else { red };
+                g.fill_style(col);
+                g.fill_rect(cx - 0.5, ypx(c.h), 1.0, (ypx(c.l) - ypx(c.h)).max(1.0));
+                let (top, bot) = (ypx(c.o.max(c.c)), ypx(c.o.min(c.c)));
+                g.fill_rect((cx - bw / 2.0).floor(), top, bw.floor().max(1.0), (bot - top).max(1.0));
+            }
+        } else {
+            let pts: Vec<(f32, f32)> = cs.iter().enumerate().map(|(i, c)| (slot_x(plot, slots, i), ypx(c.c))).collect();
+            let fill = g.linear(0.0, plot.y, 0.0, plot.y + plot.h, &[(0.0, crate::gfx::with_alpha(up_col, 0.26)), (1.0, crate::gfx::with_alpha(up_col, 0.0))]);
+            g.fill_style(fill);
+            g.begin_path();
+            g.move_to(pts[0].0, plot.y + plot.h);
+            for p in &pts {
+                g.line_to(p.0, p.1);
+            }
+            g.line_to(pts[n - 1].0, plot.y + plot.h);
+            g.close_path();
+            g.fill();
+            g.stroke_style(up_col);
+            g.line_width(1.6);
+            g.line_join_round();
+            g.begin_path();
+            g.move_to(pts[0].0, pts[0].1);
+            for p in pts.iter().skip(1) {
+                g.line_to(p.0, p.1);
+            }
+            g.stroke();
         }
-    }
 
-    // The last price: a dotted line to the axis and a tag on it, in the colour of the day.
-    let last = cs[n - 1].c;
-    let ly = safe_clamp(ypx(last), plot.y + 6.0, plot.y + plot.h - 6.0);
-    g.fill_style(crate::gfx::with_alpha(up_col, 0.5));
-    let mut x = slot_x(plot, slots, n - 1);
-    while x < plot.x + plot.w {
-        g.fill_rect(x, ly, 2.0, 1.0);
-        x += 5.0;
-    }
-    let tag = stocks::fmt_price(last);
-    let tw = text::measure(&tag, Face::Medium, 9.5) + 8.0;
-    g.fill_style(up_col);
-    g.fill_round_rect(plot.x + plot.w + 2.0, ly - 7.0, tw.max(axis_w - 4.0), 14.0, 4.0);
-    text::draw(g, &tag, plot.x + plot.w + 2.0 + tw.max(axis_w - 4.0) / 2.0, ly, Face::Medium, 9.5, hex("#0B0C0E"), Align::Center);
+        // Volume under the price.
+        let vmax = cs.iter().map(|c| c.v).fold(0.0f32, f32::max);
+        if vmax > 0.0 {
+            let bw = (slot * 0.64).clamp(1.0, 9.0);
+            for (i, c) in cs.iter().enumerate() {
+                let h = (vol.h * (c.v / vmax)).max(if c.v > 0.0 { 1.0 } else { 0.0 });
+                let col = if c.c >= c.o { green } else { red };
+                g.fill_style(crate::gfx::with_alpha(col, 0.42));
+                g.fill_rect((slot_x(plot, slots, i) - bw / 2.0).floor(), vol.y + vol.h - h, bw.floor().max(1.0), h);
+            }
+        }
 
-    // The time axis: first, middle, last.
-    let t0 = cs[0].t;
-    let step = if range == 0 && n > 1 { (cs[n - 1].t - t0) / (n as i64 - 1) } else { 0 };
-    for (frac, a) in [(0.0f32, Align::Left), (0.5, Align::Center), (1.0, Align::Right)] {
-        let (x, t) = match a {
-            Align::Left => (plot.x, t0),
-            Align::Center => (plot.x + plot.w * 0.5, if range == 0 { t0 + step * (slots as i64 / 2) } else { cs[n / 2].t }),
-            _ => (plot.x + plot.w, if range == 0 { t0 + step * slots as i64 } else { cs[n - 1].t }),
-        };
-        let _ = frac;
-        text::draw(g, &bar_time(t, d.offset, range), x, area.y + area.h - 5.0, Face::Regular, 9.0, hex(pal::DIM3), a);
+        // The last price: a dotted line to the axis and a tag on it, in the colour of the day.
+        let last = cs[n - 1].c;
+        let ly = safe_clamp(ypx(last), plot.y + 6.0, plot.y + plot.h - 6.0);
+        g.fill_style(crate::gfx::with_alpha(up_col, 0.5));
+        let mut x = slot_x(plot, slots, n - 1);
+        while x < plot.x + plot.w {
+            g.fill_rect(x, ly, 2.0, 1.0);
+            x += 5.0;
+        }
+        let tag = stocks::fmt_price(last);
+        let tw = text::measure(&tag, Face::Medium, 9.5) + 8.0;
+        g.fill_style(up_col);
+        g.fill_round_rect(plot.x + plot.w + 2.0, ly - 7.0, tw.max(axis_w - 4.0), 14.0, 4.0);
+        text::draw(g, &tag, plot.x + plot.w + 2.0 + tw.max(axis_w - 4.0) / 2.0, ly, Face::Medium, 9.5, hex("#0B0C0E"), Align::Center);
+
+        // The time axis: first, middle, last.
+        let t0 = cs[0].t;
+        let step = if range == 0 && n > 1 { (cs[n - 1].t - t0) / (n as i64 - 1) } else { 0 };
+        for (frac, a) in [(0.0f32, Align::Left), (0.5, Align::Center), (1.0, Align::Right)] {
+            let (x, t) = match a {
+                Align::Left => (plot.x, t0),
+                Align::Center => (plot.x + plot.w * 0.5, if range == 0 { t0 + step * (slots as i64 / 2) } else { cs[n / 2].t }),
+                _ => (plot.x + plot.w, if range == 0 { t0 + step * slots as i64 } else { cs[n - 1].t }),
+            };
+            let _ = frac;
+            text::draw(g, &bar_time(t, d.offset, range), x, area.y + area.h - 5.0, Face::Regular, 9.0, hex(pal::DIM3), a);
+        }
+
     }
 
     // The crosshair and its tooltip.
+    if pass != 1 {
+        return;
+    }
     if let Some((mx, my)) = mouse {
         if mx >= plot.x && mx <= plot.x + plot.w {
             let i = (((mx - plot.x) / plot.w * slots as f32).floor() as usize).min(slots - 1);
