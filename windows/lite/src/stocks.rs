@@ -6,6 +6,7 @@
 // minutes otherwise, and never while paused.
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -72,6 +73,27 @@ struct Shared {
 
 static S: Mutex<Shared> = Mutex::new(Shared { symbols: Vec::new(), quotes: Vec::new(), touched: None });
 static KICK: Notify = Notify::const_new();
+/// The island is on screen (not hidden, not paused, no game in front): prices are worth fetching.
+static ACTIVE: AtomicBool = AtomicBool::new(true);
+
+/// Tells the poller whether anyone could be looking. Coming back from idle fetches at once.
+pub fn set_active(on: bool) {
+    if ACTIVE.swap(on, Ordering::Relaxed) != on && on {
+        KICK.notify_one();
+    }
+}
+
+/// Seconds until the next refresh. A minute while the market is moving (the free feed is ten
+/// minutes behind, so faster only repeats the same numbers and risks being throttled), ten
+/// minutes once every price is hours old (night, weekend, holiday), three after a "too many
+/// requests".
+pub fn next_wait(quotes: &[Quote], now: i64, throttled: bool) -> u64 {
+    if throttled {
+        return 180;
+    }
+    let live = quotes.is_empty() || quotes.iter().any(|q| q.market_time > 0 && now - q.market_time < 25 * 60);
+    if live { 60 } else { 600 }
+}
 
 /// What the chart shows for a symbol and a range, and whether more is on its way.
 #[derive(Clone, Debug, Default)]
@@ -260,19 +282,26 @@ pub fn start(symbols: &[String]) {
     set_symbols(symbols);
     KICK.notify_one();
     crate::rt::spawn(async {
+        let mut wait = 60u64;
         loop {
-            let fast = S.lock().map(|s| s.touched.map(|t| t.elapsed() < Duration::from_secs(90)).unwrap_or(false)).unwrap_or(false);
-            let wait = if fast { 60 } else { 600 };
             let _ = tokio::time::timeout(Duration::from_secs(wait), KICK.notified()).await;
+            // Nobody can see the page (island hidden, paused, a game in front): do not fetch.
+            if !ACTIVE.load(Ordering::Relaxed) {
+                wait = 600;
+                continue;
+            }
             let symbols = S.lock().map(|s| s.symbols.clone()).unwrap_or_default();
             if symbols.is_empty() {
+                wait = 60;
                 continue;
             }
             let mut out = Vec::new();
+            let mut throttled = false;
             for sym in &symbols {
                 match fetch(sym).await {
                     Ok(q) => out.push(q),
                     Err(e) => {
+                        throttled |= e.contains("429");
                         log::line(format!("stocks {sym}: {e}"));
                         // Keep the last good quote and mark it, rather than dropping the row.
                         let old = S.lock().ok().and_then(|s| s.quotes.iter().find(|q| &q.symbol == sym).cloned());
@@ -290,6 +319,11 @@ pub fn start(symbols: &[String]) {
                 // The list may have changed while we were fetching.
                 out.retain(|q| s.symbols.contains(&q.symbol));
                 s.quotes = out;
+            }
+            let (quotes, now) = (quotes(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0));
+            wait = next_wait(&quotes, now, throttled);
+            if std::env::var_os("COUCOU_DEBUG_STOCKS").is_some() {
+                log::line(format!("stocks: {} refreshed, next in {wait} s (throttled: {throttled})", quotes.len()));
             }
         }
     });
@@ -461,6 +495,17 @@ mod tests {
         assert_eq!(normalize("$aapl").as_deref(), Some("AAPL"));
         assert_eq!(normalize("$ msft").as_deref(), Some("MSFT"));
         assert_eq!(normalize("$"), None);
+    }
+
+    #[test]
+    fn the_refresh_is_a_minute_while_the_market_moves_and_slower_otherwise() {
+        let q = |t: i64| Quote { symbol: "X".into(), price: 1.0, prev: 1.0, series: Vec::new(), candles: Vec::new(), offset: 0, market_time: t, day_high: 0.0, day_low: 0.0, volume: 0.0, currency: String::new(), error: None };
+        let now = 1_792_000_000;
+        assert_eq!(next_wait(&[], now, false), 60); // first fetch
+        assert_eq!(next_wait(&[q(now - 601)], now, false), 60); // ten minutes behind is normal
+        assert_eq!(next_wait(&[q(now - 3 * 3600), q(now - 120)], now, false), 60); // one live is enough
+        assert_eq!(next_wait(&[q(now - 8 * 3600)], now, false), 600); // closed
+        assert_eq!(next_wait(&[q(now - 60)], now, true), 180); // told to slow down
     }
 
     #[test]

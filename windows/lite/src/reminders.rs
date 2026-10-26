@@ -143,6 +143,8 @@ impl App {
     pub fn reminder_tick(&mut self) {
         // The fall-back look at the full-screen state, in case the foreground hook missed a change.
         self.fullscreen_check();
+        // Prices are fetched only while the island could be looked at.
+        crate::stocks::set_active(!self.quiet() && self.st.mode != Mode::Hidden);
         if self.game_hidden {
             return; // reminders keep their place and show when the game is gone
         }

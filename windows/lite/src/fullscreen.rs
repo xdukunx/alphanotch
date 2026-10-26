@@ -96,6 +96,7 @@ impl App {
             return;
         }
         self.game_hidden = on;
+        crate::stocks::set_active(!on && !self.st.paused && self.st.mode != crate::layout::Mode::Hidden);
         crate::log::line(if on { "full-screen app in front: island hidden" } else { "full-screen app gone: island back" });
         if on {
             self.overlay = None;
