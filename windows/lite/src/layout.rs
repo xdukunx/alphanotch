@@ -44,8 +44,8 @@ pub enum View {
     Diff,
     /// A wellness reminder (drink, stretch, rest your eyes).
     Reminder,
-    /// Daily quests, the care streak and the crown.
-    Quests,
+    /// The prayer schedule with the sun's path across the day.
+    Prayer,
     /// Pomodoro timer and water counter: the next pages of the dashboard group.
     Focus,
     Water,
@@ -102,7 +102,7 @@ pub fn layout(v: View) -> ViewLayout {
         View::Question => l(224.0, 62.0, None, 56.0),
         View::Diff => l(252.0, 62.0, None, 56.0),
         View::Reminder => l(190.0, 62.0, None, 56.0),
-        View::Quests => l(190.0, 62.0, None, 56.0),
+        View::Prayer => l(262.0, 62.0, None, 56.0),
         View::Error => l(160.0, 62.0, None, 58.0),
         View::Finished => l(160.0, 62.0, None, 58.0),
         View::Confused => l(160.0, 76.0, None, 66.0),

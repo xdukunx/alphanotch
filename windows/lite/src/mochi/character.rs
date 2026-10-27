@@ -35,22 +35,9 @@ mod pal {
     pub const CREAM: &str = "#FFF6E0";
 }
 
-static CROWN_TIER: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
-
-/// Crown colour earned from daily quests: 0 gold, then rose gold, emerald, sapphire, amethyst.
-pub fn set_crown_tier(t: u8) {
-    CROWN_TIER.store(t.min(4), std::sync::atomic::Ordering::Relaxed);
-}
-
-/// (top, bottom) of the crown's gradient for the current tier.
+/// (top, bottom) of the crown's gradient: always the original gold.
 fn crown_colors() -> (&'static str, &'static str) {
-    match CROWN_TIER.load(std::sync::atomic::Ordering::Relaxed) {
-        1 => ("#F7C6B8", "#E8998D"),
-        2 => ("#6EE7B7", "#10B981"),
-        3 => ("#7DB8FF", "#3B82F6"),
-        4 => ("#D2A8FF", "#9B5DE5"),
-        _ => (pal::GOLD_TOP, pal::GOLD_BOTTOM),
-    }
+    (pal::GOLD_TOP, pal::GOLD_BOTTOM)
 }
 
 fn mix(a: Rgb, b: Rgb, t: f32) -> Rgb {

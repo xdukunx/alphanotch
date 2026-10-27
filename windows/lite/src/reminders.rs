@@ -161,7 +161,7 @@ impl App {
         if self.st.paused || self.st.pending_approval.is_some() || self.st.pending_question.is_some() {
             return;
         }
-        if self.st.mode == Mode::Expanded && self.st.view == View::Reminder {
+        if self.st.mode == Mode::Expanded && matches!(self.st.view, View::Reminder | View::Prayer) {
             return;
         }
         let now = util::unix_now();

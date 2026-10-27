@@ -73,6 +73,90 @@ fn stack_top(card: Rect, heights: &[f32], gap: f32) -> f32 {
     card.y + (card.h - total) / 2.0
 }
 
+fn dot(g: &mut Gfx, x: f32, y: f32, r: f32) {
+    g.begin_path();
+    g.circle(x, y, r);
+    g.fill();
+}
+
+/// The day as an arc: the sky warms along the part already travelled, the sun rides the curve
+/// at the current time (a dim dot waiting at the horizon at night), Dzuhur and Ashar are ticks
+/// on it, and Terbit and Terbenam sit under its two ends.
+fn sun_path(g: &mut Gfx, a: Rect, rise: f64, set: f64, now_h: f64, hours: &[f64]) {
+    let base = a.y + a.h - 16.0;
+    let amp = a.h - 16.0 - 8.0;
+    let span = (set - rise).max(0.5);
+    let u_now = ((now_h - rise) / span) as f32;
+    let curve = |u: f32| (a.x + a.w * u, base - amp * (std::f32::consts::PI * u).sin());
+
+    g.fill_style(rgba(255, 255, 255, 0.16));
+    g.fill_rect(a.x, base, a.w, 1.0);
+
+    let steps = 96;
+    let reach = u_now.clamp(0.0, 1.0);
+    if reach > 0.0 {
+        let n = (steps as f32 * reach).ceil() as i32;
+        let fill = g.linear(0.0, base - amp, 0.0, base, &[(0.0, rgba(255, 190, 80, 0.30)), (1.0, rgba(255, 190, 80, 0.02))]);
+        g.fill_style(fill);
+        g.begin_path();
+        g.move_to(a.x, base);
+        for k in 0..=n {
+            let (px, py) = curve((k as f32 / steps as f32).min(reach));
+            g.line_to(px, py);
+        }
+        g.line_to(curve(reach).0, base);
+        g.close_path();
+        g.fill();
+        g.stroke_style(rgba(255, 196, 92, 0.95));
+        g.line_width(1.6);
+        g.line_join_round();
+        g.begin_path();
+        g.move_to(a.x, base);
+        for k in 1..=n {
+            let (px, py) = curve((k as f32 / steps as f32).min(reach));
+            g.line_to(px, py);
+        }
+        g.stroke();
+    }
+    // Ahead of the sun: a dotted line.
+    g.fill_style(rgba(255, 255, 255, 0.28));
+    for k in (0..steps).step_by(2) {
+        let u = (k as f32 + 0.5) / steps as f32;
+        if u > reach {
+            let (px, py) = curve(u);
+            g.fill_rect(px - 0.7, py - 0.7, 1.4, 1.4);
+        }
+    }
+    // Dzuhur and Ashar.
+    for i in [1usize, 2] {
+        if let Some(&h) = hours.get(i) {
+            let u = ((h - rise) / span) as f32;
+            if (0.0..=1.0).contains(&u) {
+                let (px, py) = curve(u);
+                g.fill_style(rgba(255, 255, 255, 0.55));
+                g.fill_round_rect(px - 1.5, py - 1.5, 3.0, 3.0, 1.5);
+            }
+        }
+    }
+
+    if (0.0..=1.0).contains(&u_now) {
+        let (sx, sy) = curve(u_now);
+        let glow = g.radial(sx, sy, 0.0, 15.0, &[(0.0, rgba(255, 200, 90, 0.55)), (1.0, rgba(255, 200, 90, 0.0))]);
+        g.fill_style(glow);
+        dot(g, sx, sy, 15.0);
+        g.fill_style(hex("#FFD166"));
+        dot(g, sx, sy, 5.5);
+    } else {
+        let sx = if u_now < 0.0 { a.x } else { a.x + a.w };
+        g.fill_style(rgba(150, 165, 200, 0.7));
+        dot(g, sx, base - 2.0, 3.5);
+    }
+
+    let (rise_t, set_t) = (crate::prayer::hhmm(rise), crate::prayer::hhmm(set));
+    text::draw(g, &format!("Terbit {rise_t}"), a.x, a.y + a.h - 4.0, Face::Regular, 10.0, hex(pal::DIM2), Align::Left);
+    text::draw(g, &format!("Terbenam {set_t}"), a.x + a.w, a.y + a.h - 4.0, Face::Regular, 10.0, hex(pal::DIM2), Align::Right);
+}
+
 impl App {
     // ── Entry point ───────────────────────────────────────────────────────────
 
@@ -116,7 +200,7 @@ impl App {
             View::Question => self.draw_question(g, v),
             View::Diff => self.draw_diff(g, v),
             View::Reminder => self.draw_reminder(g, v),
-            View::Quests => self.draw_quests(g, v),
+            View::Prayer => self.draw_prayer(g, v),
             View::Focus => self.draw_focus(g, v),
             View::Water => self.draw_water(g, v),
             View::Error => self.draw_error(g, v),
@@ -180,7 +264,6 @@ impl App {
             (Icon::Chart, "tab-stocks", View::Stocks, "stocks"),
             (Icon::Cloud, "tab-weather", View::Weather, "weather"),
             (Icon::Lines, "tab-prompter", View::Teleprompter, "teleprompter"),
-            (Icon::Star, "tab-quests", View::Quests, "quests"),
         ];
         let tabs: Vec<(Icon, &str, View)> = all
             .iter()
@@ -621,53 +704,6 @@ impl App {
         }
     }
 
-    // ── Quests ────────────────────────────────────────────────────────────────
-
-    fn draw_quests(&mut self, g: &mut Gfx, v: Rect) {
-        use crate::buddy::crown_tier;
-        ui::card(g, v, Wash::Amber, false);
-        let x = v.x + 116.0;
-        let w = v.w - 116.0 - 16.0;
-        let care_on = {
-            let s = &self.st.settings;
-            s.water_every_min > 0 || s.stretch_every_min > 0 || s.eyes_every_min > 0
-        };
-        let quests = self.buddy.quests(care_on);
-        let (_, crown) = crown_tier(self.buddy.crowns);
-        let day = ((crate::util::unix_now() + crate::util::local_offset_secs() as f64) / 86_400.0).floor() as i64;
-        let streak = self.buddy.streak_on(day);
-
-        t(g, "Misi hari ini", x, v.y + 16.0, Face::Medium, 14.0, hex(pal::INK));
-        let tag = format!("Mahkota {crown} · {} hari tuntas", self.buddy.crowns);
-        text::draw(g, &tag, x + w, v.y + 16.0, Face::Regular, 11.0, hex(pal::DIM2), Align::Right);
-
-        for (i, q) in quests.iter().enumerate() {
-            let y = v.y + 34.0 + i as f32 * 28.0;
-            let done = q.complete();
-            let shown = q.done.min(q.target);
-            let label = text::ellipsize(&q.title, Face::Regular, 12.5, w - 56.0);
-            t(g, &label, x, y + 8.0, Face::Regular, 12.5, hex(if done { pal::DIM3 } else { pal::INK }));
-            if done {
-                crate::icons::stroke(g, Icon::Check, x + w - 8.0, y + 8.0, 9.0, 2.2, hex(pal::GREEN));
-            } else {
-                text::draw(g, &format!("{shown}/{}", q.target), x + w, y + 8.0, Face::Medium, 11.5, hex(pal::DIM), Align::Right);
-            }
-            g.fill_style(rgba(255, 255, 255, 0.09));
-            g.fill_round_rect(x, y + 19.0, w, 4.0, 2.0);
-            let k = if q.target == 0 { 1.0 } else { (shown as f32 / q.target as f32).clamp(0.0, 1.0) };
-            if k > 0.0 {
-                g.fill_style(hex(if done { pal::GREEN } else { "#F5A524" }));
-                g.fill_round_rect(x, y + 19.0, (w * k).max(4.0), 4.0, 2.0);
-            }
-        }
-        let foot = if streak > 0 {
-            format!("Beruntun {streak} hari menjaga diri. Selesaikan ketiganya untuk mahkota baru.")
-        } else {
-            "Konfirmasi satu pengingat (Sudah) untuk memulai beruntun.".to_string()
-        };
-        t(g, &text::ellipsize(&foot, Face::Regular, 11.0, w), x, v.y + v.h - 12.0, Face::Regular, 11.0, hex(pal::DIM3));
-    }
-
     // ── Reminder ──────────────────────────────────────────────────────────────
 
     fn draw_reminder(&mut self, g: &mut Gfx, v: Rect) {
@@ -687,38 +723,6 @@ impl App {
         ui::card(g, v, wash, false);
         let x = v.x + 116.0;
         let w = v.w - 116.0 - 16.0;
-        if card.kind == RemKind::Prayer {
-            if let Some((where_, now_idx, rows)) = crate::prayer::parse_card(&card.body) {
-                let top = stack_top(v, &[22.0, 42.0, 30.0], 10.0);
-                t(g, &text::ellipsize(&card.title, Face::Medium, 15.0, w * 0.55), x, top + 11.0, Face::Medium, 15.0, hex(pal::INK));
-                text::draw(g, &where_, x + w, top + 12.0, Face::Regular, 11.0, hex(pal::DIM2), Align::Right);
-                let gap = 6.0;
-                let cw = (w - gap * 4.0) / 5.0;
-                for (i, (name, time)) in rows.iter().enumerate() {
-                    let r = Rect::new(x + i as f32 * (cw + gap), top + 22.0 + 10.0, cw, 42.0);
-                    let on = i == now_idx;
-                    g.fill_style(if on { rgba(45, 91, 255, 0.34) } else { rgba(255, 255, 255, 0.06) });
-                    g.fill_round_rect(r.x, r.y, r.w, r.h, 10.0);
-                    if on {
-                        g.stroke_style(rgba(120, 160, 255, 0.55));
-                        g.line_width(1.0);
-                        g.round_rect(r.x + 0.5, r.y + 0.5, r.w - 1.0, r.h - 1.0, 9.5);
-                        g.stroke();
-                    }
-                    text::draw(g, name, r.cx(), r.y + 13.0, Face::Regular, 10.5, hex(if on { pal::INK } else { pal::DIM2 }), Align::Center);
-                    text::draw(g, time, r.cx(), r.y + 29.0, Face::Bold, 15.0, hex(if on { pal::INK } else { "#C5C8CD" }), Align::Center);
-                }
-                let by = top + 22.0 + 10.0 + 42.0 + 10.0;
-                let (ok, ow) = self.ui.button(g, x, by, "Oke", true, None);
-                let (later, _) = self.ui.button(g, x + ow + 8.0, by, "Ingatkan 10 menit", false, None);
-                if ok {
-                    self.dismiss_reminder(false);
-                } else if later {
-                    self.dismiss_reminder(true);
-                }
-                return;
-            }
-        }
         // Suggestions arrive one per line; everything else is a paragraph.
         let body: Vec<String> = if card.body.contains('\n') {
             card.body
@@ -746,6 +750,61 @@ impl App {
         } else {
             false
         };
+        if ok {
+            self.dismiss_reminder(false);
+        } else if later {
+            self.dismiss_reminder(true);
+        }
+    }
+
+    // ── Prayer schedule ───────────────────────────────────────────────────────
+
+    /// The five times, and the sun's path from sunrise to sunset with the sun where it is now.
+    fn draw_prayer(&mut self, g: &mut Gfx, v: Rect) {
+        let Some(card) = self.reminder.clone() else {
+            ui::card(g, v, Wash::None, false);
+            return;
+        };
+        let Some((where_, now_idx, rows, sun)) = crate::prayer::parse_card(&card.body) else {
+            ui::card(g, v, Wash::None, false);
+            return;
+        };
+        ui::card(g, v, Wash::Cyan, false);
+        let x = v.x + 116.0;
+        let w = v.w - 116.0 - 16.0;
+        let (arc_h, chip_h) = (74.0, 42.0);
+        let top = stack_top(v, &[22.0, arc_h, chip_h, 30.0], 8.0);
+        t(g, &text::ellipsize(&card.title, Face::Medium, 15.0, w * 0.55), x, top + 11.0, Face::Medium, 15.0, hex(pal::INK));
+        text::draw(g, &where_, x + w, top + 12.0, Face::Regular, 11.0, hex(pal::DIM2), Align::Right);
+
+        // The sun: a half-ellipse from sunrise to sunset over a horizon line.
+        let hours: Vec<f64> = rows.iter().filter_map(|(_, tm)| crate::prayer::clock_hours(tm)).collect();
+        if let (Some(rise), Some(&set)) = (sun, hours.get(3)) {
+            let area = Rect::new(x, top + 22.0 + 8.0, w, arc_h);
+            let now_h = ((crate::util::unix_now() + crate::util::local_offset_secs() as f64) % 86_400.0) / 3600.0;
+            sun_path(g, area, rise, set, now_h, &hours);
+        }
+
+        let gap = 6.0;
+        let cw = (w - gap * 4.0) / 5.0;
+        let cy = top + 22.0 + 8.0 + arc_h + 8.0;
+        for (i, (name, time)) in rows.iter().enumerate() {
+            let r = Rect::new(x + i as f32 * (cw + gap), cy, cw, chip_h);
+            let on = i == now_idx;
+            g.fill_style(if on { rgba(45, 91, 255, 0.34) } else { rgba(255, 255, 255, 0.06) });
+            g.fill_round_rect(r.x, r.y, r.w, r.h, 10.0);
+            if on {
+                g.stroke_style(rgba(120, 160, 255, 0.55));
+                g.line_width(1.0);
+                g.round_rect(r.x + 0.5, r.y + 0.5, r.w - 1.0, r.h - 1.0, 9.5);
+                g.stroke();
+            }
+            text::draw(g, name, r.cx(), r.y + 13.0, Face::Regular, 10.5, hex(if on { pal::INK } else { pal::DIM2 }), Align::Center);
+            text::draw(g, time, r.cx(), r.y + 29.0, Face::Bold, 15.0, hex(if on { pal::INK } else { "#C5C8CD" }), Align::Center);
+        }
+        let by = cy + chip_h + 8.0;
+        let (ok, ow) = self.ui.button(g, x, by, "Oke", true, None);
+        let (later, _) = self.ui.button(g, x + ow + 8.0, by, "Ingatkan 10 menit", false, None);
         if ok {
             self.dismiss_reminder(false);
         } else if later {

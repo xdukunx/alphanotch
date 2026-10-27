@@ -186,7 +186,6 @@ fn main() {
     app::install(island);
     app::with_app(|a| {
         a.sync_reminder_timer();
-        a.apply_crown();
         ui::set_nusa(a.st.settings.theme_nusa);
         a.init_system_watch();
     });

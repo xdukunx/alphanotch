@@ -931,7 +931,6 @@ impl Win {
             ("stocks", "Saham"),
             ("weather", "Cuaca"),
             ("teleprompter", "Teleprompter"),
-            ("quests", "Misi harian"),
             ("focus", "Fokus (Pomodoro)"),
             ("water", "Air minum"),
             ("lyrics", "Lirik lagu"),

@@ -12,7 +12,6 @@ use crate::anim::now;
 use crate::app::App;
 use crate::layout::Mode;
 use crate::mochi::engine::{BotState, Emote};
-use crate::reminders::{RemKind, ReminderCard};
 use crate::{sound, util};
 
 /// No input for this long and Mochi falls asleep.
@@ -47,19 +46,6 @@ pub struct Buddy {
     pub last_clean_stop: f64,
     #[serde(skip)]
     pub prompt_at: f64,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct Quest {
-    pub title: String,
-    pub done: u32,
-    pub target: u32,
-}
-
-impl Quest {
-    pub fn complete(&self) -> bool {
-        self.done >= self.target
-    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -120,19 +106,6 @@ impl Buddy {
         if self.streak_day == day || self.streak_day == day - 1 { self.streak } else { 0 }
     }
 
-    pub fn quests(&self, care_enabled: bool) -> Vec<Quest> {
-        vec![
-            Quest { title: "Selesaikan 1 tugas".into(), done: self.tasks_done, target: 1 },
-            // Without any reminder switched on this one could never be met: skip it.
-            Quest {
-                title: "Jaga dirimu 4 kali (minum / regang)".into(),
-                done: self.care,
-                target: if care_enabled { 4 } else { 0 },
-            },
-            Quest { title: "Satu sesi Claude tanpa error".into(), done: self.clean_sessions, target: 1 },
-        ]
-    }
-
     pub fn mood(&self, now_s: f64, local_hour: i64) -> Mood {
         let recent_errors = self.errors.iter().filter(|t| now_s - **t < 1800.0).count();
         if recent_errors >= 3 {
@@ -161,17 +134,6 @@ pub fn weather_prop(kind: crate::weather::Kind, temp: f32, is_day: bool) -> u8 {
     }
 }
 
-/// (tier, name, top colour, bottom colour) of the crown for the number of quest days.
-pub fn crown_tier(crowns: u32) -> (u8, &'static str) {
-    match crowns {
-        0 => (0, "Emas"),
-        1..=2 => (1, "Rose gold"),
-        3..=6 => (2, "Zamrud"),
-        7..=13 => (3, "Safir"),
-        _ => (4, "Ametis"),
-    }
-}
-
 fn local_day(now_s: f64) -> i64 {
     ((now_s + util::local_offset_secs() as f64) / 86_400.0).floor() as i64
 }
@@ -191,10 +153,6 @@ impl App {
 
     pub fn buddy_today_pub(&mut self) -> i64 {
         self.buddy_today()
-    }
-
-    pub fn apply_crown(&self) {
-        crate::mochi::character::set_crown_tier(crown_tier(self.buddy.crowns).0);
     }
 
     /// Confetti, a proud face and a little jingle.
@@ -228,7 +186,6 @@ impl App {
                 self.celebrate();
             }
         }
-        self.check_quests();
     }
 
     /// A task was ticked off in the dashboard.
@@ -237,7 +194,6 @@ impl App {
         self.buddy.tasks_done += 1;
         self.buddy.save();
         self.celebrate();
-        self.check_quests();
     }
 
     /// Claude Code session events, for the clean-session quest, mood and long-session confetti.
@@ -270,35 +226,9 @@ impl App {
                 if clean && long {
                     self.celebrate();
                 }
-                self.check_quests();
-            }
+                    }
             _ => {}
         }
-    }
-
-    /// Hands out the crown when the three quests are done, once per day.
-    fn check_quests(&mut self) {
-        let care_on = {
-            let s = &self.st.settings;
-            s.water_every_min > 0 || s.stretch_every_min > 0 || s.eyes_every_min > 0
-        };
-        let all = self.buddy.quests(care_on).iter().all(Quest::complete);
-        if !all || self.buddy.rewarded_day == self.buddy.day {
-            return;
-        }
-        self.buddy.rewarded_day = self.buddy.day;
-        self.buddy.crowns += 1;
-        self.buddy.save();
-        self.apply_crown();
-        let (_, name) = crown_tier(self.buddy.crowns);
-        let n = self.buddy.crowns;
-        self.celebrate();
-        self.reminder = Some(ReminderCard {
-            kind: RemKind::Suggest,
-            title: "Misi hari ini tuntas!".into(),
-            body: format!("Mahkota Mochi sekarang: {name}. Total {n} hari misi tuntas."),
-        });
-        self.alert(crate::layout::View::Reminder);
     }
 
     /// Streak line appended to care reminders.
@@ -450,15 +380,6 @@ mod tests {
     }
 
     #[test]
-    fn quests_without_any_reminder_never_block_the_crown() {
-        let b = Buddy { tasks_done: 1, clean_sessions: 1, ..Default::default() };
-        assert!(b.quests(false).iter().all(Quest::complete));
-        assert!(!b.quests(true).iter().all(Quest::complete));
-        let c = Buddy { tasks_done: 1, clean_sessions: 1, care: 4, ..Default::default() };
-        assert!(c.quests(true).iter().all(Quest::complete));
-    }
-
-    #[test]
     fn mood_follows_errors_then_wins_then_the_clock() {
         let t = 1_000_000.0;
         let mut b = Buddy { day: 7, ..Default::default() };
@@ -470,15 +391,6 @@ mod tests {
         assert_eq!(b.mood(t, 14), Mood::Proud);
         b.errors = vec![t - 10.0, t - 20.0, t - 30.0];
         assert_eq!(b.mood(t, 14), Mood::Sad);
-    }
-
-    #[test]
-    fn crown_tiers_climb_with_quest_days() {
-        assert_eq!(crown_tier(0).0, 0);
-        assert_eq!(crown_tier(1).0, 1);
-        assert_eq!(crown_tier(3).0, 2);
-        assert_eq!(crown_tier(7).0, 3);
-        assert_eq!(crown_tier(20).0, 4);
     }
 
     #[test]

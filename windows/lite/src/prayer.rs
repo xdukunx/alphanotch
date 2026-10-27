@@ -147,7 +147,7 @@ fn zone_label(tz: f64) -> String {
 /// The card for a prayer: the whole day's schedule with this one marked. `minutes_left` > 0
 /// when it is an early heads-up. The body is lines: where, which prayer (0–4), then the five
 /// "Name HH:MM" — the view reads it back with `parse_card`.
-pub fn card(index: usize, five: [f64; 5], tz: f64, place: &str, minutes_left: i64) -> ReminderCard {
+pub fn card(index: usize, five: [f64; 5], sunrise: f64, tz: f64, place: &str, minutes_left: i64) -> ReminderCard {
     let index = index.min(4);
     let name = NAMES[index];
     let title = if minutes_left > 0 { format!("{minutes_left} menit lagi {name}") } else { format!("Waktu {name}") };
@@ -159,18 +159,27 @@ pub fn card(index: usize, five: [f64; 5], tz: f64, place: &str, minutes_left: i6
     for (i, h) in five.iter().enumerate() {
         body.push_str(&format!("\n{} {}", NAMES[i], hhmm(*h)));
     }
+    body.push_str(&format!("\nTerbit {}", hhmm(sunrise)));
     ReminderCard { kind: RemKind::Prayer, title, body }
 }
 
+/// "05:32" as hours.
+pub fn clock_hours(t: &str) -> Option<f64> {
+    let (h, m) = t.split_once(':')?;
+    Some(h.parse::<f64>().ok()? + m.parse::<f64>().ok()? / 60.0)
+}
+
 /// What the card's view needs: (where, the prayer being announced, [(name, time); 5]).
-pub fn parse_card(body: &str) -> Option<(String, usize, Vec<(String, String)>)> {
+pub fn parse_card(body: &str) -> Option<(String, usize, Vec<(String, String)>, Option<f64>)> {
     let mut lines = body.lines();
     let where_ = lines.next()?.to_string();
     let idx: usize = lines.next()?.parse().ok()?;
-    let rows: Vec<(String, String)> = lines
+    let mut rows: Vec<(String, String)> = lines
         .filter_map(|l| l.split_once(' ').map(|(n, t)| (n.to_string(), t.to_string())))
         .collect();
-    (rows.len() == 5).then_some((where_, idx, rows))
+    // The sunrise rides along as a sixth line; it is not a prayer.
+    let sun = rows.iter().position(|(n, _)| n == "Terbit").map(|i| rows.remove(i)).and_then(|(_, t)| clock_hours(&t));
+    (rows.len() == 5).then_some((where_, idx, rows, sun))
 }
 
 /// "Dzuhur 11:16": the next prayer from now (tomorrow's Subuh after Isya), or None until the
@@ -250,7 +259,7 @@ impl App {
                 fired |= 1 << i;
                 mark_fired(day, fired);
                 let left = ((at - now) / 60.0).ceil() as i64;
-                self.show_prayer(card(i, times.five(), tz, &place, left.max(0)));
+                self.show_prayer(card(i, times.five(), times.sunrise, tz, &place, left.max(0)));
                 return true;
             }
         }
@@ -261,7 +270,7 @@ impl App {
         self.reminder = Some(card);
         sound::play("greet");
         self.engine.trigger_emote(Emote::Happy, 3.0);
-        self.alert(View::Reminder);
+        self.alert(View::Prayer);
         self.ensure_running();
     }
 }
@@ -323,15 +332,16 @@ mod tests {
     #[test]
     fn the_card_carries_the_whole_day_and_reads_back() {
         let five = [3.8, 11.0 + 15.0 / 60.0, 14.4, 17.4, 18.6];
-        let c = card(1, five, 7.0, "Surabaya", 0);
+        let c = card(1, five, 5.5, 7.0, "Surabaya", 0);
         assert_eq!(c.title, "Waktu Dzuhur");
-        let (place, idx, rows) = parse_card(&c.body).expect("parse");
+        let (place, idx, rows, sun) = parse_card(&c.body).expect("parse");
+        assert_eq!(sun, Some(5.5));
         assert_eq!((place.as_str(), idx), ("Surabaya · WIB", 1));
         assert_eq!(rows[0], ("Subuh".to_string(), "03:48".to_string()));
         assert_eq!(rows[1], ("Dzuhur".to_string(), "11:15".to_string()));
         assert_eq!(rows.len(), 5);
-        assert_eq!(card(4, five, 8.0, "", 10).title, "10 menit lagi Isya");
-        assert_eq!(parse_card(&card(4, five, 8.0, "", 10).body).unwrap().0, "WITA");
+        assert_eq!(card(4, five, 5.5, 8.0, "", 10).title, "10 menit lagi Isya");
+        assert_eq!(parse_card(&card(4, five, 5.5, 8.0, "", 10).body).unwrap().0, "WITA");
         assert!(parse_card("nonsense").is_none());
     }
 }

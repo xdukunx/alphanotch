@@ -839,7 +839,7 @@ impl App {
     /// BotCanvasView.lookX / lookY — tanh of the distance to the bot.
     fn look(&self) -> (f32, f32) {
         // A reminder is Mochi talking to you: eyes stay on you, not on the cursor.
-        if self.st.view == View::Reminder && self.st.mode == Mode::Expanded {
+        if matches!(self.st.view, View::Reminder | View::Prayer) && self.st.mode == Mode::Expanded {
             return (0.0, 0.0);
         }
         let iw = self.width.value();
