@@ -135,7 +135,7 @@ pub fn hhmm(hours: f64) -> String {
     format!("{:02}:{:02}", total / 60, total % 60)
 }
 
-fn zone_label(tz: f64) -> String {
+pub fn zone_label(tz: f64) -> String {
     match tz as i64 {
         7 => "WIB".to_string(),
         8 => "WITA".to_string(),

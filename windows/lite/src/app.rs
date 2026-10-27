@@ -669,7 +669,7 @@ impl App {
                 }
             }
             // The dashboard shows a live clock and track position: redraw twice a second.
-            if self.st.mode == Mode::Expanded && matches!(self.st.view, View::Dashboard | View::Stocks | View::Weather)
+            if self.st.mode == Mode::Expanded && matches!(self.st.view, View::Dashboard | View::Stocks | View::Weather | View::Prayer)
                 && n - self.dash_t > if self.lyrics_open && self.st.view == View::Dashboard && crate::activity::is_playing() { 0.12 } else { 0.5 }
             {
                 self.dash_t = n;

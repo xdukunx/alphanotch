@@ -67,7 +67,7 @@ pub const DASH_W: f32 = 548.0;
 
 pub fn view_width(v: View) -> f32 {
     match v {
-        View::Dashboard | View::Stocks | View::Weather | View::Teleprompter | View::Focus | View::Water => DASH_W,
+        View::Dashboard | View::Stocks | View::Weather | View::Prayer | View::Teleprompter | View::Focus | View::Water => DASH_W,
         _ => EXPANDED_W,
     }
 }
@@ -102,7 +102,6 @@ pub fn layout(v: View) -> ViewLayout {
         View::Question => l(224.0, 62.0, None, 56.0),
         View::Diff => l(252.0, 62.0, None, 56.0),
         View::Reminder => l(190.0, 62.0, None, 56.0),
-        View::Prayer => l(262.0, 62.0, None, 56.0),
         View::Error => l(160.0, 62.0, None, 58.0),
         View::Finished => l(160.0, 62.0, None, 58.0),
         View::Confused => l(160.0, 76.0, None, 66.0),
@@ -119,7 +118,7 @@ pub fn layout(v: View) -> ViewLayout {
         View::Dashboard | View::Focus | View::Water => l(210.0, 286.0, Some(21.0), 26.0),
         // Four watchlist rows fit; more scroll.
         View::Stocks => l(272.0, 286.0, Some(21.0), 26.0),
-        View::Weather | View::Teleprompter => l(220.0, 286.0, Some(21.0), 26.0),
+        View::Weather | View::Prayer | View::Teleprompter => l(220.0, 286.0, Some(21.0), 26.0),
     }
 }
 

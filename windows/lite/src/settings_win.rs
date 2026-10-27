@@ -930,6 +930,7 @@ impl Win {
             ("dashboard", "Dashboard"),
             ("stocks", "Saham"),
             ("weather", "Cuaca"),
+            ("prayer", "Jadwal sholat"),
             ("teleprompter", "Teleprompter"),
             ("focus", "Fokus (Pomodoro)"),
             ("water", "Air minum"),

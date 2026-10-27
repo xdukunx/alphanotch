@@ -263,6 +263,7 @@ impl App {
             (Icon::Stack, "tab-dash", View::Dashboard, "dashboard"),
             (Icon::Chart, "tab-stocks", View::Stocks, "stocks"),
             (Icon::Cloud, "tab-weather", View::Weather, "weather"),
+            (Icon::Moon, "tab-prayer", View::Prayer, "prayer"),
             (Icon::Lines, "tab-prompter", View::Teleprompter, "teleprompter"),
         ];
         let tabs: Vec<(Icon, &str, View)> = all
@@ -291,7 +292,7 @@ impl App {
         }
 
         // Date and time, in the free stretch of the header (the dashboard group has its own greeting).
-        if !crate::nusapages::is_page(v) && !matches!(v, View::Stocks | View::Weather | View::Teleprompter | View::Greeting) {
+        if !crate::nusapages::is_page(v) && !matches!(v, View::Stocks | View::Weather | View::Prayer | View::Teleprompter | View::Greeting) {
             let t = unsafe { windows::Win32::System::SystemInformation::GetLocalTime() };
             let (_, _, short) = crate::dashboard::greeting(&self.st.settings.display_name);
             let label = format!("{short}  {:02}:{:02}", t.wHour, t.wMinute);
@@ -759,38 +760,53 @@ impl App {
 
     // ── Prayer schedule ───────────────────────────────────────────────────────
 
-    /// The five times, and the sun's path from sunrise to sunset with the sun where it is now.
+    /// The page beside Weather: today's five times and the sun's path from sunrise to sunset
+    /// with the sun where it is now. When a prayer time arrives, the same page opens with that
+    /// prayer lit and the "Oke" / "Ingatkan" buttons.
     fn draw_prayer(&mut self, g: &mut Gfx, v: Rect) {
-        let Some(card) = self.reminder.clone() else {
+        let now = crate::util::unix_now();
+        let off = crate::util::local_offset_secs() as f64;
+        let now_h = ((now + off) % 86_400.0) / 3600.0;
+        let popup = self.reminder.clone().filter(|c| c.kind == crate::reminders::RemKind::Prayer).and_then(|c| {
+            crate::prayer::parse_card(&c.body).map(|p| (c.title, p))
+        });
+        let (title, where_, lit, rows, sun, buttons) = if let Some((title, (where_, idx, rows, sun))) = popup {
+            (title, where_, idx, rows, sun, true)
+        } else if let Some((times, tz, place)) = crate::prayer::today(now) {
+            let five = times.five();
+            let next = (0..5).find(|&i| five[i].is_finite() && five[i] > now_h).unwrap_or(0);
+            let rows: Vec<(String, String)> = (0..5).map(|i| (crate::prayer::NAMES[i].to_string(), crate::prayer::hhmm(five[i]))).collect();
+            let zone = crate::prayer::zone_label(tz);
+            let where_ = if place.is_empty() { zone } else { format!("{place} · {zone}") };
+            ("Jadwal sholat".to_string(), where_, next, rows, Some(times.sunrise), false)
+        } else {
+            self.dash_page_title(g, v, "Jadwal sholat", "memuat lokasi…");
             ui::card(g, v, Wash::None, false);
+            text::draw(g, "Memuat lokasi…", v.cx(), v.cy() - 8.0, Face::Medium, 14.0, hex(pal::INK), Align::Center);
+            text::draw(g, "Jadwal dihitung dari kota di halaman Cuaca", v.cx(), v.cy() + 14.0, Face::Regular, 11.0, hex(pal::DIM), Align::Center);
             return;
         };
-        let Some((where_, now_idx, rows, sun)) = crate::prayer::parse_card(&card.body) else {
-            ui::card(g, v, Wash::None, false);
-            return;
-        };
-        ui::card(g, v, Wash::Cyan, false);
-        let x = v.x + 116.0;
-        let w = v.w - 116.0 - 16.0;
-        let (arc_h, chip_h) = (74.0, 42.0);
-        let top = stack_top(v, &[22.0, arc_h, chip_h, 30.0], 8.0);
-        t(g, &text::ellipsize(&card.title, Face::Medium, 15.0, w * 0.55), x, top + 11.0, Face::Medium, 15.0, hex(pal::INK));
-        text::draw(g, &where_, x + w, top + 12.0, Face::Regular, 11.0, hex(pal::DIM2), Align::Right);
+        self.dash_page_title(g, v, &title, &where_);
+        ui::card(g, v, Wash::None, false);
 
-        // The sun: a half-ellipse from sunrise to sunset over a horizon line.
+        let x = v.x + 18.0;
+        let w = v.w - 36.0;
+        let chip_h = 42.0;
+        let arc_h = if buttons { 58.0 } else { 80.0 };
+        let total = arc_h + 8.0 + chip_h + if buttons { 8.0 + 30.0 } else { 0.0 };
+        let top = v.y + ((v.h - total) / 2.0).max(6.0);
+
         let hours: Vec<f64> = rows.iter().filter_map(|(_, tm)| crate::prayer::clock_hours(tm)).collect();
         if let (Some(rise), Some(&set)) = (sun, hours.get(3)) {
-            let area = Rect::new(x, top + 22.0 + 8.0, w, arc_h);
-            let now_h = ((crate::util::unix_now() + crate::util::local_offset_secs() as f64) % 86_400.0) / 3600.0;
-            sun_path(g, area, rise, set, now_h, &hours);
+            sun_path(g, Rect::new(x, top, w, arc_h), rise, set, now_h, &hours);
         }
 
         let gap = 6.0;
         let cw = (w - gap * 4.0) / 5.0;
-        let cy = top + 22.0 + 8.0 + arc_h + 8.0;
+        let cy = top + arc_h + 8.0;
         for (i, (name, time)) in rows.iter().enumerate() {
             let r = Rect::new(x + i as f32 * (cw + gap), cy, cw, chip_h);
-            let on = i == now_idx;
+            let on = i == lit;
             g.fill_style(if on { rgba(45, 91, 255, 0.34) } else { rgba(255, 255, 255, 0.06) });
             g.fill_round_rect(r.x, r.y, r.w, r.h, 10.0);
             if on {
@@ -802,13 +818,15 @@ impl App {
             text::draw(g, name, r.cx(), r.y + 13.0, Face::Regular, 10.5, hex(if on { pal::INK } else { pal::DIM2 }), Align::Center);
             text::draw(g, time, r.cx(), r.y + 29.0, Face::Bold, 15.0, hex(if on { pal::INK } else { "#C5C8CD" }), Align::Center);
         }
-        let by = cy + chip_h + 8.0;
-        let (ok, ow) = self.ui.button(g, x, by, "Oke", true, None);
-        let (later, _) = self.ui.button(g, x + ow + 8.0, by, "Ingatkan 10 menit", false, None);
-        if ok {
-            self.dismiss_reminder(false);
-        } else if later {
-            self.dismiss_reminder(true);
+        if buttons {
+            let by = cy + chip_h + 8.0;
+            let (ok, ow) = self.ui.button(g, x, by, "Oke", true, None);
+            let (later, _) = self.ui.button(g, x + ow + 8.0, by, "Ingatkan 10 menit", false, None);
+            if ok {
+                self.dismiss_reminder(false);
+            } else if later {
+                self.dismiss_reminder(true);
+            }
         }
     }
 
