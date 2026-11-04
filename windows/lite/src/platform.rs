@@ -120,10 +120,55 @@ pub fn shift_down() -> bool {
     unsafe { (GetKeyState(VK_SHIFT.0 as i32) as u16 & 0x8000) != 0 }
 }
 
+/// The monitor a full-screen game is on (0 = none): the island lives elsewhere meanwhile.
+static GAME_MON: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
+
+/// The monitor the foreground window is on.
+pub fn foreground_monitor() -> isize {
+    unsafe {
+        let fg = windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow();
+        windows::Win32::Graphics::Gdi::MonitorFromWindow(fg, MONITOR_DEFAULTTONEAREST).0 as isize
+    }
+}
+
+unsafe extern "system" fn collect_monitor(h: windows::Win32::Graphics::Gdi::HMONITOR, _dc: HDC, _rc: *mut RECT, data: windows::Win32::Foundation::LPARAM) -> windows::core::BOOL {
+    let v = &mut *(data.0 as *mut Vec<isize>);
+    v.push(h.0 as isize);
+    windows::core::BOOL(1)
+}
+
+/// Every connected monitor.
+fn monitors() -> Vec<isize> {
+    let mut v: Vec<isize> = Vec::new();
+    unsafe {
+        let _ = windows::Win32::Graphics::Gdi::EnumDisplayMonitors(None, None, Some(collect_monitor), windows::Win32::Foundation::LPARAM(&mut v as *mut Vec<isize> as isize));
+    }
+    v
+}
+
+/// A monitor other than `game`: the primary one if it is free, else the first other.
+pub fn other_monitor(game: isize) -> Option<isize> {
+    let all = monitors();
+    let primary = unsafe { MonitorFromPoint(POINT { x: 0, y: 0 }, MONITOR_DEFAULTTOPRIMARY).0 as isize };
+    if primary != game && all.contains(&primary) {
+        return Some(primary);
+    }
+    all.into_iter().find(|&m| m != game)
+}
+
+/// Keeps the island off the monitor a game is on (0 = back to the chosen display).
+pub fn set_game_monitor(m: isize) {
+    GAME_MON.store(m, std::sync::atomic::Ordering::Relaxed);
+}
+
 /// Rectangle (device px) and scale of the display the island should live on.
 pub fn target_monitor(pref: &str) -> (RECT, f32) {
     unsafe {
-        let hmon = if pref == "cursor" {
+        let game = GAME_MON.load(std::sync::atomic::Ordering::Relaxed);
+        let elsewhere = if game != 0 { other_monitor(game) } else { None };
+        let hmon = if let Some(m) = elsewhere {
+            windows::Win32::Graphics::Gdi::HMONITOR(m as *mut _)
+        } else if pref == "cursor" {
             let (x, y) = cursor_pos();
             MonitorFromPoint(POINT { x, y }, MONITOR_DEFAULTTONEAREST)
         } else {

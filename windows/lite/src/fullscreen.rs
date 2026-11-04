@@ -66,7 +66,7 @@ impl App {
     /// Matches the hook to the setting.
     pub fn sync_fullscreen_hook(&mut self) {
         set_enabled(self.st.settings.hide_in_fullscreen, self.platform.hwnd);
-        if !self.st.settings.hide_in_fullscreen && self.game_hidden {
+        if !self.st.settings.hide_in_fullscreen && (self.game_hidden || self.game_moved) {
             self.set_game_hidden(false);
         }
     }
@@ -86,12 +86,33 @@ impl App {
 
     pub fn fullscreen_check(&mut self) {
         let want = self.st.settings.hide_in_fullscreen && busy();
-        if want != self.game_hidden {
+        if want != (self.game_hidden || self.game_moved) {
             self.set_game_hidden(want);
         }
     }
 
     pub fn set_game_hidden(&mut self, on: bool) {
+        // With a second screen the island goes there instead of vanishing, until the game ends.
+        if on && self.st.settings.game_other_screen && !self.game_hidden && !self.game_moved {
+            let game = crate::platform::foreground_monitor();
+            if crate::platform::other_monitor(game).is_some() {
+                self.game_moved = true;
+                crate::platform::set_game_monitor(game);
+                crate::log::line(format!("full-screen app in front: island moved to the other screen (game on {game:#x}, island to {:#x?})", crate::platform::other_monitor(game)));
+                self.on_display_change();
+                return;
+            }
+        }
+        if self.game_moved {
+            if on {
+                return; // still the same game
+            }
+            self.game_moved = false;
+            crate::platform::set_game_monitor(0);
+            crate::log::line("full-screen app gone: island back on its screen");
+            self.on_display_change();
+            return;
+        }
         if on == self.game_hidden {
             return;
         }

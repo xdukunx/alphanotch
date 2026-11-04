@@ -69,6 +69,9 @@ pub struct Settings {
     /// Hide the island while a game, a full-screen video or a presentation is in front.
     #[serde(default = "yes")]
     pub hide_in_fullscreen: bool,
+    /// With a second screen, a game does not hide the island: it moves to the other screen.
+    #[serde(default = "yes")]
+    pub game_other_screen: bool,
     #[serde(default)]
     pub prayer_alarm: bool,
     #[serde(default = "default_prayers")]
@@ -145,6 +148,7 @@ impl Default for Settings {
             water_bottle_ml: 250,
             stocks_candles: true,
             hide_in_fullscreen: true,
+            game_other_screen: true,
             prayer_alarm: false,
             prayer_mask: 0b11111,
             prayer_lead_min: 0,

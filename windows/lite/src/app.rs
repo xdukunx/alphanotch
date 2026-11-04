@@ -283,6 +283,8 @@ pub struct App {
     pub overlay_level: Option<f32>,
     /// A full-screen app is in front and the island is hidden.
     pub game_hidden: bool,
+    /// A game is in front and the island moved to the other screen.
+    pub game_moved: bool,
     pub fs_rechecks: u8,
     pub net_state: Option<crate::net::NetState>,
     /// The task a "task due" reminder card is about.
@@ -419,6 +421,7 @@ impl App {
             clock_min: -1,
             overlay_level: None,
             game_hidden: false,
+            game_moved: false,
             fs_rechecks: 0,
             net_state: None,
             reminder_task: None,

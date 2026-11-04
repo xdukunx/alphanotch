@@ -1127,7 +1127,7 @@ impl Win {
     fn general(&mut self, g: &mut Gfx, m: f32, y0: f32, cw: f32) -> f32 {
         let pad = 18.0;
         let (ix, iw) = (m + pad, cw - 2.0 * pad);
-        let h = 7.0 * 38.0 - 8.0;
+        let h = 8.0 * 38.0 - 8.0;
         Self::card(g, m, y0, cw, h + 2.0 * pad);
         let mut y = y0 + pad;
         let lab = |g: &mut Gfx, y: f32, s: &str| {
@@ -1242,6 +1242,16 @@ impl Win {
             self.save();
         }
         text::draw(g, "juga video layar penuh dan presentasi", cx + 48.0, y + 11.0, Face::Regular, 11.5, hex(pal::DIM3), Align::Left);
+        y += 38.0;
+
+        // With two screens: follow the game's absence instead of hiding.
+        lab(g, y, "Pindah ke layar kedua");
+        let on = self.settings.game_other_screen;
+        if self.ui.switch(g, "set-game-screen", cx, y + 2.0, on) {
+            self.settings.game_other_screen = !on;
+            self.save();
+        }
+        text::draw(g, "saat game, tampil di layar lain sampai game ditutup", cx + 48.0, y + 11.0, Face::Regular, 11.5, hex(pal::DIM3), Align::Left);
         let _ = iw;
         y0 + h + 2.0 * pad + 16.0
     }
