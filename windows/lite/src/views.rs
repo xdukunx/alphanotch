@@ -8,14 +8,14 @@ use tiny_skia::Color;
 
 use crate::anim::{clamp, now};
 use crate::app::App;
-use crate::gfx::{hex, rgba, with_alpha, Gfx};
+use crate::gfx::{hex, rgba, Gfx};
 use crate::icons::Icon;
 use crate::layout::{View, Wash};
 use crate::mochi::engine::BotState;
 use crate::state::{Role, Source, Task, CLAUDE_ID};
 use crate::text::{self, Align, Face};
 use crate::textfield::TextField;
-use crate::ui::{self, id_of, lighten, pal, Rect};
+use crate::ui::{self, id_of, pal, Rect};
 
 // ── Chat state ────────────────────────────────────────────────────────────────
 
@@ -144,7 +144,7 @@ fn sun_path(g: &mut Gfx, a: Rect, rise: f64, set: f64, now_h: f64, hours: &[f64]
         let glow = g.radial(sx, sy, 0.0, 15.0, &[(0.0, rgba(255, 200, 90, 0.55)), (1.0, rgba(255, 200, 90, 0.0))]);
         g.fill_style(glow);
         dot(g, sx, sy, 15.0);
-        g.fill_style(hex("#FFD166"));
+        g.fill_style(hex("#FFD60A"));
         dot(g, sx, sy, 5.5);
     } else {
         let sx = if u_now < 0.0 { a.x } else { a.x + a.w };
@@ -320,7 +320,7 @@ impl App {
                     g.fill_style(rgba(255, 255, 255, 0.06));
                     g.fill_round_rect(pill.x, pill.y, pill.w, pill.h, 9.0);
                     ui::dot(g, pill.x + 10.0, pill.cy(), 6.0, hex(col));
-                    text::draw(g, &usage, pill.x + 18.0, pill.cy(), Face::Medium, 10.5, hex("#C5C8CD"), Align::Left);
+                    text::draw(g, &usage, pill.x + 18.0, pill.cy(), Face::Medium, 10.5, hex("#C7C7CC"), Align::Left);
                 }
             }
         }
@@ -384,7 +384,7 @@ impl App {
             self.ticker.draw(g, left.x + 108.0, left.y + 28.0, left.w - 108.0 - 12.0, n);
             // The latest edit's diff is one click away, on the ticker or on the chip.
             if let Some(di) = diff_step {
-                let (open, _) = self.ui.link(g, left.x + 108.0 + 18.0, left.y + left.h - 18.0, "Lihat diff", hex("#7EE2B8"));
+                let (open, _) = self.ui.link(g, left.x + 108.0 + 18.0, left.y + left.h - 18.0, "Lihat diff", hex("#30D158"));
                 let r = Rect::new(left.x + 108.0, left.y + 28.0, left.w - 108.0 - 40.0, 44.0);
                 let (clicked, _, _) = self.ui.click_region(id_of("ticker-diff", 83), r);
                 if open || clicked {
@@ -426,53 +426,33 @@ impl App {
     fn draw_pill(&mut self, g: &mut Gfx, r: Rect, id: &'static str) -> bool {
         let (clicked, hover, _) = self.ui.click_region(id_of(id, 41), r);
         let Some(task) = self.st.tasks.iter_mut().find(|t| t.id == id) else { return false };
-        let color = task.color;
         let label = if task.id == CLAUDE_ID { "Claude Code".to_string() } else { task.name.clone() };
         let badge = task.pill_badge;
 
         g.save();
-        if hover {
-            g.translate(r.cx(), r.cy());
-            g.scale_xy(1.04, 1.04);
-            g.translate(-r.cx(), -r.cy());
-        }
-        if hover {
-            // soft glow under the pill
-            g.fill_style(with_alpha(hex(color), 0.35));
-            g.fill_round_rect(r.x - 1.0, r.y + 1.0, r.w + 2.0, r.h + 2.0, 15.0);
-        }
-        g.fill_style(if hover { with_alpha(hex(color), 0.18) } else { hex(pal::CARD_FLAT) });
-        g.fill_round_rect(r.x, r.y, r.w, r.h, 14.0);
-        if hover {
-            g.fill_style(hex(pal::CARD_FLAT));
-            g.fill_round_rect(r.x + 1.0, r.y + 1.0, r.w - 2.0, r.h - 2.0, 13.0);
-            g.fill_style(with_alpha(hex(color), 0.18));
-            g.fill_round_rect(r.x + 1.0, r.y + 1.0, r.w - 2.0, r.h - 2.0, 13.0);
-        }
-        g.stroke_style(with_alpha(hex(color), if hover { 0.55 } else { 0.14 }));
-        g.line_width(1.0);
-        g.round_rect(r.x + 0.5, r.y + 0.5, r.w - 1.0, r.h - 1.0, 13.5);
-        g.stroke();
+        // A quiet row, like a list item in a macOS widget: the Mochi carries the colour.
+        g.fill_style(rgba(255, 255, 255, if hover { 0.10 } else { 0.05 }));
+        g.fill_round_rect(r.x, r.y, r.w, r.h, r.h / 2.0);
 
-        // The little Mochi (24 px body, engine canvas is body/0.6).
-        let eng = 24.0 / 0.6;
+        // The little Mochi (22 px body, engine canvas is body/0.6).
+        let eng = 22.0 / 0.6;
         g.save();
-        g.translate(r.x + 7.0 + 12.0 - eng / 2.0, r.cy() - eng / 2.0);
+        g.translate(r.x + 6.0 + 11.0 - eng / 2.0, r.cy() - eng / 2.0);
         task.mini.draw(g, eng, eng);
         g.restore();
 
-        let col = if hover { lighten(color, 0.3) } else { hex(pal::DIM3) };
-        let l = text::ellipsize(&label, Face::Medium, 10.0, r.w - 48.0);
-        text::draw(g, &l, r.cx() + 8.0, r.cy(), Face::Medium, 10.0, col, Align::Center);
+        let col = if hover { hex(pal::INK) } else { hex(pal::INK2) };
+        let l = text::ellipsize(&label, Face::Medium, 11.0, r.w - 46.0);
+        text::draw(g, &l, r.x + 34.0, r.cy(), Face::Medium, 11.0, col, Align::Left);
 
         if let Some(b) = badge {
             let (c, icon) = match b {
-                crate::state::PillBadge::Approval => ("#F5A524", Icon::Bang),
-                crate::state::PillBadge::Finished => ("#22C55E", Icon::Check),
-                crate::state::PillBadge::Error => ("#F4505E", Icon::Xmark),
+                crate::state::PillBadge::Approval => (pal::AMBER, Icon::Bang),
+                crate::state::PillBadge::Finished => (pal::GREEN, Icon::Check),
+                crate::state::PillBadge::Error => (pal::RED, Icon::Xmark),
             };
             let (bx, by) = (r.x + r.w - 3.0 - 7.0, r.y - 3.0 + 7.0);
-            ui::dot(g, bx, by, 14.0, hex("#0B0C0E"));
+            ui::dot(g, bx, by, 14.0, hex("#000000"));
             ui::dot(g, bx, by, 12.0, hex(c));
             if b == crate::state::PillBadge::Finished {
                 crate::icons::stroke(g, icon, bx, by, 6.0, 3.0, Color::BLACK);
@@ -552,7 +532,7 @@ impl App {
         let mut y = top + 20.0 + 6.0;
         if expanded {
             for (i, l) in detail_lines.iter().enumerate() {
-                t(g, l, x, y + 7.0 + i as f32 * 14.0, Face::Mono, 11.0, hex("#E8E9EC"));
+                t(g, l, x, y + 7.0 + i as f32 * 14.0, Face::Mono, 11.0, hex("#EBEBF0"));
             }
         } else {
             t(g, &text::ellipsize(&approval_summary(&tool, &detail), Face::Regular, 13.0, w), x, y + 9.0, Face::Regular, 13.0, hex(pal::DIM));
@@ -560,7 +540,7 @@ impl App {
             let r = Rect::new(x - 4.0, y - 2.0, w, 18.0);
             let (clicked, hover, _) = self.ui.click_region(id_of("approval-detail", 61), r);
             let line = text::ellipsize(&detail.replace('\n', " "), Face::Mono, 11.0, w - 24.0);
-            let col = if hover { hex("#E8E9EC") } else { hex(pal::DIM3) };
+            let col = if hover { hex("#EBEBF0") } else { hex(pal::DIM3) };
             t(g, &line, x, y + 7.0, Face::Mono, 11.0, col);
             let lw = text::measure(&line, Face::Mono, 11.0);
             crate::icons::stroke(g, Icon::ChevronRight, x + lw + 12.0, y + 7.0, 8.0, 2.2, col);
@@ -807,16 +787,16 @@ impl App {
         for (i, (name, time)) in rows.iter().enumerate() {
             let r = Rect::new(x + i as f32 * (cw + gap), cy, cw, chip_h);
             let on = i == lit;
-            g.fill_style(if on { rgba(45, 91, 255, 0.34) } else { rgba(255, 255, 255, 0.06) });
+            g.fill_style(if on { rgba(255, 255, 255, 0.14) } else { rgba(255, 255, 255, 0.06) });
             g.fill_round_rect(r.x, r.y, r.w, r.h, 10.0);
             if on {
-                g.stroke_style(rgba(120, 160, 255, 0.55));
+                g.stroke_style(rgba(255, 255, 255, 0.0));
                 g.line_width(1.0);
                 g.round_rect(r.x + 0.5, r.y + 0.5, r.w - 1.0, r.h - 1.0, 9.5);
                 g.stroke();
             }
             text::draw(g, name, r.cx(), r.y + 13.0, Face::Regular, 10.5, hex(if on { pal::INK } else { pal::DIM2 }), Align::Center);
-            text::draw(g, time, r.cx(), r.y + 29.0, Face::Bold, 15.0, hex(if on { pal::INK } else { "#C5C8CD" }), Align::Center);
+            text::draw(g, time, r.cx(), r.y + 29.0, Face::Bold, 15.0, hex(if on { pal::INK } else { "#C7C7CC" }), Align::Center);
         }
         if buttons {
             let by = cy + chip_h + 8.0;
@@ -876,8 +856,8 @@ impl App {
                 _ => ('@', l.as_str()),
             };
             let (bg, fg) = match kind {
-                '+' => (Some(rgba(52, 211, 153, 0.14)), hex("#7EE2B8")),
-                '-' => (Some(rgba(244, 80, 94, 0.16)), hex("#FF8A95")),
+                '+' => (Some(rgba(52, 211, 153, 0.14)), hex("#30D158")),
+                '-' => (Some(rgba(244, 80, 94, 0.16)), hex("#FF6961")),
                 '@' => (None, hex(pal::DIM3)),
                 _ => (None, hex(pal::DIM)),
             };
@@ -1015,7 +995,7 @@ impl App {
             crate::sound::set_enabled(!on);
             self.save_settings();
         }
-        t(g, "Sound", x + 42.0, top + 9.0, Face::Regular, 12.5, hex("#C5C8CD"));
+        t(g, "Sound", x + 42.0, top + 9.0, Face::Regular, 12.5, hex("#C7C7CC"));
         // Volume slider (0 – 0.2).
         let sx = x + 42.0 + 52.0;
         let sw = 72.0;
@@ -1052,7 +1032,7 @@ impl App {
         let y2 = top + 18.0 + 10.0;
         crate::icons::fill(g, Icon::Timer, x + 6.0, y2 + 9.0, 12.0, hex(pal::DIM2));
         let secs = self.st.settings.auto_close_interval.round() as i32;
-        t(g, &format!("Auto-close · {secs}s"), x + 18.0, y2 + 9.0, Face::Regular, 12.5, hex("#C5C8CD"));
+        t(g, &format!("Auto-close · {secs}s"), x + 18.0, y2 + 9.0, Face::Regular, 12.5, hex("#C7C7CC"));
         let right_edge = v.x + v.w - 16.0;
         let mut bx = right_edge;
         for s in [30, 15, 10] {
@@ -1062,7 +1042,7 @@ impl App {
             let r = Rect::new(bx, y2 + 9.0 - 10.0, w, 20.0);
             let (clicked, _, _) = self.ui.click_region(id_of(&label, 19), r);
             if secs == s {
-                g.fill_style(hex("#252830"));
+                g.fill_style(hex("#2C2C2E"));
                 g.fill_round_rect(r.x, r.y, r.w, r.h, 10.0);
             }
             text::draw(g, &label, r.cx(), r.cy(), Face::Regular, 11.0, hex(if secs == s { pal::INK } else { pal::DIM3 }), Align::Center);
@@ -1112,7 +1092,7 @@ impl App {
                 g.stroke();
             }
             let grad = g.linear(x + 10.0, y + 7.0, x + 17.0, y + 14.0, &[
-                (0.0, hex("#FF6B5B")), (0.3, hex("#F7B32B")), (0.55, hex("#2DD4A7")), (0.8, hex("#38BDF8")), (1.0, hex("#A78BFA")),
+                (0.0, hex("#FF453A")), (0.3, hex("#FF9F0A")), (0.55, hex("#30D158")), (0.8, hex("#64D2FF")), (1.0, hex("#BF5AF2")),
             ]);
             g.fill_style(grad);
             g.circle(x + 13.5, y + 11.0, 3.5);
@@ -1156,7 +1136,7 @@ impl App {
         g.circle(send_r.cx(), send_r.cy(), 14.0);
         g.fill();
         let _ = hover;
-        crate::icons::fill(g, Icon::ArrowUp, send_r.cx(), send_r.cy(), 11.0, hex("#0B0C0E"));
+        crate::icons::fill(g, Icon::ArrowUp, send_r.cx(), send_r.cy(), 11.0, hex("#000000"));
         g.restore();
         if clicked {
             self.submit_chat();
@@ -1217,7 +1197,7 @@ impl App {
                 }
             } else {
                 for (i, l) in r.lines.iter().enumerate() {
-                    t(g, l, area.x, y + 8.5 + i as f32 * 17.0, Face::Regular, 12.5, hex("#B0B5BE"));
+                    t(g, l, area.x, y + 8.5 + i as f32 * 17.0, Face::Regular, 12.5, hex("#A1A1A6"));
                 }
             }
             y += r.h + gap;
@@ -1264,13 +1244,13 @@ impl App {
         }
         g.restore();
         let x = v.x + 196.0;
-        t(g, "Lepaskan file di sini", x, v.cy() - 12.0, Face::Medium, 13.0, if over { hex(pal::GREEN2) } else { hex("#D5D7DB") });
+        t(g, "Lepaskan file di sini", x, v.cy() - 12.0, Face::Medium, 13.0, if over { hex(pal::GREEN2) } else { hex("#C7C7CC") });
         let mut tx = x;
         for tag in ["PDF", "Images", "Code", "Docs"] {
             let w = text::measure(tag, Face::Regular, 11.0) + 16.0;
             g.fill_style(rgba(255, 255, 255, 0.07));
             g.fill_round_rect(tx, v.cy() + 2.0, w, 20.0, 10.0);
-            text::draw(g, tag, tx + w / 2.0, v.cy() + 12.0, Face::Regular, 11.0, hex("#B9BDC4"), Align::Center);
+            text::draw(g, tag, tx + w / 2.0, v.cy() + 12.0, Face::Regular, 11.0, hex("#A1A1A6"), Align::Center);
             tx += w + 6.0;
         }
         self.ensure_running();

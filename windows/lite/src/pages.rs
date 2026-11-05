@@ -13,8 +13,8 @@ use crate::text::{self, Align, Face};
 use crate::ui::{self, id_of, pal, Rect};
 use crate::weather::{self, Kind};
 
-const GREEN: &str = "#34D399";
-const RED: &str = "#F87171";
+const GREEN: &str = "#30D158";
+const RED: &str = "#FF453A";
 
 // ── Weather icons, drawn in code ──────────────────────────────────────────────
 
@@ -29,11 +29,11 @@ fn cloud(g: &mut Gfx, cx: f32, cy: f32, s: f32, color: Color) {
 }
 
 fn sun(g: &mut Gfx, cx: f32, cy: f32, s: f32) {
-    g.fill_style(hex("#FBBF24"));
+    g.fill_style(hex("#FF9F0A"));
     g.begin_path();
     g.circle(cx, cy, 0.2 * s);
     g.fill();
-    g.stroke_style(hex("#FBBF24"));
+    g.stroke_style(hex("#FF9F0A"));
     g.line_width((0.05 * s).max(1.2));
     g.line_cap_round();
     for i in 0..8 {
@@ -47,25 +47,25 @@ fn sun(g: &mut Gfx, cx: f32, cy: f32, s: f32) {
 }
 
 fn moon(g: &mut Gfx, cx: f32, cy: f32, s: f32) {
-    g.fill_style(hex("#CBD5E1"));
+    g.fill_style(hex("#C7C7CC"));
     g.begin_path();
     g.circle(cx, cy, 0.24 * s);
     g.fill();
-    g.fill_style(hex("#0E0F11"));
+    g.fill_style(hex("#111112"));
     g.begin_path();
     g.circle(cx + 0.11 * s, cy - 0.08 * s, 0.2 * s);
     g.fill();
 }
 
 pub fn weather_icon(g: &mut Gfx, kind: Kind, day: bool, cx: f32, cy: f32, s: f32) {
-    let grey = hex("#94A3B8");
+    let grey = hex("#8E8E93");
     match kind {
         Kind::Clear => {
             if day { sun(g, cx, cy, s) } else { moon(g, cx, cy, s) }
         }
         Kind::Partly => {
             if day { sun(g, cx - 0.14 * s, cy - 0.14 * s, s * 0.8) } else { moon(g, cx - 0.14 * s, cy - 0.14 * s, s * 0.8) }
-            cloud(g, cx + 0.06 * s, cy + 0.12 * s, s * 0.85, hex("#CBD5E1"));
+            cloud(g, cx + 0.06 * s, cy + 0.12 * s, s * 0.85, hex("#C7C7CC"));
         }
         Kind::Cloudy => cloud(g, cx, cy, s, grey),
         Kind::Fog => {
@@ -77,7 +77,7 @@ pub fn weather_icon(g: &mut Gfx, kind: Kind, day: bool, cx: f32, cy: f32, s: f32
         }
         Kind::Rain => {
             cloud(g, cx, cy - 0.12 * s, s, grey);
-            g.stroke_style(hex("#38BDF8"));
+            g.stroke_style(hex("#64D2FF"));
             g.line_width((0.06 * s).max(1.2));
             g.line_cap_round();
             for dx in [-0.22f32, 0.0, 0.22] {
@@ -88,8 +88,8 @@ pub fn weather_icon(g: &mut Gfx, kind: Kind, day: bool, cx: f32, cy: f32, s: f32
             }
         }
         Kind::Storm => {
-            cloud(g, cx, cy - 0.12 * s, s, hex("#64748B"));
-            g.fill_style(hex("#FBBF24"));
+            cloud(g, cx, cy - 0.12 * s, s, hex("#6E6E73"));
+            g.fill_style(hex("#FF9F0A"));
             g.begin_path();
             g.move_to(cx + 0.04 * s, cy + 0.12 * s);
             g.line_to(cx - 0.1 * s, cy + 0.32 * s);
@@ -102,7 +102,7 @@ pub fn weather_icon(g: &mut Gfx, kind: Kind, day: bool, cx: f32, cy: f32, s: f32
         }
         Kind::Snow => {
             cloud(g, cx, cy - 0.12 * s, s, grey);
-            g.fill_style(hex("#E2E8F0"));
+            g.fill_style(hex("#EBEBF0"));
             for dx in [-0.2f32, 0.0, 0.2] {
                 g.begin_path();
                 g.circle(cx + dx * s, cy + 0.28 * s, 0.045 * s);
@@ -167,7 +167,7 @@ impl App {
             weather_icon(g, weather::kind_of(d.code), true, cx, right.y + 82.0, 30.0);
             text::draw(g, &format!("{:.0}°", d.max), cx, right.y + 112.0, Face::Bold, 12.5, hex(pal::INK), Align::Center);
             text::draw(g, &format!("{:.0}°", d.min), cx, right.y + 128.0, Face::Regular, 11.5, hex(pal::DIM), Align::Center);
-            text::draw(g, &format!("{}%", d.rain), cx, right.y + 148.0, Face::Regular, 10.0, hex("#38BDF8"), Align::Center);
+            text::draw(g, &format!("{}%", d.rain), cx, right.y + 148.0, Face::Regular, 10.0, hex("#64D2FF"), Align::Center);
         }
     }
 
@@ -423,7 +423,7 @@ impl App {
             let (clicked, hover, _) = self.ui.click_region(id_of(&format!("range-{i}"), 121), tab);
             let on = self.stock_range == i;
             if on {
-                g.fill_style(rgba(45, 91, 255, 0.34));
+                g.fill_style(rgba(255, 255, 255, 0.14));
                 g.fill_round_rect(tab.x, tab.y, tab.w, tab.h, 9.0);
             } else if hover {
                 g.fill_style(rgba(255, 255, 255, 0.07));
@@ -838,7 +838,7 @@ fn paint_chart(g: &mut Gfx, area: Rect, d: &stocks::Detail, prev: Option<f32>, c
         let tw = text::measure(&tag, Face::Medium, 9.5) + 8.0;
         g.fill_style(up_col);
         g.fill_round_rect(plot.x + plot.w + 2.0, ly - 7.0, tw.max(axis_w - 4.0), 14.0, 4.0);
-        text::draw(g, &tag, plot.x + plot.w + 2.0 + tw.max(axis_w - 4.0) / 2.0, ly, Face::Medium, 9.5, hex("#0B0C0E"), Align::Center);
+        text::draw(g, &tag, plot.x + plot.w + 2.0 + tw.max(axis_w - 4.0) / 2.0, ly, Face::Medium, 9.5, hex("#000000"), Align::Center);
 
         // The time axis: first, middle, last.
         let t0 = cs[0].t;
@@ -876,7 +876,7 @@ fn paint_chart(g: &mut Gfx, area: Rect, d: &stocks::Detail, prev: Option<f32>, c
                 let w = text::measure(&label, Face::Medium, 9.0) + 8.0;
                 g.fill_style(rgba(236, 239, 247, 0.9));
                 g.fill_round_rect(plot.x + plot.w + 2.0, my - 7.0, w.max(axis_w - 4.0), 14.0, 4.0);
-                text::draw(g, &label, plot.x + plot.w + 2.0 + w.max(axis_w - 4.0) / 2.0, my, Face::Medium, 9.0, hex("#0B0C0E"), Align::Center);
+                text::draw(g, &label, plot.x + plot.w + 2.0 + w.max(axis_w - 4.0) / 2.0, my, Face::Medium, 9.0, hex("#000000"), Align::Center);
             }
             let col = if c.c >= c.o { green } else { red };
             let chg = if c.o.abs() > 1e-9 { (c.c - c.o) / c.o * 100.0 } else { 0.0 };

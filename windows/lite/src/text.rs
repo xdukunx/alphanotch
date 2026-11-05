@@ -125,6 +125,16 @@ fn rasterize(f: &TtfFace<'static>, gid: u16, px: f32) -> (GlyphMetrics, Vec<u8>)
     (GlyphMetrics { xmin, ymin, width: w as usize, height: h as usize, advance_width }, cov)
 }
 
+/// The weight each face takes from Segoe UI Variable (None: the face is not drawn with it).
+fn variable_weight(face: Face) -> Option<f32> {
+    match face {
+        Face::Regular => Some(400.0),
+        Face::Medium => Some(560.0),
+        Face::Bold => Some(680.0),
+        Face::Mono => None,
+    }
+}
+
 fn face_files(face: Face) -> &'static [&'static str] {
     match face {
         Face::Regular => &["segoeui.ttf", "arial.ttf"],
@@ -140,7 +150,16 @@ impl Fonts {
             return *id;
         }
         let mut id = None;
-        for name in face_files(face) {
+        // Segoe UI Variable (Windows 11): one file, the weight picked on its axis. The older
+        // static Segoe UI files are the fallback on Windows 10.
+        if let Some(w) = variable_weight(face) {
+            if let Some(mut f) = load("SegUIVar.ttf", 0) {
+                let _ = f.set_variation(ttf_parser::Tag::from_bytes(b"wght"), w);
+                self.fonts.push(f);
+                id = Some(self.fonts.len() - 1);
+            }
+        }
+        for name in face_files(face).iter().filter(|_| id.is_none()) {
             if let Some(f) = load(name, 0) {
                 self.fonts.push(f);
                 id = Some(self.fonts.len() - 1);

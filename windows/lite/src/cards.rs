@@ -180,7 +180,7 @@ impl App {
             let aw = text::measure(&ago, Face::Regular, 10.0);
             let reserved = if i == 0 { 26.0 } else { 6.0 };
             let name = text::ellipsize(s(d, "projectName"), Face::Medium, 11.5, a.w - 16.0 - aw - reserved - 8.0);
-            t(g, &name, a.x + 12.0, y + 10.0, Face::Medium, 11.5, hex("#E6E7EA"));
+            t(g, &name, a.x + 12.0, y + 10.0, Face::Medium, 11.5, hex("#EBEBF0"));
             text::draw(g, &ago, a.x + a.w - reserved - 2.0, y + 10.0, Face::Regular, 10.0, hex(pal::DIM3), Align::Right);
             if i == 0 {
                 let (cx, cy) = (a.x + a.w - 10.0, y + 10.0);
@@ -203,7 +203,7 @@ impl App {
         let mut y = a.y + 40.0;
         if !s(&d, "commitMessage").is_empty() {
             let m = text::ellipsize(s(&d, "commitMessage"), Face::Regular, 11.5, a.w);
-            t(g, &m, a.x, y, Face::Regular, 11.5, hex("#C5C8CD"));
+            t(g, &m, a.x, y, Face::Regular, 11.5, hex("#C7C7CC"));
             y += 17.0;
         }
         let mut meta = String::new();
@@ -217,7 +217,7 @@ impl App {
         if !s(&d, "url").is_empty() {
             let url = s(&d, "url").to_string();
             let label = text::ellipsize(&url, Face::Regular, 10.5, a.w);
-            let (clicked, _) = self.ui.link(g, a.x, y, &label, hex("#7C5CFF"));
+            let (clicked, _) = self.ui.link(g, a.x, y, &label, hex("#BF5AF2"));
             if clicked {
                 open_url(&format!("https://{url}"));
             }
@@ -249,7 +249,7 @@ impl App {
             let x = a.x + a.w - tw;
             let pulse = 0.5 + 0.5 * (crate::anim::now() * 3.0).sin();
             ui::dot(g, x - 10.0, cy, 5.0 + pulse, with_alpha(hex(pal::GREEN), 0.4 + 0.6 * pulse));
-            text::draw(g, &label, a.x + a.w, cy, Face::Medium, 11.0, hex("#9AE6B4"), Align::Right);
+            text::draw(g, &label, a.x + a.w, cy, Face::Medium, 11.0, hex("#30D158"), Align::Right);
         }
         for (i, e) in arr(info, "emails").iter().take(3).enumerate() {
             let y = a.y + 32.0 + i as f32 * 22.0;
@@ -259,7 +259,7 @@ impl App {
             let to = e.get("to").and_then(Value::as_array).and_then(|a| a.first()).and_then(Value::as_str).unwrap_or("?");
             let short = to.split('@').next().unwrap_or("?");
             let mut x = a.x + 12.0;
-            x += t(g, &text::ellipsize(short, Face::Medium, 11.5, 70.0), x, y + 10.0, Face::Medium, 11.5, hex("#E6E7EA")) + 6.0;
+            x += t(g, &text::ellipsize(short, Face::Medium, 11.5, 70.0), x, y + 10.0, Face::Medium, 11.5, hex("#EBEBF0")) + 6.0;
             x += t(g, &time_ago(&e["createdAt"]), x, y + 10.0, Face::Regular, 10.0, hex(pal::DIM3)) + 6.0;
             if i == 0 && !s(e, "subject").is_empty() {
                 let room = a.x + a.w - x;
@@ -279,7 +279,7 @@ impl App {
         let fmt = |n: f64| if n >= 1000.0 { format!("{:.1}k", n / 1000.0) } else { format!("{}", n as i64) };
         let rows = [
             (Icon::Star, "#F5A524", "Total stars", fmt(stars)),
-            (Icon::Stack, "#6B7079", "Repositories", fmt(repos)),
+            (Icon::Stack, "#6E6E73", "Repositories", fmt(repos)),
         ];
         for (i, (icon, color, label, value)) in rows.iter().enumerate() {
             let y = a.y + 40.0 + i as f32 * 24.0;
@@ -306,7 +306,7 @@ impl App {
             let desc = if s(p, "description").is_empty() { "Payment" } else { s(p, "description") };
             let amount = format!("+{:.2}", p.get("amount").and_then(Value::as_f64).unwrap_or(0.0) / 100.0);
             let aw = text::measure(&amount, Face::Medium, 11.0);
-            t(g, &text::ellipsize(desc, Face::Regular, 11.0, a.w - 20.0 - aw - 36.0), a.x + 12.0, y + 8.0, Face::Regular, 11.0, hex("#E6E7EA"));
+            t(g, &text::ellipsize(desc, Face::Regular, 11.0, a.w - 20.0 - aw - 36.0), a.x + 12.0, y + 8.0, Face::Regular, 11.0, hex("#EBEBF0"));
             text::draw(g, &amount, a.x + a.w - 34.0, y + 8.0, Face::Medium, 11.0, hex(pal::GREEN), Align::Right);
             text::draw(g, &time_ago(&p["createdAt"]), a.x + a.w, y + 8.0, Face::Regular, 10.0, hex(pal::DIM3), Align::Right);
         }
@@ -333,7 +333,7 @@ impl App {
             let ago = time_ago(&p["lastEditedAt"]);
             let aw = text::measure(&ago, Face::Regular, 10.0);
             let title = if s(p, "title").is_empty() { "Untitled" } else { s(p, "title") };
-            t(g, &text::ellipsize(title, Face::Medium, 11.5, a.w - 24.0 - aw - 8.0), a.x + 18.0, y + 10.0, Face::Medium, 11.5, hex("#E6E7EA"));
+            t(g, &text::ellipsize(title, Face::Medium, 11.5, a.w - 24.0 - aw - 8.0), a.x + 18.0, y + 10.0, Face::Medium, 11.5, hex("#EBEBF0"));
             text::draw(g, &ago, a.x + a.w - 4.0, y + 10.0, Face::Regular, 10.0, hex(pal::DIM3), Align::Right);
             if clicked {
                 if let Some(u) = p.get("url").and_then(Value::as_str) {
@@ -362,7 +362,7 @@ impl App {
             let stamp = local_day_time(*when);
             let w = t(g, &stamp, a.x + 10.0, y + 10.0, Face::Medium, 10.5, hex("#C9956A"));
             let title = if s(b, "title").is_empty() { "Meeting" } else { s(b, "title") };
-            t(g, &text::ellipsize(title, Face::Regular, 11.0, a.w - 18.0 - w), a.x + 18.0 + w, y + 10.0, Face::Regular, 11.0, hex("#E6E7EA"));
+            t(g, &text::ellipsize(title, Face::Regular, 11.0, a.w - 18.0 - w), a.x + 18.0 + w, y + 10.0, Face::Regular, 11.0, hex("#EBEBF0"));
         }
     }
 
@@ -382,7 +382,7 @@ impl App {
         g.round_rect(r.x + 0.5, r.y + 0.5, r.w - 1.0, r.h - 1.0, 11.5);
         g.stroke();
         ui::dot(g, r.x + 12.0, r.cy(), 5.0, hex(accent));
-        t(g, &label, r.x + 21.0, r.cy(), Face::Medium, 11.5, hex("#E6E7EA"));
+        t(g, &label, r.x + 21.0, r.cy(), Face::Medium, 11.5, hex("#EBEBF0"));
         icons::fill(g, Icon::Ellipsis, r.x + r.w - 12.0, r.cy(), 9.0, hex(pal::DIM2));
         if clicked {
             self.detail_open = true;
@@ -397,7 +397,7 @@ impl App {
             Some(detail) => {
                 let lines = text::wrap(detail, Face::Mono, 10.5, a.w);
                 for (i, l) in lines.iter().take(4).enumerate() {
-                    t(g, l, a.x, a.y + 42.0 + i as f32 * 14.0, Face::Mono, 10.5, hex("#C5C8CD"));
+                    t(g, l, a.x, a.y + 42.0 + i as f32 * 14.0, Face::Mono, 10.5, hex("#C7C7CC"));
                 }
             }
             None => {

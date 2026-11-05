@@ -33,7 +33,7 @@ use crate::text::{self, Align, Face};
 use crate::textfield::TextField;
 use crate::ui::{self, id_of, pal, Rect, Ui};
 
-const BG: &str = "#03040A";
+const BG: &str = "#0A0A0B";
 /// Width of the navigation on the left.
 const SIDEBAR_W: f32 = 200.0;
 
@@ -379,7 +379,7 @@ impl Win {
 
     /// The navigation: the app's name, one row per page, the privacy line at the bottom.
     fn draw_sidebar(&mut self, g: &mut Gfx, lh: f32, off: f32) {
-        g.fill_style(hex("#06080F"));
+        g.fill_style(hex("#141415"));
         g.fill_rect(0.0, off, SIDEBAR_W, lh);
         g.fill_style(rgba(236, 239, 247, 0.07));
         g.fill_rect(SIDEBAR_W - 1.0, off, 1.0, lh);
@@ -391,15 +391,15 @@ impl Win {
             let (clicked, hover, _) = self.ui.click_region(id_of(&format!("nav-{i}"), 141), r);
             let on = i == self.section;
             if on {
-                g.fill_style(rgba(45, 91, 255, 0.20));
+                g.fill_style(rgba(255, 255, 255, 0.09));
                 g.fill_round_rect(r.x, r.y, r.w, r.h, 9.0);
-                g.fill_style(hex("#2D5BFF"));
+                g.fill_style(hex("#0A84FF"));
                 g.fill_round_rect(r.x, r.y + 9.0, 3.0, 16.0, 1.5);
             } else if hover {
                 g.fill_style(rgba(255, 255, 255, 0.05));
                 g.fill_round_rect(r.x, r.y, r.w, r.h, 9.0);
             }
-            let col = if on { hex(pal::INK) } else if hover { hex("#C5C8CD") } else { hex(pal::DIM2) };
+            let col = if on { hex(pal::INK) } else if hover { hex("#C7C7CC") } else { hex(pal::DIM2) };
             crate::icons::fill(g, *icon, r.x + 20.0, r.cy(), 13.0, col);
             text::draw(g, label, r.x + 38.0, r.cy(), Face::Medium, 12.5, col, Align::Left);
             if clicked && !on {
@@ -415,7 +415,7 @@ impl Win {
 
     /// A section card; returns the inner x, width and the content top.
     fn card(g: &mut Gfx, x: f32, y: f32, w: f32, h: f32) {
-        g.fill_style(hex("#0A0D18"));
+        g.fill_style(hex("#161617"));
         g.fill_round_rect(x, y, w, h, 14.0);
         g.stroke_style(rgba(236, 239, 247, 0.08));
         g.line_width(1.0);
@@ -456,7 +456,7 @@ impl Win {
         text::draw(g, label, x, y + 9.0, Face::Regular, 12.0, hex(pal::DIM), Align::Left);
         let room = w - 110.0 - if dot.is_some() { 18.0 } else { 0.0 };
         let v = text::ellipsize(value, Face::Mono, 11.0, room);
-        text::draw(g, &v, x + 110.0, y + 9.0, Face::Mono, 11.0, hex("#C5C8CD"), Align::Left);
+        text::draw(g, &v, x + 110.0, y + 9.0, Face::Mono, 11.0, hex("#C7C7CC"), Align::Left);
         if let Some(ok) = dot {
             ui::dot(g, x + w - 6.0, y + 9.0, 8.0, hex(if ok { pal::GREEN } else { pal::RED }));
         }
@@ -541,9 +541,9 @@ impl Win {
                 for (i, l) in lines.iter().enumerate() {
                     let ly = y + 8.0 + 7.5 + i as f32 * 15.0;
                     let (bg, fg) = if l.starts_with('+') {
-                        (Some(rgba(34, 197, 94, 0.14)), "#8FE3AE")
+                        (Some(rgba(48, 209, 88, 0.14)), "#30D158")
                     } else if l.starts_with('-') {
-                        (Some(rgba(244, 80, 94, 0.14)), "#FF9AA3")
+                        (Some(rgba(255, 69, 58, 0.14)), "#FF6961")
                     } else {
                         (None, "#9398A1")
                     };
@@ -630,7 +630,7 @@ impl Win {
         y += 26.0;
 
         // API key row.
-        text::draw(g, "API key", ix, y + 14.0, Face::Regular, 12.0, hex("#C5C8CD"), Align::Left);
+        text::draw(g, "API key", ix, y + 14.0, Face::Regular, 12.0, hex("#C7C7CC"), Align::Left);
         let fx = ix + 104.0;
         let (save_w, rm_w) = (text::measure("Save key", Face::Medium, 12.5) + 26.0, text::measure("Remove", Face::Medium, 12.5) + 26.0);
         let fw = iw - 104.0 - save_w - 8.0 - if has { rm_w + 8.0 } else { 0.0 };
@@ -659,7 +659,7 @@ impl Win {
         }
 
         // Model.
-        text::draw(g, "Model", ix, y + 14.0, Face::Regular, 12.0, hex("#C5C8CD"), Align::Left);
+        text::draw(g, "Model", ix, y + 14.0, Face::Regular, 12.0, hex("#C7C7CC"), Align::Left);
         let mut mx = fx;
         let current = self.settings.model.clone();
         let mut options: Vec<(String, String)> = MODELS.iter().map(|(a, b)| (a.to_string(), b.to_string())).collect();
@@ -671,7 +671,7 @@ impl Win {
             let r = Rect::new(mx, y, pw, 28.0);
             let (clicked, hover, _) = self.ui.click_region(id_of(&id, 71), r);
             let on = id == current;
-            g.fill_style(if on { rgba(45, 91, 255, 0.34) } else { rgba(255, 255, 255, if hover { 0.1 } else { 0.05 }) });
+            g.fill_style(if on { rgba(255, 255, 255, 0.14) } else { rgba(255, 255, 255, if hover { 0.1 } else { 0.05 }) });
             g.fill_round_rect(r.x, r.y, r.w, r.h, 14.0);
             text::draw(g, &label, r.cx(), r.cy(), Face::Regular, 11.5, hex(if on { pal::INK } else { pal::DIM2 }), Align::Center);
             mx += pw + 5.0;
@@ -717,7 +717,7 @@ impl Win {
         g.fill_style(rgba(255, 255, 255, 0.07));
         g.fill_round_rect(r.x, r.y, r.w, r.h, 8.0);
         if focused {
-            g.stroke_style(rgba(99, 140, 255, 0.7));
+            g.stroke_style(rgba(10, 132, 255, 0.8));
             g.line_width(1.2);
             g.round_rect(r.x + 0.6, r.y + 0.6, r.w - 1.2, r.h - 1.2, 7.4);
             g.stroke();
@@ -944,7 +944,7 @@ impl Win {
         for (i, (id, label)) in feats.iter().enumerate() {
             let x = ix + (i % 2) as f32 * half;
             let yy = y0 + pad + (i / 2) as f32 * 40.0;
-            text::draw(g, label, x, yy + 11.0, Face::Regular, 12.5, hex("#D5D8DE"), Align::Left);
+            text::draw(g, label, x, yy + 11.0, Face::Regular, 12.5, hex("#C7C7CC"), Align::Left);
             let on = self.settings.feature_on(id);
             if self.ui.switch(g, &format!("feat-{id}"), x + half - 56.0, yy + 2.0, on) {
                 if on {
@@ -974,7 +974,7 @@ impl Win {
             ("Istirahat mata", 2, &[0, 20, 30]),
         ];
         for (label, k, opts) in rems {
-            text::draw(g, label, ix, y + 11.0, Face::Regular, 12.0, hex("#C5C8CD"), Align::Left);
+            text::draw(g, label, ix, y + 11.0, Face::Regular, 12.0, hex("#C7C7CC"), Align::Left);
             let cur = match k {
                 0 => self.settings.water_every_min,
                 1 => self.settings.stretch_every_min,
@@ -987,7 +987,7 @@ impl Win {
                 let r = Rect::new(px, y - 2.0, pw, 28.0);
                 let (clicked, hover, _) = self.ui.click_region(id_of(&format!("rem-{k}-{o}"), 83), r);
                 let on = cur == o;
-                g.fill_style(if on { rgba(45, 91, 255, 0.34) } else { rgba(255, 255, 255, if hover { 0.1 } else { 0.05 }) });
+                g.fill_style(if on { rgba(255, 255, 255, 0.14) } else { rgba(255, 255, 255, if hover { 0.1 } else { 0.05 }) });
                 g.fill_round_rect(r.x, r.y, r.w, r.h, 14.0);
                 text::draw(g, &t, r.cx(), r.cy(), Face::Regular, 11.5, hex(if on { pal::INK } else { pal::DIM2 }), Align::Center);
                 px += pw + 4.0;
@@ -1004,7 +1004,7 @@ impl Win {
         }
         // Water: the daily goal and the size of one drink.
         for (label, which, opts) in [("Target air", 0usize, [1500u32, 2000, 2500, 3000]), ("Satu minum", 1, [175, 250, 330, 500])] {
-            text::draw(g, label, ix, y + 11.0, Face::Regular, 12.0, hex("#C5C8CD"), Align::Left);
+            text::draw(g, label, ix, y + 11.0, Face::Regular, 12.0, hex("#C7C7CC"), Align::Left);
             let cur = if which == 0 { self.settings.water_goal_ml } else { self.settings.water_bottle_ml };
             let mut px = ix + 112.0;
             for o in opts {
@@ -1013,7 +1013,7 @@ impl Win {
                 let r = Rect::new(px, y - 2.0, pw, 28.0);
                 let (clicked, hover, _) = self.ui.click_region(id_of(&format!("water-{which}-{o}"), 85), r);
                 let on = cur == o;
-                g.fill_style(if on { rgba(45, 91, 255, 0.34) } else { rgba(255, 255, 255, if hover { 0.1 } else { 0.05 }) });
+                g.fill_style(if on { rgba(255, 255, 255, 0.14) } else { rgba(255, 255, 255, if hover { 0.1 } else { 0.05 }) });
                 g.fill_round_rect(r.x, r.y, r.w, r.h, 14.0);
                 text::draw(g, &t, r.cx(), r.cy(), Face::Regular, 11.5, hex(if on { pal::INK } else { pal::DIM2 }), Align::Center);
                 px += pw + 4.0;
@@ -1035,7 +1035,7 @@ impl Win {
         .enumerate()
         {
             let x = ix + i as f32 * half;
-            text::draw(g, label, x, y + 11.0, Face::Regular, 12.0, hex("#C5C8CD"), Align::Left);
+            text::draw(g, label, x, y + 11.0, Face::Regular, 12.0, hex("#C7C7CC"), Align::Left);
             if self.ui.switch(g, &format!("coach-{i}"), x + 130.0, y + 2.0, on) {
                 if i == 0 {
                     self.settings.coach_suggestions = !on;
@@ -1060,7 +1060,7 @@ impl Win {
         Self::card(g, m, y0, cw, h + 2.0 * pad);
         let mut y = y0 + pad + 4.0;
 
-        text::draw(g, "Jadwal shalat", ix, y + 11.0, Face::Medium, 13.0, hex("#D5D8DE"), Align::Left);
+        text::draw(g, "Jadwal shalat", ix, y + 11.0, Face::Medium, 13.0, hex("#C7C7CC"), Align::Left);
         text::draw(g, "kartu berisi 5 waktu saat tiba, dan waktu berikutnya di bar", ix + 110.0, y + 11.5, Face::Regular, 11.0, hex(pal::DIM3), Align::Left);
         let on = self.settings.prayer_alarm;
         if self.ui.switch(g, "prayer-on", ix + iw - 36.0, y + 2.0, on) {
@@ -1075,7 +1075,7 @@ impl Win {
             let r = Rect::new(px, y - 2.0, pw, 28.0);
             let (clicked, hover, _) = self.ui.click_region(id_of(&format!("prayer-{i}"), 87), r);
             let sel = self.settings.prayer_mask & (1 << i) != 0;
-            g.fill_style(if sel { rgba(45, 91, 255, 0.34) } else { rgba(255, 255, 255, if hover { 0.1 } else { 0.05 }) });
+            g.fill_style(if sel { rgba(255, 255, 255, 0.14) } else { rgba(255, 255, 255, if hover { 0.1 } else { 0.05 }) });
             g.fill_round_rect(r.x, r.y, r.w, r.h, 14.0);
             text::draw(g, name, r.cx(), r.cy(), Face::Regular, 11.5, hex(if sel { pal::INK } else { pal::DIM2 }), Align::Center);
             px += pw + 6.0;
@@ -1086,7 +1086,7 @@ impl Win {
         }
         y += 38.0;
 
-        text::draw(g, "Lebih awal", ix, y + 11.0, Face::Regular, 12.0, hex("#C5C8CD"), Align::Left);
+        text::draw(g, "Lebih awal", ix, y + 11.0, Face::Regular, 12.0, hex("#C7C7CC"), Align::Left);
         let mut px = ix + 112.0;
         for lead in [0u32, 5, 10, 15] {
             let t = if lead == 0 { "Tepat waktu".to_string() } else { format!("{lead} mnt") };
@@ -1094,7 +1094,7 @@ impl Win {
             let r = Rect::new(px, y - 2.0, pw, 28.0);
             let (clicked, hover, _) = self.ui.click_region(id_of(&format!("prayer-lead-{lead}"), 88), r);
             let sel = self.settings.prayer_lead_min == lead;
-            g.fill_style(if sel { rgba(45, 91, 255, 0.34) } else { rgba(255, 255, 255, if hover { 0.1 } else { 0.05 }) });
+            g.fill_style(if sel { rgba(255, 255, 255, 0.14) } else { rgba(255, 255, 255, if hover { 0.1 } else { 0.05 }) });
             g.fill_round_rect(r.x, r.y, r.w, r.h, 14.0);
             text::draw(g, &t, r.cx(), r.cy(), Face::Regular, 11.5, hex(if sel { pal::INK } else { pal::DIM2 }), Align::Center);
             px += pw + 4.0;
@@ -1127,11 +1127,11 @@ impl Win {
     fn general(&mut self, g: &mut Gfx, m: f32, y0: f32, cw: f32) -> f32 {
         let pad = 18.0;
         let (ix, iw) = (m + pad, cw - 2.0 * pad);
-        let h = 8.0 * 38.0 - 8.0;
+        let h = 7.0 * 38.0 - 8.0;
         Self::card(g, m, y0, cw, h + 2.0 * pad);
         let mut y = y0 + pad;
         let lab = |g: &mut Gfx, y: f32, s: &str| {
-            text::draw(g, s, ix, y + 11.0, Face::Regular, 12.0, hex("#C5C8CD"), Align::Left);
+            text::draw(g, s, ix, y + 11.0, Face::Regular, 12.0, hex("#C7C7CC"), Align::Left);
         };
         let cx = ix + 150.0;
 
@@ -1192,7 +1192,7 @@ impl Win {
             let r = Rect::new(px, y - 2.0, pw, 28.0);
             let (clicked, hover, _) = self.ui.click_region(id_of(id, 79), r);
             let on = self.settings.screen == id;
-            g.fill_style(if on { rgba(45, 91, 255, 0.34) } else { rgba(255, 255, 255, if hover { 0.1 } else { 0.05 }) });
+            g.fill_style(if on { rgba(255, 255, 255, 0.14) } else { rgba(255, 255, 255, if hover { 0.1 } else { 0.05 }) });
             g.fill_round_rect(r.x, r.y, r.w, r.h, 14.0);
             text::draw(g, label, r.cx(), r.cy(), Face::Regular, 11.5, hex(if on { pal::INK } else { pal::DIM2 }), Align::Center);
             px += pw + 6.0;
@@ -1223,16 +1223,6 @@ impl Win {
         text::draw(g, "bar kecil tetap tampil saat diam", cx + 48.0, y + 11.0, Face::Regular, 11.5, hex(pal::DIM3), Align::Left);
         y += 38.0;
 
-        // Look.
-        lab(g, y, "Tema Nusa");
-        let on = self.settings.theme_nusa;
-        if self.ui.switch(g, "set-nusa", cx, y + 2.0, on) {
-            self.settings.theme_nusa = !on;
-            crate::ui::set_nusa(!on);
-            self.save();
-        }
-        text::draw(g, "biru-hitam pekat dan panel bergaris tipis", cx + 48.0, y + 11.0, Face::Regular, 11.5, hex(pal::DIM3), Align::Left);
-        y += 38.0;
 
         // Games and full-screen apps.
         lab(g, y, "Sembunyi saat game");

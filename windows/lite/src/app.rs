@@ -1494,7 +1494,6 @@ impl App {
         self.fsm.set_stay_visible(self.st.settings.stay_visible);
         crate::weather::set_city(&self.st.settings.weather_city);
         crate::stocks::set_symbols(&self.st.settings.stocks);
-        crate::ui::set_nusa(self.st.settings.theme_nusa);
         self.sync_key_hook();
         self.sync_fullscreen_hook();
         self.sync_reminder_timer();
@@ -1715,7 +1714,7 @@ impl App {
         g.begin_path();
         g.round_rect4(0.0, 0.0, iw, ih, [0.0, 0.0, r, r]);
         let body = g.take_path().unwrap();
-        g.fill_style(hex(if crate::ui::nusa() { "#03040A" } else { "#000000" }));
+        g.fill_style(hex("#000000"));
         g.fill_path(&body);
 
         let expanded = self.st.mode == Mode::Expanded;
@@ -1781,11 +1780,11 @@ impl App {
                 // The glow is confined to the island's own shape.
                 g.save();
                 g.clip_path(body);
-                let rad = d * 1.1;
+                let rad = d * 0.78;
                 let key = crate::gfx::layer_key(&[rad, color.red(), color.green(), color.blue(), op, 2.0]);
                 g.cached_layer(key, rad * 2.0, rad * 2.0, cx - rad, cy - rad, |l| {
                     let grad = l.radial(rad, rad, 0.0, rad, &[
-                        (0.0, crate::gfx::with_alpha(color, op * 0.8)),
+                        (0.0, crate::gfx::with_alpha(color, op * 0.32)),
                         (0.62, crate::gfx::with_alpha(color, 0.0)),
                         (1.0, crate::gfx::with_alpha(color, 0.0)),
                     ]);
@@ -1822,7 +1821,7 @@ impl App {
                 for i in 0..3 {
                     let ph = n * (5.0 + i as f32 * 1.7) + i as f32 * 1.3;
                     let h = 4.0 + (ph.sin() * 0.5 + 0.5) * 8.0;
-                    g.fill_style(hex("#B38AFF"));
+                    g.fill_style(hex("#BF5AF2"));
                     g.fill_round_rect(x0 + i as f32 * 4.5, cy - h / 2.0, 3.0, h, 1.5);
                 }
                 let tx = x0 + 18.0;

@@ -259,7 +259,7 @@ impl App {
         // Elapsed time sits on the ring, at the bottom.
         let tl = mmss(pos);
         let tw = text::measure(&tl, Face::Medium, 10.5) + 14.0;
-        g.fill_style(hex("#0E0F11"));
+        g.fill_style(hex("#111112"));
         g.fill_round_rect(ring_c.0 - tw / 2.0, ring_c.1 + ring_r - 8.0, tw, 16.0, 8.0);
         text::draw(g, &tl, ring_c.0, ring_c.1 + ring_r, Face::Medium, 10.5, rgba(255, 255, 255, 0.85), Align::Center);
 
@@ -288,11 +288,11 @@ impl App {
             match kind {
                 2 => {
                     let rad = if pressed { 14.0 } else if hover { 17.0 } else { 16.0 };
-                    g.fill_style(hex("#F5F6F8"));
+                    g.fill_style(hex("#F5F5F7"));
                     g.begin_path();
                     g.circle(cx, cy, rad);
                     g.fill();
-                    g.fill_style(hex("#0B0C0E"));
+                    g.fill_style(hex("#000000"));
                     if m.playing { glyph_pause(g, cx, cy, 12.0) } else { glyph_play(g, cx + 1.0, cy, 12.0) }
                 }
                 1 | 3 => {
@@ -444,7 +444,7 @@ impl App {
         let tile = Rect::new(r.x + 4.0, r.y + 4.0, 18.0, 18.0);
         g.fill_style(rgba(180, 90, 240, 0.30));
         g.fill_round_rect(tile.x, tile.y, tile.w, tile.h, 6.0);
-        text::draw(g, &t.wDay.to_string(), tile.cx(), tile.cy(), Face::Bold, 9.5, hex("#EBDDFF"), Align::Center);
+        text::draw(g, &t.wDay.to_string(), tile.cx(), tile.cy(), Face::Bold, 9.5, hex("#F5F5F7"), Align::Center);
 
         let x = r.x + 30.0;
         let right = r.x + r.w - 10.0;
@@ -471,7 +471,7 @@ impl App {
                 let e = &events[0];
                 let more = events.len() - 1;
                 let tw = text::measure(&e.start, Face::Medium, 10.5);
-                text::draw(g, &e.start, x, cy, Face::Medium, 10.5, hex("#C9A7F5"), Align::Left);
+                text::draw(g, &e.start, x, cy, Face::Medium, 10.5, hex("#BF5AF2"), Align::Left);
                 let end = if more > 0 { right - 22.0 } else { right };
                 crate::app::fading_text(g, &e.title, x + tw + 8.0, cy, 11.5, hex(pal::INK), x + tw + 8.0, end);
                 if more > 0 {

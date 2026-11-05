@@ -215,7 +215,7 @@ impl App {
         g.fill_round_rect(bar.x, bar.y, bar.w, bar.h, 3.0);
         let k = clamp(total as f32 / goal as f32, 0.0, 1.0);
         if k > 0.0 {
-            let grad = g.linear(bar.x, 0.0, bar.x + bar.w, 0.0, &[(0.0, hex("#19B8FF")), (1.0, hex("#2D5BFF"))]);
+            let grad = g.linear(bar.x, 0.0, bar.x + bar.w, 0.0, &[(0.0, hex("#64D2FF")), (1.0, hex("#0A84FF"))]);
             g.fill_style(grad);
             g.fill_round_rect(bar.x, bar.y, (bar.w * k).max(6.0), bar.h, 3.0);
         }
@@ -245,12 +245,12 @@ impl App {
             g.fill_round_rect(bx, area.y, bwid, area.h, 3.0);
             if *ml > 0 {
                 let h = (area.h * (*ml as f32 / peak)).max(4.0);
-                let grad = g.linear(0.0, area.y + area.h - h, 0.0, area.y + area.h, &[(0.0, hex("#38BDF8")), (1.0, hex("#2D5BFF"))]);
+                let grad = g.linear(0.0, area.y + area.h - h, 0.0, area.y + area.h, &[(0.0, hex("#64D2FF")), (1.0, hex("#0A84FF"))]);
                 g.fill_style(grad);
                 g.fill_round_rect(bx, area.y + area.h - h, bwid, h, 3.0);
             }
             if i == now_bin.min(7) {
-                g.fill_style(hex("#38BDF8"));
+                g.fill_style(hex("#64D2FF"));
                 g.fill_round_rect(bx + bwid / 2.0 - 3.0, area.y + area.h + 5.0, 6.0, 2.0, 1.0);
             }
             if i % 2 == 0 {
@@ -266,7 +266,7 @@ impl App {
         let kind = self.focus_kind;
         let running = activity::timer();
         let (left_s, total_s) = running.unwrap_or((kind.minutes() * 60.0, kind.minutes() * 60.0));
-        let color = if kind == FocusKind::Focus { "#F4505E" } else { "#34D399" };
+        let color = if kind == FocusKind::Focus { "#F4505E" } else { "#30D158" };
         self.dash_page_title(g, v, "Fokus", &format!("Pomodoro · {} sesi hari ini", self.buddy.focus_done));
 
         let card = Rect::new(v.x, v.y, v.w, v.h);
@@ -321,7 +321,7 @@ impl App {
         g.begin_path();
         g.circle(bc.0, bc.1, rad);
         g.fill();
-        g.fill_style(hex("#0B0C0E"));
+        g.fill_style(hex("#000000"));
         if running.is_some() {
             g.fill_round_rect(bc.0 - 7.0, bc.1 - 7.0, 14.0, 14.0, 3.0);
         } else {

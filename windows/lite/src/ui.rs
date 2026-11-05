@@ -4,7 +4,6 @@
 
 use tiny_skia::Color;
 
-use crate::anim::lerp;
 use crate::gfx::{hex, rgba, with_alpha, Gfx};
 use crate::icons::{self, Icon};
 use crate::layout::{wash_rgba, Wash};
@@ -13,20 +12,20 @@ use crate::text::{self, Align, Face};
 // ── Palette (copied from style.css) ───────────────────────────────────────────
 
 pub mod pal {
-    pub const INK: &str = "#F5F6F8";
-    pub const INK2: &str = "#F1F2F4";
-    pub const DIM: &str = "#9398A1";
-    pub const DIM2: &str = "#8E939C";
-    pub const DIM3: &str = "#6B7079";
-    pub const DIM4: &str = "#5F646D";
-    pub const CARD: &str = "#141518";
-    pub const CARD_FLAT: &str = "#0E0F11";
-    pub const TAB_ON: &str = "#1D1F23";
-    pub const RED: &str = "#F4505E";
-    pub const RED_TEXT: &str = "#FF8D97";
-    pub const GREEN: &str = "#22C55E";
-    pub const GREEN2: &str = "#34D399";
-    pub const AMBER: &str = "#F5A524";
+    // Label colours and system colours of macOS in dark mode, flattened over black.
+    pub const INK: &str = "#F5F5F7";
+    pub const INK2: &str = "#EBEBF0";
+    pub const DIM: &str = "#A1A1A6";
+    pub const DIM2: &str = "#8E8E93";
+    pub const DIM3: &str = "#6E6E73";
+    pub const DIM4: &str = "#545458";
+    pub const CARD: &str = "#161617";
+    pub const CARD_FLAT: &str = "#111112";
+    pub const RED: &str = "#FF453A";
+    pub const RED_TEXT: &str = "#FF6961";
+    pub const GREEN: &str = "#30D158";
+    pub const GREEN2: &str = "#32D74B";
+    pub const AMBER: &str = "#FF9F0A";
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -162,9 +161,9 @@ impl Ui {
         g.translate(-r.cx(), -r.cy());
 
         let (bg, fg) = if primary {
-            (hex(pal::INK), hex("#0B0C0E"))
+            (hex(pal::INK), hex("#000000"))
         } else {
-            (rgba(255, 255, 255, if hover { 0.15 } else { 0.09 }), hex(pal::INK2))
+            (rgba(255, 255, 255, if hover { 0.16 } else { 0.10 }), hex(pal::INK2))
         };
         g.fill_style(bg);
         g.fill_round_rect(x, y, w, h, h / 2.0);
@@ -210,10 +209,10 @@ impl Ui {
     pub fn header_icon(&mut self, g: &mut Gfx, id: &str, r: Rect, icon: Icon, size: f32, on: bool, pill: bool) -> bool {
         let (clicked, hover, _) = self.click_region(id_of(id, 5), r);
         if pill && (on || hover) {
-            g.fill_style(if on { hex(pal::TAB_ON) } else { rgba(255, 255, 255, 0.07) });
+            g.fill_style(if on { rgba(255, 255, 255, 0.13) } else { rgba(255, 255, 255, 0.06) });
             g.fill_round_rect(r.x, r.y, r.w, r.h, r.h / 2.0);
         }
-        let col = if on { hex(pal::INK) } else if hover { hex("#B0B5BE") } else { hex(pal::DIM2) };
+        let col = if on { hex(pal::INK) } else if hover { hex(pal::DIM) } else { hex(pal::DIM3) };
         icons::fill(g, icon, r.cx(), r.cy(), size, col);
         clicked
     }
@@ -239,36 +238,19 @@ pub fn dot(g: &mut Gfx, cx: f32, cy: f32, d: f32, color: Color) {
     g.fill();
 }
 
-static NUSA: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
-
-/// Switches the Nusa look (deeper panels, glowing edge) on or off.
-pub fn set_nusa(on: bool) {
-    NUSA.store(on, std::sync::atomic::Ordering::Relaxed);
-}
-
-pub fn nusa() -> bool {
-    NUSA.load(std::sync::atomic::Ordering::Relaxed)
-}
-
 /// `.card`: rounded panel with an optional glow rising from below (the wash).
 pub fn card(g: &mut Gfx, r: Rect, wash: Wash, flat: bool) {
-    let nusa = nusa();
-    g.fill_style(hex(match (nusa, flat) {
-        (true, true) => "#080B15",
-        (true, false) => "#0A0D18",
-        (false, true) => pal::CARD_FLAT,
-        (false, false) => pal::CARD,
-    }));
-    g.fill_round_rect(r.x, r.y, r.w, r.h, 20.0);
-    g.stroke_style(if nusa { rgba(236, 239, 247, 0.10) } else { rgba(255, 255, 255, 0.035) });
-    g.line_width(1.0);
-    g.round_rect(r.x + 0.5, r.y + 0.5, r.w - 1.0, r.h - 1.0, 19.5);
-    g.stroke();
+    g.fill_style(hex(if flat { pal::CARD_FLAT } else { pal::CARD }));
+    g.fill_round_rect(r.x, r.y, r.w, r.h, CARD_R);
+    // The colour of a card's mood is only a breath at its foot, not a glow.
     if wash != Wash::None {
         let (cr, cg, cb, ca) = wash_rgba(wash);
-        glow(g, r, 50.0, 130.0, 280.0, tiny_skia::Color::from_rgba8(cr, cg, cb, (ca * 255.0) as u8));
+        glow(g, r, 50.0, 135.0, 240.0, tiny_skia::Color::from_rgba8(cr, cg, cb, (ca * 0.45 * 255.0) as u8));
     }
 }
+
+/// Corner radius of every card.
+pub const CARD_R: f32 = 18.0;
 
 /// Radial glow centred at (`px`%, `py`%) of `r`, confined to the card's shape by the
 /// fill path itself. It is static, so it is rendered once into a cached layer.
@@ -280,17 +262,7 @@ pub fn glow(g: &mut Gfx, r: Rect, px: f32, py: f32, radius: f32, c: Color) {
         let cy = local.h * py / 100.0;
         let grad = l.radial(cx, cy, 0.0, radius, &[(0.0, c), (0.7, with_alpha(c, 0.0)), (1.0, with_alpha(c, 0.0))]);
         l.fill_style(grad);
-        l.fill_round_rect(0.0, 0.0, local.w, local.h, 20.0);
+        l.fill_round_rect(0.0, 0.0, local.w, local.h, CARD_R);
     });
 }
 
-pub fn lighten(hexs: &str, amount: f32) -> Color {
-    let c = hex(hexs);
-    Color::from_rgba(
-        lerp(c.red(), 1.0, amount).min(1.0),
-        lerp(c.green(), 1.0, amount).min(1.0),
-        lerp(c.blue(), 1.0, amount).min(1.0),
-        c.alpha(),
-    )
-    .unwrap_or(c)
-}

@@ -201,9 +201,9 @@ impl App {
         let col = match o.kind {
             OverlayKind::Charging => "#22C55E",
             OverlayKind::Low => "#F4505E",
-            OverlayKind::Headphones | OverlayKind::Volume => "#38BDF8",
+            OverlayKind::Headphones | OverlayKind::Volume => "#64D2FF",
             OverlayKind::Caps => "#F5A524",
-            OverlayKind::Wifi => "#34D399",
+            OverlayKind::Wifi => "#30D158",
             OverlayKind::WifiOff => "#F4505E",
             OverlayKind::Unplugged | OverlayKind::HeadphonesOff | OverlayKind::Info => "#9398A1",
         };
@@ -375,7 +375,7 @@ impl App {
         g.circle(ring_cx, cy, 5.2);
         g.stroke();
         let frac = (t.wMinute as f32 + t.wSecond as f32 / 60.0) / 60.0;
-        g.stroke_style(hex("#34D399"));
+        g.stroke_style(hex("#30D158"));
         g.begin_path();
         let a0 = -std::f32::consts::FRAC_PI_2;
         g.arc(ring_cx, cy, 5.2, a0, a0 + frac.max(0.02) * std::f32::consts::TAU, false);
