@@ -220,6 +220,94 @@ pub fn set_demo_missing() {
     }
 }
 
+// ── Halted and suspended stocks ──────────────────────────────────────────────
+//
+// No free feed says "suspended" or "halted" for the Jakarta exchange, so it is read from the
+// prices themselves while the market is open: a code that has not traded today while the rest
+// of the list has is most likely suspended by the exchange; one that traded this morning and
+// then stopped for most of an hour is halted (a trading halt, or stuck at the auto-rejection
+// limit with no takers); and the whole market is halted when the index is down 8 % or more and
+// nothing has moved for half an hour (the exchange's own rule). The UI says "kemungkinan".
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Status {
+    Trading,
+    Halt,
+    Suspended,
+}
+
+/// Snapshot scenes force a status; the live app never does.
+static FORCED: Mutex<Vec<(String, Status)>> = Mutex::new(Vec::new());
+
+#[cfg_attr(not(feature = "snapshot"), allow(dead_code))]
+pub fn force_status(symbol: &str, st: Status) {
+    if let Ok(mut f) = FORCED.lock() {
+        f.push((symbol.to_string(), st));
+    }
+}
+
+/// The start (unix seconds) of the Jakarta trading session `now` falls in, or None outside the
+/// sessions (night, weekend, lunch). Session I 09:00–12:00 (Friday 11:30), session II
+/// 13:30–15:50 (Friday 14:00–15:50). Holidays are not known: on those every code looks the same,
+/// so nothing stands out.
+pub fn session_start(now: i64, offset: i32) -> Option<i64> {
+    let local = now + offset as i64;
+    let day = local.div_euclid(86_400);
+    let secs = local.rem_euclid(86_400);
+    // 1970-01-01 was a Thursday: 0 = Thu … 3 = Sun, 4 = Mon.
+    let wd = day.rem_euclid(7);
+    if wd == 2 || wd == 3 {
+        return None;
+    }
+    let friday = wd == 1;
+    let m = |h: i64, mi: i64| h * 3600 + mi * 60;
+    let (s1, e1, s2, e2) = if friday { (m(9, 0), m(11, 30), m(14, 0), m(15, 50)) } else { (m(9, 0), m(12, 0), m(13, 30), m(15, 50)) };
+    let start = if (s1..e1).contains(&secs) {
+        s1
+    } else if (s2..e2).contains(&secs) {
+        s2
+    } else {
+        return None;
+    };
+    Some(day * 86_400 + start - offset as i64)
+}
+
+/// What the prices say about `q`, given the rest of the watchlist.
+pub fn status(q: &Quote, all: &[Quote], now: i64) -> Status {
+    if let Ok(f) = FORCED.lock() {
+        if let Some((_, st)) = f.iter().find(|(s, _)| s == &q.symbol) {
+            return *st;
+        }
+    }
+    let idx = |s: &str| s.ends_with(".JK") || s == "^JKSE";
+    if !idx(&q.symbol) || q.market_time <= 0 || q.error.is_some() {
+        return Status::Trading;
+    }
+    // The feed is ten minutes behind: judge only once the session is well under way.
+    let Some(start) = session_start(now, q.offset) else { return Status::Trading };
+    if now - start < 25 * 60 {
+        return Status::Trading;
+    }
+    let freshest = all.iter().filter(|o| idx(&o.symbol) && o.error.is_none()).map(|o| o.market_time).max().unwrap_or(0);
+    let others_live = now - freshest < 25 * 60;
+    let index_down = all.iter().find(|o| o.symbol == "^JKSE").map(|o| o.pct() <= -8.0).unwrap_or(false);
+    if index_down && !others_live && now - freshest > 30 * 60 {
+        return Status::Halt;
+    }
+    if !others_live {
+        return Status::Trading; // the feed itself is stuck: nothing to tell apart
+    }
+    let off = q.offset as i64;
+    let today = (now + off).div_euclid(86_400);
+    if (q.market_time + off).div_euclid(86_400) < today {
+        return Status::Suspended;
+    }
+    if now - q.market_time.max(start) > 45 * 60 {
+        return Status::Halt;
+    }
+    Status::Trading
+}
+
 /// The UI calls this every frame the Stocks page is on screen: it keeps the fast poll going.
 pub fn touch() {
     if let Ok(mut s) = S.lock() {
@@ -506,6 +594,33 @@ mod tests {
         assert_eq!(next_wait(&[q(now - 3 * 3600), q(now - 120)], now, false), 60); // one live is enough
         assert_eq!(next_wait(&[q(now - 8 * 3600)], now, false), 600); // closed
         assert_eq!(next_wait(&[q(now - 60)], now, true), 180); // told to slow down
+    }
+
+    #[test]
+    fn halted_and_suspended_codes_stand_out_only_while_the_market_is_open() {
+        let off = 25_200;
+        // Wednesday 4 Nov 2026 (day 20761), 10:30 WIB.
+        let day0 = 20_761 * 86_400 - off as i64;
+        let now = day0 + 10 * 3600 + 30 * 60;
+        let q = |sym: &str, t: i64, pct: f32| Quote { symbol: sym.into(), price: 100.0 + pct, prev: 100.0, series: Vec::new(), candles: Vec::new(), offset: off, market_time: t, day_high: 0.0, day_low: 0.0, volume: 1.0, currency: String::new(), error: None };
+        let live = now - 11 * 60;
+        let list = vec![q("^JKSE", live, 0.3), q("BBCA.JK", live, 0.5), q("SUSP.JK", day0 - 86_400 + 15 * 3600, 0.0), q("HALT.JK", day0 + 9 * 3600 + 20 * 60, 10.0)];
+        assert_eq!(session_start(now, off), Some(day0 + 9 * 3600));
+        assert_eq!(status(&list[1], &list, now), Status::Trading);
+        assert_eq!(status(&list[2], &list, now), Status::Suspended);
+        assert_eq!(status(&list[3], &list, now), Status::Halt);
+        // Lunch, the evening, the weekend: nothing is flagged.
+        assert_eq!(status(&list[2], &list, day0 + 12 * 3600 + 40 * 60), Status::Trading);
+        assert_eq!(status(&list[2], &list, day0 + 20 * 3600), Status::Trading);
+        assert_eq!(session_start(day0 + 3 * 86_400 + 10 * 3600, off), None); // Saturday
+        // Too early in the session to tell.
+        assert_eq!(status(&list[2], &list, day0 + 9 * 3600 + 10 * 60), Status::Trading);
+        // Not a Jakarta code.
+        let us = q("AAPL", day0 - 86_400, 0.0);
+        assert_eq!(status(&us, &list, now), Status::Trading);
+        // The whole market: index down 8 % and nothing moving for half an hour.
+        let crash = vec![q("^JKSE", now - 40 * 60, -8.2), q("BBCA.JK", now - 40 * 60, -9.0)];
+        assert_eq!(status(&crash[1], &crash, now), Status::Halt);
     }
 
     #[test]

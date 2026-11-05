@@ -251,6 +251,8 @@ impl App {
                     if self.stock_remove_button(g, i, row) {
                         act = Some((i, true));
                     }
+                } else if let Some((label, c)) = status_style(stocks::status(q, &quotes, crate::util::unix_now() as i64)) {
+                    status_pill(g, label, row.x + row.w - 6.0, l1, c);
                 } else {
                     text::draw(g, &format!("{}{:.2}%", if q.pct() >= 0.0 { "+" } else { "" }, q.pct()), row.x + row.w - 8.0, l1, Face::Medium, 11.0, col, Align::Right);
                 }
@@ -380,7 +382,17 @@ impl App {
         // minutes behind, and the header says so instead of letting it pass for live.
         let now_s = crate::util::unix_now() as i64;
         let fresh = stocks::freshness(q.market_time, now_s, q.offset);
-        if q.error.is_some() {
+        let st = stocks::status(q, &stocks::quotes(), now_s);
+        if let Some((label, c)) = status_style(st) {
+            let pw = status_pill(g, label, r.x + r.w - 16.0, r.y + 18.0, c);
+            let last = stocks::freshness(q.market_time, q.market_time + 7 * 3600, q.offset).map(|f| f.replace("Penutupan · ", "")).unwrap_or_default();
+            let why = match st {
+                stocks::Status::Suspended => format!("kemungkinan disuspensi · terakhir {last}"),
+                _ => format!("tidak ada transaksi sejak {last}"),
+            };
+            let _ = pw;
+            text::draw(g, &why, r.x + r.w - 16.0, r.y + 31.0, Face::Regular, 10.0, c, Align::Right);
+        } else if q.error.is_some() {
             text::draw(g, "data lama", r.x + r.w - 16.0, r.y + 18.0, Face::Regular, 9.5, hex(pal::AMBER), Align::Right);
         } else if let Some(f) = fresh {
             text::draw(g, &f, r.x + r.w - 16.0, r.y + 18.0, Face::Regular, 9.5, hex(pal::DIM3), Align::Right);
@@ -397,7 +409,7 @@ impl App {
                 cs.iter().map(|c| c.v).sum::<f32>(),
             )
         };
-        if ready && hi > 0.0 && lo > 0.0 && lo < f32::MAX {
+        if st == stocks::Status::Trading && ready && hi > 0.0 && lo > 0.0 && lo < f32::MAX {
             let line = format!("H {}   L {}   Vol {}", stocks::fmt_price(hi), stocks::fmt_price(lo), stocks::fmt_volume(vol));
             text::draw(g, &line, r.x + r.w - 16.0, r.y + 31.0, Face::Regular, 10.0, hex(pal::DIM), Align::Right);
         }
@@ -655,6 +667,23 @@ fn safe_clamp(x: f32, lo: f32, hi: f32) -> f32 {
 /// Where each of `n` slots is, left to right, in `plot` (a slot is one bar wide).
 fn slot_x(plot: Rect, n: usize, i: usize) -> f32 {
     plot.x + plot.w * (i as f32 + 0.5) / n.max(1) as f32
+}
+
+/// A small capsule label ("HALT", "SUSPENSI"), right-aligned at `xr`, centred on `cy`.
+fn status_pill(g: &mut Gfx, label: &str, xr: f32, cy: f32, col: Color) -> f32 {
+    let w = text::measure(label, Face::Bold, 9.0) + 12.0;
+    g.fill_style(crate::gfx::with_alpha(col, 0.18));
+    g.fill_round_rect(xr - w, cy - 8.0, w, 16.0, 8.0);
+    text::draw(g, label, xr - w / 2.0, cy, Face::Bold, 9.0, col, Align::Center);
+    w
+}
+
+fn status_style(st: stocks::Status) -> Option<(&'static str, Color)> {
+    match st {
+        stocks::Status::Trading => None,
+        stocks::Status::Halt => Some(("HALT", hex(pal::AMBER))),
+        stocks::Status::Suspended => Some(("SUSPENSI", hex(pal::RED_TEXT))),
+    }
 }
 
 /// A TradingView-like chart: grid and price axis on the right, candles (or a line with a soft
