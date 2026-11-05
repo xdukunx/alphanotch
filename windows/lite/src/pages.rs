@@ -179,8 +179,8 @@ impl App {
         stocks::touch();
         let quotes = stocks::quotes();
         let right_w = 190.0;
-        let left = Rect::new(v.x, v.y, v.w - right_w - 8.0, v.h);
-        let right = Rect::new(left.x + left.w + 8.0, v.y, right_w, v.h);
+        let left = Rect::new(v.x, v.y, v.w - right_w - 10.0, v.h);
+        let right = Rect::new(left.x + left.w + 10.0, v.y, right_w, v.h);
         ui::card(g, left, Wash::None, false);
         ui::card(g, right, Wash::None, false);
         self.chart_rect = Rect::default();
@@ -411,7 +411,12 @@ impl App {
             )
         };
         if st == stocks::Status::Trading && ready && hi > 0.0 && lo > 0.0 && lo < f32::MAX {
-            let line = format!("H {}   L {}   Vol {}", stocks::fmt_price(hi), stocks::fmt_price(lo), stocks::fmt_volume(vol));
+            // An index has no volume of its own: leave it out rather than say "Vol 0".
+            let line = if vol > 0.0 {
+                format!("H {}   L {}   Vol {}", stocks::fmt_price(hi), stocks::fmt_price(lo), stocks::fmt_volume(vol))
+            } else {
+                format!("H {}   L {}", stocks::fmt_price(hi), stocks::fmt_price(lo))
+            };
             text::draw(g, &line, r.x + r.w - 16.0, r.y + 31.0, Face::Regular, 10.0, hex(pal::DIM), Align::Right);
         }
 

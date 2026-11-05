@@ -170,10 +170,10 @@ impl App {
         crate::app::prof_lap("header", &mut lap);
         g.restore();
 
-        let mut v = Rect::new(10.0, 42.0, iw - 20.0, (ih - 52.0).max(0.0));
-        if crate::nusapages::is_page(self.st.view) {
-            v.h -= crate::nusapages::PAGER_H;
-        }
+        // One inset on every side, like the content of a widget: the cards sit EDGE in from the
+        // island's sides, and the bottom margin is the fold arrow's (or the pager's) own strip.
+        let bottom = if crate::nusapages::is_page(self.st.view) { 10.0 + crate::nusapages::PAGER_H } else { crate::layout::FOOT_H };
+        let v = Rect::new(crate::layout::EDGE, 42.0, iw - 2.0 * crate::layout::EDGE, (ih - 42.0 - bottom).max(0.0));
         if v.h < 20.0 || self.upload_active() {
             // While the drop sequence runs it paints the whole island body; only
             // the header stays on top of it.
@@ -233,14 +233,14 @@ impl App {
         // A small arrow folds the island back to the bar.
         if !matches!(self.st.view, View::Greeting | View::Upload | View::Uploading | View::Choose | View::Confused) {
             let ax = if paged { iw - 40.0 } else { iw / 2.0 };
-            let hit = Rect::new(ax - 24.0, ih - 16.0, 48.0, 16.0);
+            let hit = Rect::new(ax - 24.0, ih - 20.0, 48.0, 20.0);
             let (clicked, hover, _) = self.ui.click_region(id_of("collapse-arrow", 103), hit);
             g.stroke_style(rgba(255, 255, 255, if hover { 0.9 } else { 0.32 }));
             g.line_width(1.6);
             g.line_cap_round();
             g.line_join_round();
             g.begin_path();
-            let ay = if paged { ih - 9.0 } else { ih - 3.5 };
+            let ay = if paged { ih - 9.0 } else { ih - crate::layout::FOOT_H / 2.0 + 2.0 };
             g.move_to(ax - 6.0, ay);
             g.line_to(ax, ay - 4.0);
             g.line_to(ax + 6.0, ay);

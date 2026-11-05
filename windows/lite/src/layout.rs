@@ -72,6 +72,12 @@ pub fn view_width(v: View) -> f32 {
     }
 }
 
+/// Inset of the content from the island's sides, and the strip under it that holds the fold arrow.
+pub const EDGE: f32 = 14.0;
+pub const FOOT_H: f32 = 22.0;
+/// What the views were laid out with before the inset grew (10 px sides, 10 px foot).
+const FOOT_EXTRA: f32 = FOOT_H - 10.0;
+
 pub const ROUNDED_CORNER: f32 = 14.0;
 pub const EXPANDED_CORNER: f32 = 22.0;
 
@@ -133,7 +139,11 @@ pub fn island_size(mode: Mode, view: View, chat_count: usize) -> (f32, f32) {
         Mode::Hidden => (NOTCH_W, 0.0),
         Mode::Compact => (COMPACT_W, COMPACT_H),
         Mode::Expanded => {
-            let h = if view == View::Prompt { chat_prompt_height(chat_count) } else { layout(view).height };
+            let mut h = if view == View::Prompt { chat_prompt_height(chat_count) } else { layout(view).height };
+            // The taller foot is added on, so every view keeps the room it was laid out with.
+            if !crate::nusapages::is_page(view) && !matches!(view, View::Greeting | View::Upload | View::Uploading | View::Choose) {
+                h += FOOT_EXTRA;
+            }
             (view_width(view), h)
         }
     }
