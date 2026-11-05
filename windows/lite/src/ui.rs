@@ -20,7 +20,6 @@ pub mod pal {
     pub const DIM3: &str = "#6E6E73";
     pub const DIM4: &str = "#545458";
     pub const CARD: &str = "#161617";
-    pub const CARD_FLAT: &str = "#111112";
     pub const RED: &str = "#FF453A";
     pub const RED_TEXT: &str = "#FF6961";
     pub const GREEN: &str = "#30D158";
@@ -274,8 +273,19 @@ pub fn dot(g: &mut Gfx, cx: f32, cy: f32, d: f32, color: Color) {
 
 /// `.card`: rounded panel with an optional glow rising from below (the wash).
 pub fn card(g: &mut Gfx, r: Rect, wash: Wash, flat: bool) {
-    g.fill_style(hex(if flat { pal::CARD_FLAT } else { pal::CARD }));
+    // A top a shade lighter than the foot, and a hairline of light on the upper edge that
+    // fades out down the sides, as on a machined surface.
+    let (top, foot) = if flat { (hex("#141415"), hex("#0F0F10")) } else { (hex("#1B1B1D"), hex("#131314")) };
+    let fill = g.linear(0.0, r.y, 0.0, r.y + r.h.max(1.0), &[(0.0, top), (1.0, foot)]);
+    g.fill_style(fill);
     g.fill_round_rect(r.x, r.y, r.w, r.h, CARD_R);
+    if r.w > 2.0 * CARD_R && r.h > 2.0 * CARD_R {
+        let edge = g.linear(0.0, r.y, 0.0, r.y + r.h.min(90.0), &[(0.0, rgba(255, 255, 255, 0.10)), (1.0, rgba(255, 255, 255, 0.0))]);
+        g.stroke_style(edge);
+        g.line_width(1.0);
+        g.round_rect(r.x + 0.5, r.y + 0.5, r.w - 1.0, r.h - 1.0, CARD_R - 0.5);
+        g.stroke();
+    }
     // The colour of a card's mood is only a breath at its foot, not a glow.
     if wash != Wash::None {
         let (cr, cg, cb, ca) = wash_rgba(wash);

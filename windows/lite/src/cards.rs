@@ -297,7 +297,7 @@ impl App {
         self.header(g, a, "#0570DE", "Stripe", "Payments");
         let balance = info.data.get("balance").and_then(Value::as_f64).unwrap_or(0.0) / 100.0;
         let currency = info.data.get("currency").and_then(Value::as_str).unwrap_or("eur").to_uppercase();
-        let bw = t(g, &format!("{balance:.2}"), a.x, a.y + 37.0, Face::Bold, 18.0, hex(pal::INK));
+        let bw = t(g, &format!("{balance:.2}"), a.x, a.y + 37.0, Face::Display, 18.0, hex(pal::INK));
         t(g, &currency, a.x + bw + 6.0, a.y + 41.0, Face::Medium, 10.0, hex(pal::DIM3));
         for (i, p) in arr(info, "payments").iter().take(2).enumerate() {
             let y = a.y + 62.0 + i as f32 * 18.0;

@@ -16,6 +16,9 @@ pub enum Face {
     Medium,
     Bold,
     Mono,
+    /// Big figures (prices, clocks, temperatures): Segoe UI Variable's Display cut, semibold,
+    /// drawn a touch tighter than the text sizes.
+    Display,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -132,6 +135,7 @@ fn variable_weight(face: Face) -> Option<f32> {
         Face::Medium => Some(560.0),
         Face::Bold => Some(680.0),
         Face::Mono => None,
+        Face::Display => Some(600.0),
     }
 }
 
@@ -141,6 +145,7 @@ fn face_files(face: Face) -> &'static [&'static str] {
         Face::Medium => &["seguisb.ttf", "segoeuib.ttf", "arial.ttf"],
         Face::Bold => &["segoeuib.ttf", "arialbd.ttf"],
         Face::Mono => &["consola.ttf", "cour.ttf", "segoeui.ttf"],
+        Face::Display => &["seguisb.ttf", "segoeuib.ttf", "arial.ttf"],
     }
 }
 
@@ -155,6 +160,9 @@ impl Fonts {
         if let Some(w) = variable_weight(face) {
             if let Some(mut f) = load("SegUIVar.ttf", 0) {
                 let _ = f.set_variation(ttf_parser::Tag::from_bytes(b"wght"), w);
+                if face == Face::Display {
+                    let _ = f.set_variation(ttf_parser::Tag::from_bytes(b"opsz"), 36.0);
+                }
                 self.fonts.push(f);
                 id = Some(self.fonts.len() - 1);
             }

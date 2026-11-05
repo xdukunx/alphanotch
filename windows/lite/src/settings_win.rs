@@ -362,7 +362,7 @@ impl Win {
         let cw = (lw - SIDEBAR_W - 2.0 * m).max(360.0);
         let (title, desc, _) = SECTIONS[self.section.min(SECTIONS.len() - 1)];
         let mut y = 24.0;
-        text::draw(g, title, x0, y + 14.0, Face::Bold, 22.0, hex(pal::INK), Align::Left);
+        text::draw(g, title, x0, y + 14.0, Face::Display, 22.0, hex(pal::INK), Align::Left);
         y += 34.0;
         y += Self::para(g, x0, y, cw, desc) + 16.0;
         y = match self.section {

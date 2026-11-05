@@ -202,8 +202,8 @@ impl App {
 
         let x = left.x + 20.0;
         let big = litres(total);
-        let bw = text::measure(&big, Face::Bold, 34.0);
-        text::draw(g, &big, x, left.y + 34.0, Face::Bold, 34.0, hex(pal::INK), Align::Left);
+        let bw = text::measure(&big, Face::Display, 34.0);
+        text::draw(g, &big, x, left.y + 34.0, Face::Display, 34.0, hex(pal::INK), Align::Left);
         text::draw(g, &format!("/ {} L", litres(goal)), x + bw + 8.0, left.y + 40.0, Face::Regular, 14.0, hex(pal::DIM), Align::Left);
         let done = total >= goal;
         let sub = if done { format!("Hari ini · {pct}% · target tercapai") } else { format!("Hari ini · {pct}%") };
@@ -294,7 +294,7 @@ impl App {
 
         // The time and what it is.
         let tx = card.x + 128.0;
-        text::draw(g, &activity::format_clock(left_s), tx, cy - 8.0, Face::Bold, 38.0, hex(pal::INK), Align::Left);
+        text::draw(g, &activity::format_clock(left_s), tx, cy - 8.0, Face::Display, 38.0, hex(pal::INK), Align::Left);
         text::draw(g, kind.label(), tx, cy + 24.0, Face::Regular, 12.5, hex(pal::DIM), Align::Left);
 
         // Kind pills and the big play / stop button.

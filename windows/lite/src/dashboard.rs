@@ -186,7 +186,7 @@ impl App {
             g.begin_path();
             g.circle(ring_c.0, ring_c.1, cover_r);
             g.fill();
-            text::draw(g, "♪", ring_c.0, ring_c.1, Face::Bold, 32.0, rgba(255, 255, 255, 0.25), Align::Center);
+            text::draw(g, "♪", ring_c.0, ring_c.1, Face::Display, 32.0, rgba(255, 255, 255, 0.25), Align::Center);
             text::draw(g, "Tidak ada media", col, r.cy() - 8.0, Face::Regular, 15.0, hex(pal::INK), Align::Left);
             text::draw(g, "Putar musik di Spotify atau browser.", col, r.cy() + 12.0, Face::Regular, 11.0, hex(pal::DIM), Align::Left);
             return;
@@ -217,7 +217,7 @@ impl App {
                 g.begin_path();
                 g.circle(ring_c.0, ring_c.1, cover_r);
                 g.fill();
-                text::draw(g, "♪", ring_c.0, ring_c.1, Face::Bold, 32.0, rgba(255, 255, 255, 0.25), Align::Center);
+                text::draw(g, "♪", ring_c.0, ring_c.1, Face::Display, 32.0, rgba(255, 255, 255, 0.25), Align::Center);
             }
         }
 

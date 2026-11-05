@@ -140,7 +140,7 @@ impl App {
             text::draw(g, "≈ dari IP", left.x + 18.0 + pw + 8.0, left.y + 24.5, Face::Regular, 9.5, hex(pal::DIM3), Align::Left);
         }
         weather_icon(g, weather::kind_of(r.now.code), r.now.is_day, left.x + 50.0, left.y + 66.0, 56.0);
-        text::draw(g, &format!("{:.0}°", r.now.temp), left.x + 92.0, left.y + 58.0, Face::Bold, 34.0, hex(pal::INK), Align::Left);
+        text::draw(g, &format!("{:.0}°", r.now.temp), left.x + 92.0, left.y + 58.0, Face::Display, 34.0, hex(pal::INK), Align::Left);
         crate::app::fading_text(g, weather::label_of(r.now.code), left.x + 92.0, left.y + 86.0, 11.5, hex(pal::INK), left.x + 92.0, left.x + left.w - 10.0);
         let details = [
             format!("Terasa {:.0}°", r.now.feels),
@@ -366,8 +366,8 @@ impl App {
             text::draw(g, &q.currency, x + w + 8.0, r.y + 19.0, Face::Regular, 9.5, hex(pal::DIM3), Align::Left);
         }
         let price = stocks::fmt_price(q.price);
-        let pw = text::measure(&price, Face::Bold, 22.0);
-        text::draw(g, &price, x, r.y + 44.0, Face::Bold, 22.0, hex(pal::INK), Align::Left);
+        let pw = text::measure(&price, Face::Display, 22.0);
+        text::draw(g, &price, x, r.y + 44.0, Face::Display, 22.0, hex(pal::INK), Align::Left);
         let sign = if chg >= 0.0 { "+" } else { "" };
         if ready {
             let line = format!("{sign}{}  {sign}{pct:.2}%", stocks::fmt_price(chg));
