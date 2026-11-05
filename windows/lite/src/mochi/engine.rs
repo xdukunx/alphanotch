@@ -1148,8 +1148,8 @@ impl BotEngine {
             }
             2 => {
                 g.save();
-                g.translate(1.5 * r, 0.7 * r);
-                g.rotate(0.15 + (t * 7.0).sin() * 0.3);
+                g.translate(-1.45 * r, 0.7 * r);
+                g.rotate(-0.15 - (t * 7.0).sin() * 0.3);
                 g.stroke_style(hex("#C98F27"));
                 g.line_width(r * 0.07);
                 g.begin_path();

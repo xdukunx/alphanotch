@@ -181,6 +181,7 @@ impl App {
         }
         let (alpha, scale) = self.view_alpha_scale();
         g.save();
+        g.translate(0.0, (1.0 - alpha) * 10.0);
         g.translate(v.cx(), v.cy());
         g.scale_xy(scale, scale);
         g.translate(-v.cx(), -v.cy());
@@ -272,6 +273,16 @@ impl App {
             .map(|(i, id, t, _)| (*i, *id, *t))
             .collect();
         let v = self.st.view;
+        // The active tab's capsule glides from the old tab to the new one.
+        let active = tabs.iter().position(|(_, _, t)| match t {
+            View::Overview => v == View::Overview || v == View::Empty,
+            other => v == *other,
+        });
+        if let Some(a) = active {
+            let x = self.ui.ease(id_of("tab-capsule", 1), 14.0 + a as f32 * 31.0, 16.0);
+            g.fill_style(rgba(255, 255, 255, 0.13));
+            g.fill_round_rect(x, cy - 11.0, 27.0, 22.0, 11.0);
+        }
         for (i, (icon, id, target)) in tabs.iter().enumerate() {
             let r = Rect::new(14.0 + i as f32 * 31.0, cy - 11.0, 27.0, 22.0);
             let on = match target {
@@ -311,7 +322,7 @@ impl App {
                     parts.push(format!("mgg {:.0}%", w));
                 }
                 let top = five.unwrap_or(0.0).max(week.unwrap_or(0.0));
-                let col = if top < 50.0 { "#22C55E" } else if top < 80.0 { "#F5A524" } else { "#F4505E" };
+                let col = if top < 50.0 { pal::GREEN } else if top < 80.0 { pal::AMBER } else { pal::RED };
                 let usage = parts.join(" · ");
                 let lw = text::measure(&label, Face::Regular, 11.0);
                 let uw = text::measure(&usage, Face::Medium, 10.5);
@@ -431,7 +442,8 @@ impl App {
 
         g.save();
         // A quiet row, like a list item in a macOS widget: the Mochi carries the colour.
-        g.fill_style(rgba(255, 255, 255, if hover { 0.10 } else { 0.05 }));
+        let h_t = self.ui.hover_t(id_of(id, 41), hover);
+        g.fill_style(rgba(255, 255, 255, 0.05 + 0.05 * h_t));
         g.fill_round_rect(r.x, r.y, r.w, r.h, r.h / 2.0);
 
         // The little Mochi (22 px body, engine canvas is body/0.6).

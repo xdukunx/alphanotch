@@ -1045,7 +1045,6 @@ impl Win {
                 self.save();
             }
         }
-        let _ = iw;
         let mut y = y0 + h + 2.0 * pad + 12.0;
         y += Self::para(g, m + 4.0, y, cw - 8.0, "Mochi muncul dengan pengingat; kartunya punya tombol Tunda 10 menit. Semua mati secara bawaan. \"Sudah\" pada pengingat minum menambah satu minum ke halaman Air.");
         self.prayer_settings(g, m, y + 12.0, cw)
@@ -1220,7 +1219,7 @@ impl Win {
             self.settings.stay_visible = !on;
             self.save();
         }
-        text::draw(g, "bar kecil tetap tampil saat diam", cx + 48.0, y + 11.0, Face::Regular, 11.5, hex(pal::DIM3), Align::Left);
+        text::draw(g, &text::ellipsize("bar kecil tetap tampil saat diam", Face::Regular, 11.5, ix + iw - cx - 48.0), cx + 48.0, y + 11.0, Face::Regular, 11.5, hex(pal::DIM3), Align::Left);
         y += 38.0;
 
 
@@ -1231,7 +1230,7 @@ impl Win {
             self.settings.hide_in_fullscreen = !on;
             self.save();
         }
-        text::draw(g, "juga video layar penuh dan presentasi", cx + 48.0, y + 11.0, Face::Regular, 11.5, hex(pal::DIM3), Align::Left);
+        text::draw(g, &text::ellipsize("juga video layar penuh dan presentasi", Face::Regular, 11.5, ix + iw - cx - 48.0), cx + 48.0, y + 11.0, Face::Regular, 11.5, hex(pal::DIM3), Align::Left);
         y += 38.0;
 
         // With two screens: follow the game's absence instead of hiding.
@@ -1241,8 +1240,7 @@ impl Win {
             self.settings.game_other_screen = !on;
             self.save();
         }
-        text::draw(g, "saat game, tampil di layar lain sampai game ditutup", cx + 48.0, y + 11.0, Face::Regular, 11.5, hex(pal::DIM3), Align::Left);
-        let _ = iw;
+        text::draw(g, &text::ellipsize("saat game, tampil di layar lain sampai game ditutup", Face::Regular, 11.5, ix + iw - cx - 48.0), cx + 48.0, y + 11.0, Face::Regular, 11.5, hex(pal::DIM3), Align::Left);
         y0 + h + 2.0 * pad + 16.0
     }
 }

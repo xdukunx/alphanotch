@@ -250,6 +250,8 @@ pub struct App {
     /// The reminder on screen, and when each kind is next due (unix seconds, 0 = off).
     pub reminder: Option<crate::reminders::ReminderCard>,
     pub rem_next: [f64; 3],
+    /// When the last water / stretch / eyes card showed.
+    pub rem_last_any: f64,
     pub rem_cfg: [u32; 3],
     /// Coach cards: the local day they are counted for, how many were shown, and when each
     /// usage alert (plenty, careful) last fired.
@@ -395,6 +397,7 @@ impl App {
             diff_scroll: 0.0,
             reminder: None,
             rem_next: [0.0; 3],
+            rem_last_any: 0.0,
             rem_cfg: [0; 3],
             coach_day: 0,
             coach_popups: 0,
@@ -771,6 +774,8 @@ impl App {
                 || self.upload.is_active()
                 || self.ticker.animating()
                 || self.chat.sending
+                || self.ui.animating
+                || (self.st.mode == Mode::Expanded && now() - self.view_t0 < 0.4)
                 || activity_on
                 || ((self.today_h - self.today_target).abs() > 0.3 && self.st.mode == Mode::Expanded)
                 || (self.tp_playing && self.st.mode == Mode::Expanded && self.st.view == View::Teleprompter)
@@ -889,6 +894,10 @@ impl App {
         }
         let t_render = std::time::Instant::now();
         self.render();
+        // A hover fade or a sliding tab began in this frame: keep frames coming until it settles.
+        if self.ui.animating && !self.running {
+            self.ensure_running();
+        }
         let render_ms = t_render.elapsed().as_secs_f32() * 1000.0;
         // Nothing is ever drawn below the island plus a little hang-room.
         let used = ((self.height.value() + 70.0) * self.platform.scale).ceil() as usize;
@@ -1927,7 +1936,7 @@ impl App {
     }
 
     pub fn view_alpha_scale(&self) -> (f32, f32) {
-        let t = clamp((now() - self.view_t0) / 0.3, 0.0, 1.0);
+        let t = clamp((now() - self.view_t0) / 0.32, 0.0, 1.0);
         (ease::out(t), lerp(0.97, 1.0, ease::back(t)))
     }
 

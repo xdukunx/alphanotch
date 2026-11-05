@@ -70,6 +70,12 @@ pub struct Input {
 #[derive(Default)]
 pub struct Ui {
     pub input: Input,
+    /// Eased values by widget id (hover fades, sliding indicators), the time step of this
+    /// frame, and whether any of them is still moving (the frame loop keeps running then).
+    eased: std::collections::HashMap<u64, f32>,
+    last_frame: Option<std::time::Instant>,
+    dt: f32,
+    pub animating: bool,
     /// Widget that received the mouse-down and is waiting for the release.
     pub active: Option<u64>,
     /// Anything under the cursor this frame (used to pick the cursor shape).
@@ -94,6 +100,10 @@ impl Ui {
     }
 
     pub fn begin_frame(&mut self) {
+        let now = std::time::Instant::now();
+        self.dt = self.last_frame.map(|t| now.duration_since(t).as_secs_f32()).unwrap_or(0.0).clamp(0.0, 0.1);
+        self.last_frame = Some(now);
+        self.animating = false;
         self.hovering_button = false;
         self.hovering_text = false;
         self.regions.clear();
@@ -120,6 +130,25 @@ impl Ui {
         if !self.input.down {
             self.active = None;
         }
+    }
+
+    /// Moves the value kept under `id` toward `target` (about 120 ms to settle) and returns it.
+    /// A value seen for the first time starts at its target.
+    pub fn ease(&mut self, id: u64, target: f32, speed: f32) -> f32 {
+        let v = self.eased.entry(id).or_insert(target);
+        let k = 1.0 - (-self.dt * speed).exp();
+        *v += (target - *v) * k;
+        if (*v - target).abs() < 0.004 {
+            *v = target;
+        } else {
+            self.animating = true;
+        }
+        *v
+    }
+
+    /// 0 → 1 as the pointer rests on a widget, back to 0 when it leaves.
+    pub fn hover_t(&mut self, id: u64, hover: bool) -> f32 {
+        self.ease(id ^ 0x5eed, if hover { 1.0 } else { 0.0 }, 22.0)
     }
 
     fn hover(&self, r: Rect) -> bool {
@@ -160,10 +189,11 @@ impl Ui {
         g.scale_xy(k, k);
         g.translate(-r.cx(), -r.cy());
 
+        let h_t = self.hover_t(id_of(label, 7), hover);
         let (bg, fg) = if primary {
-            (hex(pal::INK), hex("#000000"))
+            (crate::gfx::rgba(255, 255, 255, 0.92 + 0.08 * h_t), hex("#000000"))
         } else {
-            (rgba(255, 255, 255, if hover { 0.16 } else { 0.10 }), hex(pal::INK2))
+            (rgba(255, 255, 255, 0.10 + 0.07 * h_t), hex(pal::INK2))
         };
         g.fill_style(bg);
         g.fill_round_rect(x, y, w, h, h / 2.0);
@@ -208,8 +238,9 @@ impl Ui {
     /// Header icon (tab or action) — no background unless `on`/hovered.
     pub fn header_icon(&mut self, g: &mut Gfx, id: &str, r: Rect, icon: Icon, size: f32, on: bool, pill: bool) -> bool {
         let (clicked, hover, _) = self.click_region(id_of(id, 5), r);
-        if pill && (on || hover) {
-            g.fill_style(if on { rgba(255, 255, 255, 0.13) } else { rgba(255, 255, 255, 0.06) });
+        let h_t = self.hover_t(id_of(id, 5), hover && !on);
+        if pill && h_t > 0.0 {
+            g.fill_style(rgba(255, 255, 255, 0.06 * h_t));
             g.fill_round_rect(r.x, r.y, r.w, r.h, r.h / 2.0);
         }
         let col = if on { hex(pal::INK) } else if hover { hex(pal::DIM) } else { hex(pal::DIM3) };
@@ -221,10 +252,13 @@ impl Ui {
     pub fn switch(&mut self, g: &mut Gfx, id: &str, x: f32, y: f32, on: bool) -> bool {
         let r = Rect::new(x, y, 32.0, 18.0);
         let (clicked, _, _) = self.click_region(id_of(id, 13), r);
-        g.fill_style(if on { hex(pal::GREEN) } else { rgba(255, 255, 255, 0.15) });
+        let k = self.ease(id_of(id, 13), if on { 1.0 } else { 0.0 }, 18.0);
+        g.fill_style(rgba(255, 255, 255, 0.15 * (1.0 - k)));
+        g.fill_round_rect(x, y, 32.0, 18.0, 9.0);
+        g.fill_style(with_alpha(hex(pal::GREEN), k));
         g.fill_round_rect(x, y, 32.0, 18.0, 9.0);
         g.fill_style(Color::WHITE);
-        g.circle(x + 9.0 + if on { 14.0 } else { 0.0 }, y + 9.0, 7.0);
+        g.circle(x + 9.0 + 14.0 * k, y + 9.0, 7.0);
         g.fill();
         clicked
     }

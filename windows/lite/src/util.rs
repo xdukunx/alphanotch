@@ -105,3 +105,16 @@ pub fn local_day_time(epoch: f64) -> String {
     let (_, m, d) = civil_from_days(days);
     format!("{d:02}/{m:02} {:02}:{:02}", rem / 3600, (rem % 3600) / 60)
 }
+
+/// Seconds since the last keyboard or mouse input anywhere in the session.
+pub fn idle_secs() -> f64 {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{GetLastInputInfo, LASTINPUTINFO};
+    let mut info = LASTINPUTINFO { cbSize: std::mem::size_of::<LASTINPUTINFO>() as u32, dwTime: 0 };
+    unsafe {
+        if !GetLastInputInfo(&mut info).as_bool() {
+            return 0.0;
+        }
+        let now = windows::Win32::System::SystemInformation::GetTickCount();
+        now.wrapping_sub(info.dwTime) as f64 / 1000.0
+    }
+}

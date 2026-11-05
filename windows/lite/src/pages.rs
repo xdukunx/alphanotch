@@ -232,8 +232,9 @@ impl App {
             let row = Rect::new(right.x + 6.0, y, right.w - 12.0, pitch - 4.0);
             let (clicked, hover, _) = self.ui.click_region(id_of(&format!("stk-row{i}"), 98), row);
             let selected = i == self.stock_sel;
-            if selected || hover {
-                g.fill_style(rgba(255, 255, 255, if selected { 0.09 } else { 0.05 }));
+            let h_t = self.ui.hover_t(id_of(&format!("stk-row{i}"), 98), hover || selected);
+            if h_t > 0.0 {
+                g.fill_style(rgba(255, 255, 255, h_t * if selected { 0.09 } else { 0.05 }));
                 g.fill_round_rect(row.x, row.y, row.w, row.h, 10.0);
             }
             let q = quotes.iter().find(|q| &q.symbol == sym);

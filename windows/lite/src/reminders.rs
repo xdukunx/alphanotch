@@ -50,6 +50,14 @@ pub struct ReminderCard {
     pub body: String,
 }
 
+/// Two care reminders are at least this far apart.
+const MIN_GAP_S: f64 = 25.0 * 60.0;
+
+/// When the next care reminder may show, given when the last one did.
+fn next_allowed(last: f64, now: f64) -> f64 {
+    if last <= 0.0 { now } else { (last + MIN_GAP_S).max(now) }
+}
+
 fn every(s: &Settings, k: RemKind) -> u32 {
     match k {
         RemKind::Water => s.water_every_min,
@@ -171,11 +179,23 @@ impl App {
         if self.prayer_tick(now) {
             return;
         }
+        // Water, stretch and eyes never come back to back, and wait while nobody is at the
+        // keyboard: a card nobody sees is just a card to dismiss later.
+        let away = util::idle_secs() > 300.0;
         for k in KINDS {
             let i = k.idx();
             let e = every(&self.st.settings, k);
             if e > 0 && self.rem_next[i] > 0.0 && now >= self.rem_next[i] {
+                if away {
+                    continue;
+                }
+                let gap = next_allowed(self.rem_last_any, now);
+                if gap > now {
+                    self.rem_next[i] = gap;
+                    continue;
+                }
                 self.rem_next[i] = now + e as f64 * 60.0;
+                self.rem_last_any = now;
                 self.fire_reminder(k);
                 return; // one at a time; the next one waits for the next tick
             }
@@ -355,6 +375,13 @@ fn mark_coach_day(day: i64) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn care_reminders_keep_their_distance() {
+        assert_eq!(next_allowed(0.0, 1000.0), 1000.0);
+        assert_eq!(next_allowed(1000.0, 1100.0), 1000.0 + MIN_GAP_S);
+        assert_eq!(next_allowed(1000.0, 1000.0 + MIN_GAP_S + 5.0), 1000.0 + MIN_GAP_S + 5.0);
+    }
 
     #[test]
     fn the_name_is_used_when_there_is_one() {
