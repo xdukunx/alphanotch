@@ -73,6 +73,7 @@ fn activity(tool: &str, input: &Value) -> String {
         "WebFetch" => "Membaca halaman web".into(),
         "TodoWrite" => "Menyusun rencana".into(),
         "Task" | "Agent" => "Membagi tugas ke subagen".into(),
+        t if t.starts_with("mcp__ccd") || t.starts_with("mcp__claude-artifacts") => String::new(),
         t if t.starts_with("mcp__") => {
             let server = t.trim_start_matches("mcp__").split("__").next().unwrap_or("");
             format!("Memakai {}", server.replace(['-', '_'], " "))
@@ -270,6 +271,7 @@ impl App {
         let input = payload.get("tool_input").cloned().unwrap_or(Value::Null);
         let is_ask = payload.get("coucou_kind").and_then(Value::as_str) == Some("ask_user_question");
 
+        let ppid = payload.get("coucou_ppid").and_then(Value::as_u64).unwrap_or(0) as u32;
         let upsert = |app: &mut App| {
             if is_external {
                 return; // agent pills keep the agent's own name
@@ -278,6 +280,9 @@ impl App {
                 t.name = project.clone();
                 if !cwd.is_empty() {
                     t.session_cwd = Some(cwd.clone());
+                }
+                if ppid > 0 {
+                    t.session_pid = ppid;
                 }
             }
         };
@@ -354,7 +359,7 @@ impl App {
                     // The same activity twice in a row says nothing new.
                     None => {
                         let repeat = self.st.task_mut(target).and_then(|t| t.steps.last().cloned()).as_deref() == Some(label.as_str());
-                        if !repeat {
+                        if !repeat && !label.is_empty() {
                             self.st.append_step(target, label);
                         }
                     }
@@ -680,6 +685,7 @@ mod activity_tests {
         assert_eq!(activity("Edit", &json!({"file_path": "C:/x/src/app.rs"})), "Mengubah app.rs");
         assert_eq!(activity("Grep", &json!({"pattern": "fn main"})), "Menelusuri kode");
         assert_eq!(activity("mcp__knowledge-hub__remember", &json!({})), "Memakai knowledge hub");
+        assert_eq!(activity("mcp__ccd_session__mark_chapter", &json!({})), "");
     }
 
     #[test]

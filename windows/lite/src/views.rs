@@ -157,6 +157,73 @@ fn sun_path(g: &mut Gfx, a: Rect, rise: f64, set: f64, now_h: f64, hours: &[f64]
     text::draw(g, &format!("Terbenam {set_t}"), a.x + a.w, a.y + a.h - 4.0, Face::Regular, 10.0, hex(pal::DIM2), Align::Right);
 }
 
+// ── The window a session lives in ─────────────────────────────────────────────
+
+/// The nearest process up the parent chain from `pid` (itself included) that owns a visible
+/// top-level window with a title: the terminal, VS Code or the Claude desktop app.
+fn session_window(pid: u32) -> Option<windows::Win32::Foundation::HWND> {
+    use windows::Win32::Foundation::{CloseHandle, HWND, LPARAM};
+    use windows::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS,
+    };
+    use windows::Win32::UI::WindowsAndMessaging::{EnumWindows, GetWindow, GetWindowTextLengthW, GetWindowThreadProcessId, IsWindowVisible, GW_OWNER};
+    if pid == 0 {
+        return None;
+    }
+    // Parent of every process, from one snapshot.
+    let mut parent = std::collections::HashMap::new();
+    unsafe {
+        let snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0).ok()?;
+        let mut e = PROCESSENTRY32W { dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32, ..Default::default() };
+        if Process32FirstW(snap, &mut e).is_ok() {
+            loop {
+                parent.insert(e.th32ProcessID, e.th32ParentProcessID);
+                if Process32NextW(snap, &mut e).is_err() {
+                    break;
+                }
+            }
+        }
+        let _ = CloseHandle(snap);
+    }
+    // Windows by owning process.
+    let mut wins: Vec<(u32, isize)> = Vec::new();
+    unsafe extern "system" fn each(h: HWND, l: LPARAM) -> windows::core::BOOL {
+        let v = &mut *(l.0 as *mut Vec<(u32, isize)>);
+        if IsWindowVisible(h).as_bool() && GetWindow(h, GW_OWNER).map(|o| o.0.is_null()).unwrap_or(true) && GetWindowTextLengthW(h) > 0 {
+            let mut p = 0u32;
+            GetWindowThreadProcessId(h, Some(&mut p));
+            v.push((p, h.0 as isize));
+        }
+        windows::core::BOOL(1)
+    }
+    unsafe {
+        let _ = EnumWindows(Some(each), LPARAM(&mut wins as *mut _ as isize));
+    }
+    let mut cur = pid;
+    for _ in 0..12 {
+        if let Some((_, h)) = wins.iter().find(|(p, _)| *p == cur) {
+            return Some(HWND(*h as *mut _));
+        }
+        match parent.get(&cur) {
+            Some(&p) if p != 0 && p != cur => cur = p,
+            _ => break,
+        }
+    }
+    None
+}
+
+/// Brings `h` to the front, restoring it if it was minimised. The click on the island is the
+/// user input Windows asks for before it lets a background process do this.
+fn bring_forward(h: windows::Win32::Foundation::HWND) -> bool {
+    use windows::Win32::UI::WindowsAndMessaging::{IsIconic, SetForegroundWindow, ShowWindow, SW_RESTORE};
+    unsafe {
+        if IsIconic(h).as_bool() {
+            let _ = ShowWindow(h, SW_RESTORE);
+        }
+        SetForegroundWindow(h).as_bool()
+    }
+}
+
 impl App {
     // ── Entry point ───────────────────────────────────────────────────────────
 
@@ -937,7 +1004,7 @@ impl App {
 
         let by = top + 16.0 + 20.0 + 16.0 + 15.0;
         let (retry, rw) = self.ui.button(g, x, by, "Coba lagi", true, None);
-        let second = if n8n { "Buka n8n" } else { "Buka terminal" };
+        let second = if n8n { "Buka n8n" } else { "Buka sesi" };
         let (other, _) = self.ui.button(g, x + rw + 8.0, by, second, false, None);
         if retry {
             let v = self.st.default_view();
@@ -953,8 +1020,16 @@ impl App {
         }
     }
 
+    /// "Buka sesi": the window the session runs in (terminal, VS Code, the Claude app). When it
+    /// cannot be found (an old relay, a closed window), the project folder in VS Code, as before.
     pub fn open_terminal(&mut self) {
-        let cwd = self.st.focus_task().and_then(|t| t.session_cwd.clone());
+        let (pid, cwd) = self.st.focus_task().map(|t| (t.session_pid, t.session_cwd.clone())).unwrap_or((0, None));
+        if let Some(h) = session_window(pid) {
+            if bring_forward(h) {
+                self.collapse();
+                return;
+            }
+        }
         open_in_vscode(cwd.as_deref());
     }
 
@@ -976,10 +1051,22 @@ impl App {
             t(g, &text::ellipsize(&last.replace('\n', " "), Face::Regular, 12.0, w), x, y + 9.0, Face::Regular, 12.0, hex(pal::DIM));
             y += 18.0 + 6.0;
         }
-        let (term, tw) = self.ui.button(g, x, y, "Buka terminal", true, None);
-        let (ok, _) = self.ui.button(g, x + tw + 8.0, y, "OK", false, None);
+        let changed = task.map(|t| t.diffs.iter().rposition(|d| d.is_some())).unwrap_or(None);
+        let (term, tw) = self.ui.button(g, x, y, "Buka sesi", true, None);
+        let mut bx = x + tw + 8.0;
+        let mut diff = false;
+        if changed.is_some() {
+            let (d, dw) = self.ui.button(g, bx, y, "Lihat perubahan", false, None);
+            diff = d;
+            bx += dw + 8.0;
+        }
+        let (ok, _) = self.ui.button(g, bx, y, "OK", false, None);
         if term {
             self.open_terminal();
+        } else if diff {
+            if let Some(i) = changed {
+                self.open_diff(i);
+            }
         } else if ok {
             self.collapse();
         }
@@ -1397,5 +1484,20 @@ fn approval_summary(tool: &str, detail: &str) -> String {
         "WebSearch" => "Mencari di web".to_string(),
         "Task" => "Menjalankan sub-agent".to_string(),
         other => format!("Memakai alat {other}"),
+    }
+}
+
+#[cfg(test)]
+mod session_window_tests {
+    /// Manual: `cargo test session_window_of_this_process -- --ignored --nocapture` prints the
+    /// window this test run lives in (the terminal or editor that started it).
+    #[test]
+    #[ignore]
+    fn session_window_of_this_process() {
+        use windows::Win32::UI::WindowsAndMessaging::GetWindowTextW;
+        let h = super::session_window(std::process::id()).expect("a window up the chain");
+        let mut buf = [0u16; 256];
+        let n = unsafe { GetWindowTextW(h, &mut buf) };
+        println!("window: {}", String::from_utf16_lossy(&buf[..n as usize]));
     }
 }

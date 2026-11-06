@@ -58,5 +58,6 @@ windows = { version = "0.61", features = [
   "Win32_Media_Audio_Endpoints",
   "Networking_Connectivity",
   "Win32_UI_Accessibility",
+  "Win32_System_Diagnostics_ToolHelp",
   "Win32_UI_Shell_PropertiesSystem",
 ] }

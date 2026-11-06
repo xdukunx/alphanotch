@@ -114,3 +114,30 @@ unsafe fn token_sid(process: HANDLE) -> Option<String> {
     let _ = LocalFree(Some(HLOCAL(text.0 as *mut _)));
     sid
 }
+
+/// The process that started this relay: the agent's own process (Claude Code, Gemini CLI…).
+/// The app walks up from it to the window the session lives in.
+pub fn parent_pid() -> Option<u32> {
+    use windows::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS,
+    };
+    let me = std::process::id();
+    unsafe {
+        let snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0).ok()?;
+        let mut e = PROCESSENTRY32W { dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32, ..Default::default() };
+        let mut found = None;
+        if Process32FirstW(snap, &mut e).is_ok() {
+            loop {
+                if e.th32ProcessID == me {
+                    found = Some(e.th32ParentProcessID);
+                    break;
+                }
+                if Process32NextW(snap, &mut e).is_err() {
+                    break;
+                }
+            }
+        }
+        let _ = windows::Win32::Foundation::CloseHandle(snap);
+        found
+    }
+}

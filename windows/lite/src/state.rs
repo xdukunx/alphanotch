@@ -47,6 +47,8 @@ pub struct Task {
     pub session_cwd: Option<String>,
     /// What the session is about: the person's latest request, tidied to one short line.
     pub topic: String,
+    /// The agent's process (from the relay): the window the session lives in is found from it.
+    pub session_pid: u32,
     /// The little Mochi shown on this pill.
     pub mini: BotEngine,
 }
@@ -65,6 +67,7 @@ impl Task {
             steps: Vec::new(),
             diffs: Vec::new(),
             topic: String::new(),
+            session_pid: 0,
             source,
             pill_badge: None,
             session_cwd: None,

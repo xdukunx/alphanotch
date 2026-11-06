@@ -414,6 +414,14 @@ fn read_event() -> Option<Event> {
         }
     }
 
+    // The agent's process, so the app can bring the session's own window forward.
+    #[cfg(windows)]
+    if let Some(pid) = win::parent_pid() {
+        map.insert("coucou_ppid".into(), serde_json::Value::from(pid));
+    }
+    #[cfg(unix)]
+    map.insert("coucou_ppid".into(), serde_json::Value::from(std::os::unix::process::parent_id()));
+
     // Computed before the strings are cut: see the module docs.
     let tool = map.get("tool_name").and_then(|v| v.as_str()).unwrap_or("").to_string();
     if let Some(input) = map.get("tool_input") {
