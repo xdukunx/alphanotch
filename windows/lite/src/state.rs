@@ -45,6 +45,8 @@ pub struct Task {
     pub source: Source,
     pub pill_badge: Option<PillBadge>,
     pub session_cwd: Option<String>,
+    /// What the session is about: the person's latest request, tidied to one short line.
+    pub topic: String,
     /// The little Mochi shown on this pill.
     pub mini: BotEngine,
 }
@@ -62,6 +64,7 @@ impl Task {
             step_index: 0,
             steps: Vec::new(),
             diffs: Vec::new(),
+            topic: String::new(),
             source,
             pill_badge: None,
             session_cwd: None,

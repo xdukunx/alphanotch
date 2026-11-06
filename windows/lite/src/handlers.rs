@@ -56,6 +56,85 @@ fn take(s: &str, n: usize) -> String {
     s.chars().take(n).collect()
 }
 
+/// What a tool call is doing, in words, without the command itself: the card tells you what
+/// the session is busy with, the terminal keeps the details.
+fn activity(tool: &str, input: &Value) -> String {
+    let file = || {
+        str_of(input, "file_path").or_else(|| str_of(input, "path")).or_else(|| str_of(input, "notebook_path")).map(last_path_component)
+    };
+    match tool {
+        "Bash" | "PowerShell" => command_activity(str_of(input, "command").unwrap_or("")).to_string(),
+        "Read" => file().map(|f| format!("Membaca {f}")).unwrap_or_else(|| "Membaca kode".into()),
+        "Edit" | "MultiEdit" => file().map(|f| format!("Mengubah {f}")).unwrap_or_else(|| "Mengubah kode".into()),
+        "Write" => file().map(|f| format!("Menulis {f}")).unwrap_or_else(|| "Menulis file".into()),
+        "NotebookEdit" => "Mengubah notebook".into(),
+        "Glob" | "Grep" | "LS" => "Menelusuri kode".into(),
+        "WebSearch" => "Mencari di web".into(),
+        "WebFetch" => "Membaca halaman web".into(),
+        "TodoWrite" => "Menyusun rencana".into(),
+        "Task" | "Agent" => "Membagi tugas ke subagen".into(),
+        t if t.starts_with("mcp__") => {
+            let server = t.trim_start_matches("mcp__").split("__").next().unwrap_or("");
+            format!("Memakai {}", server.replace(['-', '_'], " "))
+        }
+        other => other.to_string(),
+    }
+}
+
+/// A shell command, by what it is for.
+fn command_activity(cmd: &str) -> &'static str {
+    let c = cmd.trim_start().to_lowercase();
+    let has = |w: &str| c.contains(w);
+    if has("cargo test") || has("npm test") || has("pytest") || has("go test") || has("xcodebuild test") || has("vitest") || has("jest") {
+        "Menjalankan test"
+    } else if has("cargo build") || has("cargo run") || has("npm run build") || has("xcodebuild") || has("tsc") || has("make") || has("gradle") {
+        "Membangun proyek"
+    } else if has("git push") {
+        "Mengirim ke GitHub"
+    } else if has("git commit") {
+        "Menyimpan commit"
+    } else if c.starts_with("git ") || has(" git ") {
+        "Memeriksa riwayat git"
+    } else if has("npm install") || has("pip install") || has("cargo add") || has("winget") || has("choco") {
+        "Memasang dependensi"
+    } else if has("curl") || has("invoke-webrequest") || has("wget") {
+        "Menghubungi server"
+    } else if has("schtasks") || has("register-scheduledtask") {
+        "Mengatur tugas terjadwal"
+    } else if has("stop-process") || has("start-process") || has("taskkill") {
+        "Mengelola aplikasi"
+    } else if has("python") || has("node ") {
+        "Menjalankan skrip"
+    } else if c.starts_with("ls") || c.starts_with("cat") || c.starts_with("grep") || c.starts_with("find") || has("get-content") || has("get-childitem") || c.starts_with("sed -n") {
+        "Membaca kode"
+    } else {
+        "Menjalankan perintah"
+    }
+}
+
+/// The person's request as one short line: first sentence, no code or paths, at most ~70 chars.
+pub fn topic_of(prompt: &str) -> String {
+    let line = prompt
+        .lines()
+        .map(str::trim)
+        .find(|l| !l.is_empty() && !l.starts_with("```") && !l.starts_with('<'))
+        .unwrap_or("");
+    let mut s: String = line.split(['.', '?', '!']).next().unwrap_or(line).trim().to_string();
+    if s.chars().count() > 70 {
+        let cut: String = s.chars().take(68).collect();
+        s = match cut.rfind(' ') {
+            Some(i) if i > 30 => format!("{}…", &cut[..i]),
+            _ => format!("{cut}…"),
+        };
+    }
+    let mut c = s.chars();
+    match c.next() {
+        Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+        None => String::new(),
+    }
+}
+
+#[allow(dead_code)]
 fn step_label(tool: &str, input: &Value) -> String {
     let label = tool_label(tool);
     if let Some(cmd) = str_of(input, "command") {
@@ -218,7 +297,13 @@ impl App {
                     .map(str::to_string)
                     .or_else(|| (!message.is_empty()).then(|| message.clone()));
                 if let Some(a) = asked {
-                    self.st.append_step(target, take(&a, 60));
+                    let topic = topic_of(&a);
+                    if let Some(t) = self.st.task_mut(target) {
+                        if !topic.is_empty() {
+                            t.topic = topic;
+                        }
+                    }
+                    self.st.append_step(target, "Memahami permintaan".into());
                 }
                 self.surface(View::Overview, false);
             }
@@ -263,17 +348,23 @@ impl App {
             "PreToolUse" => {
                 upsert(self);
                 self.st.update_task(target, BotState::Working);
-                let label = step_label(&tool, &input);
+                let label = activity(&tool, &input);
                 match parse_diff(&payload) {
                     Some(d) => self.st.append_step_diff(target, label, d),
-                    None => self.st.append_step(target, label),
+                    // The same activity twice in a row says nothing new.
+                    None => {
+                        let repeat = self.st.task_mut(target).and_then(|t| t.steps.last().cloned()).as_deref() == Some(label.as_str());
+                        if !repeat {
+                            self.st.append_step(target, label);
+                        }
+                    }
                 }
                 self.surface(View::Overview, false);
             }
             "PostToolUse" | "PostInvocation" => self.st.update_task(target, BotState::Working),
             "PostToolUseFailure" => {
                 self.st.update_task(target, BotState::Working);
-                self.st.append_step(target, "⚠ gagal".into());
+                self.st.append_step(target, "Ada yang gagal, mencoba lagi".into());
             }
             "Notification" => {
                 let lower = message.to_lowercase();
@@ -573,5 +664,39 @@ impl App {
             }
         }
         self.ensure_running();
+    }
+}
+
+#[cfg(test)]
+mod activity_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn the_card_says_what_not_how() {
+        assert_eq!(activity("Bash", &json!({"command": "cargo test --release -p coucou-lite"})), "Menjalankan test");
+        assert_eq!(activity("PowerShell", &json!({"command": "schtasks /run /tn KnowledgeHub"})), "Mengatur tugas terjadwal");
+        assert_eq!(activity("Bash", &json!({"command": "git push -q origin HEAD:main"})), "Mengirim ke GitHub");
+        assert_eq!(activity("Edit", &json!({"file_path": "C:/x/src/app.rs"})), "Mengubah app.rs");
+        assert_eq!(activity("Grep", &json!({"pattern": "fn main"})), "Menelusuri kode");
+        assert_eq!(activity("mcp__knowledge-hub__remember", &json!({})), "Memakai knowledge hub");
+    }
+
+    #[test]
+    fn a_request_becomes_a_short_topic() {
+        assert_eq!(topic_of("fix the escape key. it closes the wrong panel"), "Fix the escape key");
+        assert_eq!(topic_of("
+```rust
+fn x(){}
+```
+
+  add dark mode
+and more"), "Fn x(){}");
+        assert_eq!(topic_of("
+
+  add dark mode
+and more"), "Add dark mode");
+        let long = topic_of("tolong rapikan halaman saham supaya jarak antar kartu sama dan header tidak bertabrakan dengan angka harga di kanan atas");
+        assert!(long.ends_with('…') && long.chars().count() <= 70);
     }
 }

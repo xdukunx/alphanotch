@@ -385,14 +385,28 @@ impl App {
             let mut x = left.x + 108.0;
             ui::dot(g, x + 3.5, cy, 7.0, hex(color));
             x += 7.0 + 6.0;
-            let max = left.w - 108.0 - 36.0 - 70.0;
-            let nm = text::ellipsize(&name, Face::Medium, 12.0, max);
+            // Name and source share what is left once the step count and the ↗ have their room.
+            let right_edge = left.x + left.w - 36.0 - count.as_ref().map(|c| text::measure(c, Face::Regular, 11.0) + 8.0).unwrap_or(0.0);
+            let nm = text::ellipsize(&name, Face::Medium, 12.0, (right_edge - x).max(20.0));
             x += t(g, &nm, x, cy, Face::Medium, 12.0, hex(pal::INK)) + 6.0;
-            t(g, source_label, x, cy, Face::Regular, 11.0, hex(pal::DIM2));
+            if x + 30.0 < right_edge {
+                let src = text::ellipsize(source_label, Face::Regular, 11.0, right_edge - x);
+                t(g, &src, x, cy, Face::Regular, 11.0, hex(pal::DIM2));
+            }
             if let Some(c) = count {
                 text::draw(g, &c, left.x + left.w - 36.0, cy, Face::Regular, 11.0, hex(pal::DIM3), Align::Right);
             }
-            self.ticker.draw(g, left.x + 108.0, left.y + 28.0, left.w - 108.0 - 12.0, n);
+            // What the session is about, then what it is doing right now.
+            let topic = task.topic.clone();
+            let tx = left.x + 108.0;
+            let tw = left.w - 108.0 - 14.0;
+            let ticker_y = if topic.is_empty() {
+                left.y + 28.0
+            } else {
+                t(g, &text::ellipsize(&topic, Face::Regular, 11.5, tw), tx, left.y + 38.0, Face::Regular, 11.5, hex(pal::DIM));
+                left.y + 48.0
+            };
+            self.ticker.draw(g, tx, ticker_y, tw, n);
             // The latest edit's diff is one click away, on the ticker or on the chip.
             if let Some(di) = diff_step {
                 let (open, _) = self.ui.link(g, left.x + 108.0 + 18.0, left.y + left.h - 18.0, "Lihat diff", hex("#30D158"));
