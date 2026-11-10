@@ -1845,6 +1845,30 @@ impl App {
                 let tx = x0 + 18.0;
                 let w = x1 - tx;
                 let label = if m.artist.is_empty() { m.title.clone() } else { format!("{} · {}", m.title, m.artist) };
+                // The line being sung, with the song under it, karaoke style.
+                let s = &self.st.settings;
+                if m.playing && s.feature_on("lyrics") && s.feature_on("lyrics-bar") {
+                    crate::lyrics::request(&m.title, &m.artist, m.duration);
+                    if let Some((line, since, dur)) = crate::lyrics::line_at(&m.title, &m.artist, m.position_now()) {
+                        // Each new line rises in over a quarter of a second.
+                        let k = clamp(since / 0.25, 0.0, 1.0);
+                        let ease = 1.0 - (1.0 - k) * (1.0 - k);
+                        // A long line first gets a size smaller, then slides along as it is sung.
+                        let size = if text::measure(&line, Face::Medium, 11.5) <= w { 11.5 } else { 10.5 };
+                        let lw = text::measure(&line, Face::Medium, size);
+                        let lx = if lw <= w {
+                            tx + (w - lw) / 2.0
+                        } else {
+                            let p = clamp((since - 0.6) / (dur - 1.4).max(0.5), 0.0, 1.0);
+                            tx - (lw - w + 10.0) * (p * p * (3.0 - 2.0 * p))
+                        };
+                        fading_text(g, &line, lx, cy - 5.5 + 3.0 * (1.0 - ease), size, crate::gfx::with_alpha(hex(pal::INK), ease), tx, tx + w);
+                        let sw = text::measure(&label, Face::Medium, 8.5);
+                        let sx = if sw <= w { tx + (w - sw) / 2.0 } else { tx };
+                        fading_text(g, &label, sx, cy + 7.5, 8.5, hex(pal::DIM3), tx, tx + w);
+                        return;
+                    }
+                }
                 let tw = text::measure(&label, Face::Medium, 11.5);
                 let mut px = tx;
                 if tw > w {

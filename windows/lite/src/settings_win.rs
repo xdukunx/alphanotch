@@ -935,6 +935,7 @@ impl Win {
             ("focus", "Fokus (Pomodoro)"),
             ("water", "Air minum"),
             ("lyrics", "Lirik lagu"),
+            ("lyrics-bar", "Lirik di island tertutup"),
             ("keys", "Overlay volume & Caps"),
         ];
         let rows = feats.len().div_ceil(2) as f32;

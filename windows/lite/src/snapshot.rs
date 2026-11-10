@@ -315,6 +315,14 @@ Kosong ~150 menit sebelum Rapat tim (14:00) — cocok untuk: Kirim laporan".into
         crate::lyrics::set_demo();
         app.lyrics_open = true;
     }, 1.0);
+    scene!("lyrics_bar", Mode::Compact, View::Overview, |app| {
+        crate::activity::set_demo();
+        crate::lyrics::set_demo();
+    }, 1.0);
+    scene!("lyrics_bar_ja", Mode::Compact, View::Overview, |app| {
+        crate::activity::set_demo();
+        crate::lyrics::set_demo_ja();
+    }, 1.0);
     scene!("ov_volume", Mode::Compact, View::Overview, |app| {
         app.show_overlay(crate::overlay::Overlay { kind: crate::overlay::OverlayKind::Volume, title: "Volume".into(), sub: String::new(), metric: "45%".into() });
         app.overlay_level = Some(0.45);

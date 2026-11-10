@@ -1,6 +1,7 @@
 // Synced lyrics for the song that is playing, from LRCLIB (lrclib.net): a free, open lyrics
-// database. Opt-in by use: nothing is requested until the lyrics panel is opened, and then
-// only the title, the artist and the length of the current song leave the computer.
+// database. Nothing is requested while the "Lirik lagu" feature is off; when it is on, the
+// lyrics panel and the line in the closed island (feature "lyrics-bar") ask for the song that
+// is playing, and only its title, artist and length leave the computer.
 // Results are kept in memory for the session.
 
 use std::collections::HashMap;
@@ -44,6 +45,17 @@ fn key_of(title: &str, artist: &str) -> String {
 pub fn set_demo() {
     let lines = ["If I could be by your side", "I'd give you all my seasons and every quiet morning in between", "Every summer, every rain", "Every dawn that finds you again", "Paper sky above our heads"];
     let lines: Vec<(f32, String)> = lines.iter().enumerate().map(|(i, l)| (50.0 + i as f32 * 9.0, l.to_string())).collect();
+    if let Ok(mut c) = CURRENT.lock() {
+        *c = Some(Lyrics { key: key_of("Paper Sky", "Lumen Coast"), state: State::Synced, lines });
+    }
+}
+
+/// Snapshot builds only: the same song sung in Japanese, to check the CJK fallback fonts.
+#[cfg(feature = "snapshot")]
+pub fn set_demo_ja() {
+    let lines = ["汗だくに付加価値を 僕らで もう一度", "夜明けの空に名前を呼んで", "ここから始まる物語"];
+    let mut lines: Vec<(f32, String)> = lines.iter().enumerate().map(|(i, l)| (if i == 0 { 0.0 } else { 70.0 + i as f32 * 9.0 }, l.to_string())).collect();
+    lines.push((10_000.0, String::new()));
     if let Ok(mut c) = CURRENT.lock() {
         *c = Some(Lyrics { key: key_of("Paper Sky", "Lumen Coast"), state: State::Synced, lines });
     }
@@ -200,6 +212,21 @@ fn stamp(tag: &str) -> Option<f32> {
     let m: f32 = m.trim().parse().ok()?;
     let s: f32 = s.trim().parse().ok()?;
     Some(m * 60.0 + s)
+}
+
+/// For the closed island: the line being sung in this song at `pos` seconds, and how many
+/// seconds ago it started, and how long it lasts (until the next line). None until synced lyrics for exactly this song are in, and on the
+/// empty lines between verses.
+pub fn line_at(title: &str, artist: &str, pos: f32) -> Option<(String, f32, f32)> {
+    let ly = current()?;
+    if ly.key != key_of(title, artist) || ly.state != State::Synced {
+        return None;
+    }
+    let i = active_index(&ly.lines, pos)?;
+    let (t, line) = &ly.lines[i];
+    let line = line.trim();
+    let dur = ly.lines.get(i + 1).map(|n| n.0 - t).unwrap_or(5.0).max(0.5);
+    (!line.is_empty()).then(|| (line.to_string(), pos - t, dur))
 }
 
 /// The line being sung at `pos` seconds: the last one that has started.
