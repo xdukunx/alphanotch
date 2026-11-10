@@ -73,6 +73,17 @@ fn stack_top(card: Rect, heights: &[f32], gap: f32) -> f32 {
     card.y + (card.h - total) / 2.0
 }
 
+/// A small pill button (24 px), dimmed when what it sets is switched off.
+fn small_pill(ui: &mut ui::Ui, g: &mut Gfx, id: &str, r: Rect, label: &str, enabled: bool) -> bool {
+    let (clicked, hover, _) = ui.click_region(id_of(id, 114), r);
+    let h_t = ui.hover_t(id_of(id, 114), hover);
+    g.fill_style(rgba(255, 255, 255, 0.08 + 0.06 * h_t));
+    g.fill_round_rect(r.x, r.y, r.w, r.h, r.h / 2.0);
+    let col = if enabled { hex(pal::INK2) } else { hex(pal::DIM3) };
+    text::draw(g, label, r.cx(), r.cy(), Face::Medium, 11.0, col, Align::Center);
+    clicked
+}
+
 fn dot(g: &mut Gfx, x: f32, y: f32, r: f32) {
     g.begin_path();
     g.circle(x, y, r);
@@ -83,8 +94,8 @@ fn dot(g: &mut Gfx, x: f32, y: f32, r: f32) {
 /// travelled is gold with the sky warming under it; ahead of the marker the line is dotted.
 /// Stops already passed go quiet, the next one is ringed. Names and times sit in one row under
 /// the curve so they line up like a timetable.
-fn route(g: &mut Gfx, a: Rect, rows: &[(String, String)], next: usize, five: &[f64; 5], now_h: f64, day: bool, sunrise: Option<f64>) {
-    let label_h = 30.0;
+fn route(g: &mut Gfx, a: Rect, rows: &[(String, String)], next: usize, five: &[f64; 5], now_h: f64, day: bool) {
+    let label_h = 27.0;
     let base = a.y + a.h - label_h - 4.0;
     let amp = (a.h - label_h - 14.0).max(16.0);
     let curve = |u: f32| (a.x + a.w * u, base - amp * (std::f32::consts::PI * u).sin());
@@ -98,7 +109,7 @@ fn route(g: &mut Gfx, a: Rect, rows: &[(String, String)], next: usize, five: &[f
     let steps = 120usize;
     let n = ((steps as f32) * u_now).ceil() as usize;
     if n > 1 {
-        let fill = g.linear(0.0, base - amp, 0.0, base, &[(0.0, rgba(255, 190, 80, 0.26)), (1.0, rgba(255, 190, 80, 0.02))]);
+        let fill = g.linear(0.0, base - amp, 0.0, base, &[(0.0, rgba(255, 190, 80, 0.15)), (1.0, rgba(255, 190, 80, 0.0))]);
         g.fill_style(fill);
         g.begin_path();
         g.move_to(a.x, base);
@@ -131,11 +142,6 @@ fn route(g: &mut Gfx, a: Rect, rows: &[(String, String)], next: usize, five: &[f
         }
     }
 
-    // Sunrise and sunset on the ground line, small.
-    if let Some(rise) = sunrise {
-        let _ = rise;
-    }
-
     // The stops.
     for (i, (name, time)) in rows.iter().enumerate() {
         let u = 0.1 + 0.2 * i as f32;
@@ -161,8 +167,8 @@ fn route(g: &mut Gfx, a: Rect, rows: &[(String, String)], next: usize, five: &[f
         }
         // The timetable row: name over time, all on one line across the stops.
         let (nc, tc) = if is_next { (hex(pal::INK), hex(pal::INK)) } else if passed { (hex(pal::DIM3), hex(pal::DIM4)) } else { (hex(pal::DIM2), hex(pal::INK2)) };
-        text::draw(g, name, sx, base + 13.0, if is_next { Face::Medium } else { Face::Regular }, 10.5, nc, Align::Center);
-        text::draw(g, time, sx, base + 28.0, Face::Medium, 11.5, tc, Align::Center);
+        text::draw(g, name, sx, base + 12.0, if is_next { Face::Medium } else { Face::Regular }, 9.5, nc, Align::Center);
+        text::draw(g, time, sx, base + 25.0, Face::Medium, 10.5, tc, Align::Center);
     }
 
     // The marker: the sun by day, a pale moon at night.
@@ -858,10 +864,12 @@ impl App {
 
     // ── Prayer schedule ───────────────────────────────────────────────────────
 
-    /// The page beside Weather, set out like a station board: the next prayer and the minutes to
-    /// it, then the day's five prayers as stops along a route that rises and falls like the sun,
-    /// with the sun (or the moon, at night) travelling between them. When a prayer time arrives
-    /// the same page opens with that stop lit and the "Oke" / "Ingatkan" buttons.
+    /// The page beside Weather. Left: the next prayer and a clock counting down to it, then the
+    /// place. Right: Imsak, sunrise and the qibla on one line, and the day's five prayers as
+    /// stops along a route that rises and falls like the sun, with the sun (or the moon, at
+    /// night) travelling between them. Under both, the controls: change the city, how early to
+    /// warn, and the alarm itself. When a prayer time arrives the same page opens with that stop
+    /// lit and "Oke" / "Ingatkan 10 menit" in place of the controls.
     fn draw_prayer(&mut self, g: &mut Gfx, v: Rect) {
         let now = crate::util::unix_now();
         let off = crate::util::local_offset_secs() as f64;
@@ -890,47 +898,137 @@ impl App {
 
         let hours: Vec<f64> = rows.iter().filter_map(|(_, tm)| crate::prayer::clock_hours(tm)).collect();
         let five: Option<[f64; 5]> = (hours.len() == 5).then(|| [hours[0], hours[1], hours[2], hours[3], hours[4]]);
-        let x = v.x + 20.0;
-        let w = v.w - 40.0;
-        let route_h = if buttons { 70.0 } else { 88.0 };
-        let head_h = 40.0;
-        let total = head_h + 6.0 + route_h + if buttons { 8.0 + 30.0 } else { 0.0 };
-        let top = v.y + ((v.h - total) / 2.0).max(8.0);
-
-        // The board: what is next (or what has just come), and how long.
         let accent = hex("#FFC45C");
-        let (label, name, big, small) = if buttons {
-            ("WAKTU SHOLAT".to_string(), rows[lit].0.clone(), rows[lit].1.clone(), String::new())
+        let pad = 18.0;
+        let lx = v.x + pad;
+        let left_w = 176.0;
+        let rx = lx + left_w + 16.0;
+        let rw = v.x + v.w - pad - rx;
+        let ctl_h = if buttons { 30.0 } else { 24.0 };
+        let ctl_y = v.y + v.h - 14.0 - ctl_h;
+
+        // Left: which prayer, the clock, the place.
+        let (name, clock, at, when) = if buttons {
+            (format!("Waktu {}", rows[lit].0), rows[lit].1.clone(), String::new(), "sekarang".to_string())
         } else if let Some(f) = five {
-            let (_, mins, tomorrow) = crate::prayer::next_stop(&f, now_h);
-            let name = if tomorrow { format!("{} besok", rows[lit].0) } else { rows[lit].0.clone() };
-            ("BERIKUTNYA".to_string(), name, crate::prayer::countdown(mins), format!("pukul {}", rows[lit].1))
+            let (i, secs, tomorrow) = crate::prayer::seconds_to_next(&f, now_h);
+            (rows[i].0.clone(), crate::prayer::hms(secs), rows[i].1.clone(), if tomorrow { "besok" } else { "hari ini" }.to_string())
         } else {
-            ("BERIKUTNYA".to_string(), rows[lit].0.clone(), rows[lit].1.clone(), String::new())
+            (rows[lit].0.clone(), rows[lit].1.clone(), String::new(), String::new())
         };
-        text::draw(g, &label, x, top + 8.0, Face::Medium, 9.0, hex(pal::DIM3), Align::Left);
-        text::draw(g, &name, x, top + 28.0, Face::Display, 21.0, hex(pal::INK), Align::Left);
-        text::draw(g, &big, x + w, top + 24.0, Face::Display, 21.0, accent, Align::Right);
-        if !small.is_empty() {
-            text::draw(g, &small, x + w, top + 8.0, Face::Regular, 10.5, hex(pal::DIM2), Align::Right);
+        text::draw(g, &name, lx, v.y + 26.0, Face::Medium, 12.5, accent, Align::Left);
+        let cw = t(g, &clock, lx, v.y + 52.0, Face::Display, 27.0, hex(pal::INK));
+        if !at.is_empty() {
+            text::draw(g, &at, lx + cw + 9.0, v.y + 46.0, Face::Medium, 11.5, hex(pal::INK2), Align::Left);
         }
+        if !when.is_empty() {
+            let wy = if at.is_empty() { v.y + 52.0 } else { v.y + 60.0 };
+            text::draw(g, &when, lx + cw + 9.0, wy, Face::Regular, 9.5, hex(pal::DIM3), Align::Left);
+        }
+        let city = self.st.settings.weather_city.trim().to_string();
+        let auto = city.is_empty() || city.eq_ignore_ascii_case("auto");
+        let place = where_.split(" · ").next().unwrap_or(&where_).to_string();
+        let place = text::ellipsize(&place, Face::Medium, 11.5, left_w);
+        text::draw(g, &place, lx, v.y + 84.0, Face::Medium, 11.5, hex(pal::INK), Align::Left);
+        let how = if auto { "Dari lokasimu (perkiraan IP)" } else { "Kota pilihanmu" };
+        text::draw(g, how, lx, v.y + 99.0, Face::Regular, 9.5, hex(pal::DIM3), Align::Left);
 
-        // The route.
+        // Right: Imsak, sunrise, qibla; then the route.
         if let Some(f) = five {
-            let area = Rect::new(x, top + head_h + 6.0, w, route_h);
+            let mut info = format!("Imsak {}", crate::prayer::hhmm(crate::prayer::imsak(f[0])));
+            if let Some(rise) = sun {
+                info.push_str(&format!("  ·  Terbit {}", crate::prayer::hhmm(rise)));
+            }
+            if let Some(w) = crate::weather::report() {
+                let q = crate::prayer::qibla(w.lat, w.lon);
+                info.push_str(&format!("  ·  Kiblat {:.0}° {}", q, crate::prayer::compass(q)));
+            }
+            let info = text::ellipsize(&info, Face::Regular, 9.5, rw);
+            text::draw(g, &info, rx + rw, v.y + 22.0, Face::Regular, 9.5, hex(pal::DIM2), Align::Right);
+            let area = Rect::new(rx, v.y + 30.0, rw, (ctl_y - 8.0 - (v.y + 30.0)).max(40.0));
             let day = sun.map(|rise| now_h >= rise && now_h <= f[3]).unwrap_or(false);
-            route(g, area, &rows, lit, &f, now_h, day, sun);
+            route(g, area, &rows, lit, &f, now_h, day);
         }
 
+        // The controls.
         if buttons {
-            let by = top + head_h + 6.0 + route_h + 8.0;
-            let (ok, ow) = self.ui.button(g, x, by, "Oke", true, None);
-            let (later, _) = self.ui.button(g, x + ow + 8.0, by, "Ingatkan 10 menit", false, None);
+            let (ok, ow) = self.ui.button(g, lx, ctl_y, "Oke", true, None);
+            let (later, _) = self.ui.button(g, lx + ow + 8.0, ctl_y, "Ingatkan 10 menit", false, None);
             if ok {
                 self.dismiss_reminder(false);
             } else if later {
                 self.dismiss_reminder(true);
             }
+            return;
+        }
+        self.prayer_place_control(g, lx, ctl_y, left_w + 60.0, auto, &city);
+
+        // Right end: the alarm switch, and before it how early it rings.
+        let sw_x = v.x + v.w - pad - 32.0;
+        let on = self.st.settings.prayer_alarm;
+        if self.ui.switch(g, "prayer-alarm", sw_x, ctl_y + 3.0, on) {
+            self.st.settings.prayer_alarm = !on;
+            self.save_settings();
+            self.sync_reminder_timer();
+        }
+        let lead = self.st.settings.prayer_lead_min;
+        let label = if lead == 0 { "Tepat waktu".to_string() } else { format!("{lead} mnt sebelum") };
+        let lw = text::measure(&label, Face::Medium, 11.0) + 22.0;
+        let lr = Rect::new(sw_x - 10.0 - lw, ctl_y, lw, ctl_h);
+        if small_pill(&mut self.ui, g, "prayer-lead", lr, &label, on) {
+            let leads = [0u32, 5, 10, 15];
+            let i = leads.iter().position(|&l| l == lead).unwrap_or(0);
+            self.st.settings.prayer_lead_min = leads[(i + 1) % leads.len()];
+            self.save_settings();
+        }
+    }
+
+    /// "Ganti tempat", which turns into a field for the city while it is being typed.
+    fn prayer_place_control(&mut self, g: &mut Gfx, x: f32, y: f32, max_w: f32, auto: bool, city: &str) {
+        let h = 24.0;
+        if !self.place_input.focused {
+            let label = "Ganti tempat";
+            let w = text::measure(label, Face::Medium, 11.0) + 22.0;
+            if small_pill(&mut self.ui, g, "prayer-place", Rect::new(x, y, w, h), label, true) {
+                self.place_input.set_text(if auto { "" } else { city });
+                self.place_input.select_all();
+                self.place_input.focused = true;
+                self.platform.set_activating(true);
+            }
+            return;
+        }
+        let fb = Rect::new(x, y, max_w.min(240.0), h);
+        g.fill_style(rgba(255, 255, 255, 0.11));
+        g.fill_round_rect(fb.x, fb.y, fb.w, fb.h, h / 2.0);
+        let field = Rect::new(fb.x + 11.0, fb.y + 3.0, fb.w - 22.0, 18.0);
+        let (mx, my) = self.ui.input.mouse;
+        let over = field.contains(mx, my);
+        self.ui.note_region(id_of("prayer-place-field", 112), field);
+        if self.ui.input.pressed {
+            if over {
+                self.place_input.click_at(mx, 11.0, crate::platform::shift_down());
+            } else {
+                self.place_input.focused = false;
+                self.platform.set_activating(false);
+            }
+        }
+        if over {
+            self.ui.hovering_text = true;
+        }
+        self.place_input.draw(g, field, 11.0, pal::INK);
+        text::draw(g, "Enter", fb.x + fb.w + 8.0, fb.cy(), Face::Regular, 9.5, hex(pal::DIM3), Align::Left);
+    }
+
+    /// Enter in the city field: an empty field goes back to the estimate from the IP address.
+    pub fn set_place(&mut self) {
+        let typed = self.place_input.text().trim().to_string();
+        let city = if typed.is_empty() { "auto".to_string() } else { typed };
+        self.place_input.focused = false;
+        self.platform.set_activating(false);
+        if city != self.st.settings.weather_city {
+            self.st.settings.weather_city = city.clone();
+            self.save_settings();
+            crate::weather::set_city(&city);
         }
     }
 

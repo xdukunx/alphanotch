@@ -233,6 +233,8 @@ pub struct App {
     pub stock_range: usize,
     pub chart_rect: crate::ui::Rect,
     pub stock_input: crate::textfield::TextField,
+    /// The city typed on the prayer page ("Ganti tempat").
+    pub place_input: crate::textfield::TextField,
     pub tp_text: String,
     pub tp_lines: Vec<String>,
     pub tp_scroll: f32,
@@ -377,6 +379,7 @@ impl App {
             stock_range: 0,
             chart_rect: crate::ui::Rect::default(),
             stock_input: crate::textfield::TextField::new("Tambah kode (BBCA, $AAPL)", false),
+            place_input: crate::textfield::TextField::new("Nama kota, atau auto", false),
             tp_text: String::new(),
             tp_lines: Vec::new(),
             tp_scroll: 0.0,
@@ -751,6 +754,8 @@ impl App {
         let settling = self.width.animating() || self.height.animating() || self.radius.animating();
         let activity_on = self.st.mode == Mode::Compact && crate::activity::current().is_some();
         self.had_activity = activity_on;
+        // The prayer page counts down in seconds.
+        let prayer_clock = self.st.mode == Mode::Expanded && self.st.view == View::Prayer;
         let busy = if self.st.mode == Mode::Hidden {
             settling
         } else {
@@ -768,6 +773,7 @@ impl App {
                 || activity_on
                 || ((self.today_h - self.today_target).abs() > 0.3 && self.st.mode == Mode::Expanded)
                 || (self.tp_playing && self.st.mode == Mode::Expanded && self.st.view == View::Teleprompter)
+                || prayer_clock
         };
         if !busy {
             self.running = false;
@@ -783,7 +789,7 @@ impl App {
                 || self.ticker.animating()
                 || self.engine.in_transition();
             // Only the compact bar's equaliser moving: 15 fps is plenty.
-            let only_activity = activity_on && !hard && !self.engine.busy() && !self.chat.sending;
+            let only_activity = (activity_on || prayer_clock) && !hard && !self.engine.busy() && !self.chat.sending && !self.ui.animating;
             // Dancing to music is ambient too: 20 fps keeps the beat and costs a third less.
             let dancing = self.engine.dancing && !hard && !self.chat.sending && !self.ui.input.down;
             self.platform.set_frame_interval(if hard { 16 } else if only_activity { 66 } else if dancing { 50 } else { 33 });
@@ -955,6 +961,7 @@ impl App {
             self.chat.input.focused = false;
             self.todo_input.focused = false;
             self.stock_input.focused = false;
+            self.place_input.focused = false;
             self.ask_input.focused = false;
         }
         if mode != Mode::Expanded {
@@ -1032,6 +1039,10 @@ impl App {
         }
         if self.last_synced_view == Some(View::Stocks) && v != View::Stocks && self.stock_input.focused {
             self.stock_input.focused = false;
+            self.platform.set_activating(false);
+        }
+        if self.last_synced_view == Some(View::Prayer) && v != View::Prayer && self.place_input.focused {
+            self.place_input.focused = false;
             self.platform.set_activating(false);
         }
         if v != View::Teleprompter {
@@ -1229,6 +1240,9 @@ impl App {
         } else if self.st.view == View::Stocks && self.stock_input.focused {
             self.stock_input.on_char(c);
             self.render_now();
+        } else if self.st.view == View::Prayer && self.place_input.focused {
+            self.place_input.on_char(c);
+            self.render_now();
         }
     }
 
@@ -1262,6 +1276,14 @@ impl App {
             self.render_now();
             return handled;
         }
+        if self.st.view == View::Prayer && self.place_input.focused {
+            let handled = self.place_input.on_key(vk);
+            if self.place_input.take_submit() {
+                self.set_place();
+            }
+            self.render_now();
+            return handled;
+        }
         if self.st.view == View::Dashboard && self.todo_input.focused {
             let handled = self.todo_input.on_key(vk);
             if self.todo_input.take_submit() {
@@ -1277,6 +1299,7 @@ impl App {
         self.chat.input.focused = false;
         self.todo_input.focused = false;
         self.stock_input.focused = false;
+        self.place_input.focused = false;
         self.ask_input.focused = false;
     }
 

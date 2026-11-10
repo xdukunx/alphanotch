@@ -163,25 +163,45 @@ pub fn card(index: usize, five: [f64; 5], sunrise: f64, tz: f64, place: &str, mi
     ReminderCard { kind: RemKind::Prayer, title, body, task: None }
 }
 
-/// "32 mnt", "2 j 15 m": the time left, the way a station board writes it.
-pub fn countdown(mins: i64) -> String {
-    if mins <= 0 {
-        "sekarang".to_string()
-    } else if mins < 60 {
-        format!("{mins} mnt")
-    } else if mins % 60 == 0 {
-        format!("{} j", mins / 60)
-    } else {
-        format!("{} j {} m", mins / 60, mins % 60)
-    }
-}
-
 /// The prayer that comes next, and the minutes until it. After Isya it is tomorrow's Subuh.
 pub fn next_stop(five: &[f64; 5], now_h: f64) -> (usize, i64, bool) {
     match (0..5).find(|&i| five[i].is_finite() && five[i] > now_h) {
         Some(i) => (i, ((five[i] - now_h) * 60.0 - 1e-6).ceil() as i64, false),
         None => (0, ((five[0] + 24.0 - now_h) * 60.0 - 1e-6).ceil() as i64, true),
     }
+}
+
+/// The next prayer and the seconds until it, counted to the minute the schedule prints (so the
+/// clock reads 00:00:00 when the printed time comes). After Isya it is tomorrow's Subuh.
+pub fn seconds_to_next(five: &[f64; 5], now_h: f64) -> (usize, i64, bool) {
+    let printed = |h: f64| (h * 60.0 - 1e-6).ceil() / 60.0;
+    match (0..5).find(|&i| five[i].is_finite() && printed(five[i]) > now_h) {
+        Some(i) => (i, ((printed(five[i]) - now_h) * 3600.0).ceil() as i64, false),
+        None => (0, ((printed(five[0]) + 24.0 - now_h) * 3600.0).ceil() as i64, true),
+    }
+}
+
+/// "01:08:23".
+pub fn hms(secs: i64) -> String {
+    let s = secs.max(0);
+    format!("{:02}:{:02}:{:02}", s / 3600, s / 60 % 60, s % 60)
+}
+
+/// Imsak, ten minutes before Subuh as Kemenag's tables print it.
+pub fn imsak(subuh: f64) -> f64 {
+    subuh - 10.0 / 60.0
+}
+
+/// The direction of the Kaaba from a place, in degrees clockwise from true north.
+pub fn qibla(lat: f64, lon: f64) -> f64 {
+    let (kl, kn) = (rad(21.4225), rad(39.8262));
+    let (p, d) = (rad(lat), kn - rad(lon));
+    deg(d.sin().atan2(p.cos() * kl.tan() - p.sin() * d.cos())).rem_euclid(360.0)
+}
+
+/// "BL" for 294°: the eight compass points as Indonesian maps write them.
+pub fn compass(bearing: f64) -> &'static str {
+    ["U", "TL", "T", "TG", "S", "BD", "B", "BL"][((bearing.rem_euclid(360.0) + 22.5) / 45.0) as usize % 8]
 }
 
 /// Where the marker is along the route, 0 to 1: it crosses the five stops (spaced evenly, at
@@ -321,11 +341,24 @@ mod tests {
     }
 
     #[test]
+    fn the_clock_reaches_zero_on_the_printed_minute_and_qibla_points_west_north_west() {
+        // Maghrib printed 17:28 (computed 17:27.4): at 17:27:00 one minute is left.
+        let five = [3.68, 11.25, 14.58, 17.0 + 27.4 / 60.0, 18.68];
+        let (i, s, tomorrow) = seconds_to_next(&five, 17.0 + 27.0 / 60.0);
+        assert_eq!((i, s, tomorrow), (3, 60, false));
+        assert_eq!(hms(4103), "01:08:23");
+        // After Isya: tomorrow's Subuh.
+        assert!(seconds_to_next(&five, 20.0).2);
+        // Surabaya faces the Kaaba at about 294°, west-north-west.
+        let q = qibla(-7.2575, 112.7521);
+        assert!((q - 294.0).abs() < 1.5, "{q}");
+        assert_eq!(compass(q), "BL");
+        assert_eq!(compass(359.0), "U");
+        assert_eq!(hhmm(imsak(3.0 + 41.0 / 60.0)), "03:31");
+    }
+
+    #[test]
     fn the_board_counts_down_and_the_marker_follows_the_clock() {
-        assert_eq!(countdown(0), "sekarang");
-        assert_eq!(countdown(32), "32 mnt");
-        assert_eq!(countdown(60), "1 j");
-        assert_eq!(countdown(135), "2 j 15 m");
         let five = [3.8, 11.25, 14.4, 17.45, 18.7];
         assert_eq!(next_stop(&five, 12.0), (2, 144, false));
         assert_eq!(next_stop(&five, 20.0).0, 0);
