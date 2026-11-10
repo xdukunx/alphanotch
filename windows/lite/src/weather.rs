@@ -64,6 +64,21 @@ pub fn report() -> Option<Report> {
     REPORT.lock().ok()?.clone()
 }
 
+/// Snapshot scenes only: a place for the prayer page to compute from.
+#[cfg(feature = "snapshot")]
+pub fn set_demo() {
+    if let Ok(mut r) = REPORT.lock() {
+        *r = Some(Report {
+            place: "Surabaya".into(),
+            estimated: false,
+            now: Now { temp: 31.0, feels: 36.0, humidity: 70, wind: 9.0, code: 1, is_day: true },
+            days: Vec::new(),
+            lat: -7.2575,
+            lon: 112.7521,
+        });
+    }
+}
+
 /// Sets the city (settings) and refreshes when it differs from the current one.
 pub fn set_city(city: &str) {
     let city = city.trim();

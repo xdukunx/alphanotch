@@ -163,6 +163,43 @@ pub fn card(index: usize, five: [f64; 5], sunrise: f64, tz: f64, place: &str, mi
     ReminderCard { kind: RemKind::Prayer, title, body, task: None }
 }
 
+/// "32 mnt", "2 j 15 m": the time left, the way a station board writes it.
+pub fn countdown(mins: i64) -> String {
+    if mins <= 0 {
+        "sekarang".to_string()
+    } else if mins < 60 {
+        format!("{mins} mnt")
+    } else if mins % 60 == 0 {
+        format!("{} j", mins / 60)
+    } else {
+        format!("{} j {} m", mins / 60, mins % 60)
+    }
+}
+
+/// The prayer that comes next, and the minutes until it. After Isya it is tomorrow's Subuh.
+pub fn next_stop(five: &[f64; 5], now_h: f64) -> (usize, i64, bool) {
+    match (0..5).find(|&i| five[i].is_finite() && five[i] > now_h) {
+        Some(i) => (i, ((five[i] - now_h) * 60.0 - 1e-6).ceil() as i64, false),
+        None => (0, ((five[0] + 24.0 - now_h) * 60.0 - 1e-6).ceil() as i64, true),
+    }
+}
+
+/// Where the marker is along the route, 0 to 1: it crosses the five stops (spaced evenly, at
+/// 0.1, 0.3, 0.5, 0.7 and 0.9) as the time between their prayers passes, and idles through the
+/// night on the two ends.
+pub fn route_position(five: &[f64; 5], now_h: f64) -> f32 {
+    if now_h < five[0] {
+        return (0.1 * (now_h / five[0].max(0.1))).clamp(0.0, 0.1) as f32;
+    }
+    for i in 0..4 {
+        if now_h < five[i + 1] {
+            let f = (now_h - five[i]) / (five[i + 1] - five[i]).max(1e-6);
+            return (0.1 + 0.2 * (i as f64 + f)) as f32;
+        }
+    }
+    (0.9 + 0.1 * ((now_h - five[4]) / (24.0 - five[4]).max(0.1))).clamp(0.9, 1.0) as f32
+}
+
 /// "05:32" as hours.
 pub fn clock_hours(t: &str) -> Option<f64> {
     let (h, m) = t.split_once(':')?;
@@ -281,6 +318,23 @@ mod tests {
 
     fn minutes(h: f64) -> i64 {
         (h * 60.0).round() as i64
+    }
+
+    #[test]
+    fn the_board_counts_down_and_the_marker_follows_the_clock() {
+        assert_eq!(countdown(0), "sekarang");
+        assert_eq!(countdown(32), "32 mnt");
+        assert_eq!(countdown(60), "1 j");
+        assert_eq!(countdown(135), "2 j 15 m");
+        let five = [3.8, 11.25, 14.4, 17.45, 18.7];
+        assert_eq!(next_stop(&five, 12.0), (2, 144, false));
+        assert_eq!(next_stop(&five, 20.0).0, 0);
+        assert!(next_stop(&five, 20.0).2);
+        assert!((route_position(&five, 11.25) - 0.3).abs() < 1e-5);
+        assert!((route_position(&five, 14.4) - 0.5).abs() < 1e-5);
+        assert!(route_position(&five, 1.0) < 0.1 && route_position(&five, 23.0) > 0.9);
+        let mid = route_position(&five, (11.25 + 14.4) / 2.0);
+        assert!((mid - 0.4).abs() < 1e-5);
     }
 
     #[test]

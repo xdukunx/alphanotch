@@ -200,6 +200,10 @@ fn views(dir: &str, want: &dyn Fn(&str) -> bool) {
         app.reminder = Some(crate::prayer::card(1, [3.0 + 48.0 / 60.0, 11.0 + 16.0 / 60.0, 14.0 + 25.0 / 60.0, 17.0 + 25.0 / 60.0, 18.0 + 36.0 / 60.0], 5.0 + 30.0 / 60.0, 7.0, "Surabaya", 0));
         app.debug_show(Mode::Expanded, View::Prayer);
     }, 1.5);
+    scene!("prayer_page", Mode::Expanded, View::Prayer, |app| {
+        crate::weather::set_demo();
+        app.debug_show(Mode::Expanded, View::Prayer);
+    }, 1.5);
     scene!("task_due", Mode::Expanded, View::Reminder, |app| {
         let mut c = crate::reminders::card_for(crate::reminders::RemKind::Task, "Dhana");
         c.body = "Kirim laporan magang ke Bu Rina".into();

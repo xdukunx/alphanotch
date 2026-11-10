@@ -79,82 +79,107 @@ fn dot(g: &mut Gfx, x: f32, y: f32, r: f32) {
     g.fill();
 }
 
-/// The day as an arc: the sky warms along the part already travelled, the sun rides the curve
-/// at the current time (a dim dot waiting at the horizon at night), Dzuhur and Ashar are ticks
-/// on it, and Terbit and Terbenam sit under its two ends.
-fn sun_path(g: &mut Gfx, a: Rect, rise: f64, set: f64, now_h: f64, hours: &[f64]) {
-    let base = a.y + a.h - 16.0;
-    let amp = a.h - 16.0 - 8.0;
-    let span = (set - rise).max(0.5);
-    let u_now = ((now_h - rise) / span) as f32;
+/// The five prayers as stops on one route that rises like the sun's path. The stretch already
+/// travelled is gold with the sky warming under it; ahead of the marker the line is dotted.
+/// Stops already passed go quiet, the next one is ringed. Names and times sit in one row under
+/// the curve so they line up like a timetable.
+fn route(g: &mut Gfx, a: Rect, rows: &[(String, String)], next: usize, five: &[f64; 5], now_h: f64, day: bool, sunrise: Option<f64>) {
+    let label_h = 30.0;
+    let base = a.y + a.h - label_h - 4.0;
+    let amp = (a.h - label_h - 14.0).max(16.0);
     let curve = |u: f32| (a.x + a.w * u, base - amp * (std::f32::consts::PI * u).sin());
+    let u_now = crate::prayer::route_position(five, now_h);
 
-    g.fill_style(rgba(255, 255, 255, 0.16));
+    // The ground, and a hint of where the sun comes up and goes down.
+    g.fill_style(rgba(255, 255, 255, 0.10));
     g.fill_rect(a.x, base, a.w, 1.0);
 
-    let steps = 96;
-    let reach = u_now.clamp(0.0, 1.0);
-    if reach > 0.0 {
-        let n = (steps as f32 * reach).ceil() as i32;
-        let fill = g.linear(0.0, base - amp, 0.0, base, &[(0.0, rgba(255, 190, 80, 0.30)), (1.0, rgba(255, 190, 80, 0.02))]);
+    // Travelled: warm fill and a solid line.
+    let steps = 120usize;
+    let n = ((steps as f32) * u_now).ceil() as usize;
+    if n > 1 {
+        let fill = g.linear(0.0, base - amp, 0.0, base, &[(0.0, rgba(255, 190, 80, 0.26)), (1.0, rgba(255, 190, 80, 0.02))]);
         g.fill_style(fill);
         g.begin_path();
         g.move_to(a.x, base);
         for k in 0..=n {
-            let (px, py) = curve((k as f32 / steps as f32).min(reach));
+            let (px, py) = curve((k as f32 / steps as f32).min(u_now));
             g.line_to(px, py);
         }
-        g.line_to(curve(reach).0, base);
+        g.line_to(curve(u_now).0, base);
         g.close_path();
         g.fill();
         g.stroke_style(rgba(255, 196, 92, 0.95));
-        g.line_width(1.6);
+        g.line_width(1.8);
         g.line_join_round();
+        g.line_cap_round();
         g.begin_path();
         g.move_to(a.x, base);
         for k in 1..=n {
-            let (px, py) = curve((k as f32 / steps as f32).min(reach));
+            let (px, py) = curve((k as f32 / steps as f32).min(u_now));
             g.line_to(px, py);
         }
         g.stroke();
     }
-    // Ahead of the sun: a dotted line.
-    g.fill_style(rgba(255, 255, 255, 0.28));
-    for k in (0..steps).step_by(2) {
+    // Ahead: dotted.
+    g.fill_style(rgba(255, 255, 255, 0.30));
+    for k in (0..steps).step_by(3) {
         let u = (k as f32 + 0.5) / steps as f32;
-        if u > reach {
+        if u > u_now {
             let (px, py) = curve(u);
-            g.fill_rect(px - 0.7, py - 0.7, 1.4, 1.4);
-        }
-    }
-    // Dzuhur and Ashar.
-    for i in [1usize, 2] {
-        if let Some(&h) = hours.get(i) {
-            let u = ((h - rise) / span) as f32;
-            if (0.0..=1.0).contains(&u) {
-                let (px, py) = curve(u);
-                g.fill_style(rgba(255, 255, 255, 0.55));
-                g.fill_round_rect(px - 1.5, py - 1.5, 3.0, 3.0, 1.5);
-            }
+            g.fill_rect(px - 0.8, py - 0.8, 1.6, 1.6);
         }
     }
 
-    if (0.0..=1.0).contains(&u_now) {
-        let (sx, sy) = curve(u_now);
-        let glow = g.radial(sx, sy, 0.0, 15.0, &[(0.0, rgba(255, 200, 90, 0.55)), (1.0, rgba(255, 200, 90, 0.0))]);
+    // Sunrise and sunset on the ground line, small.
+    if let Some(rise) = sunrise {
+        let _ = rise;
+    }
+
+    // The stops.
+    for (i, (name, time)) in rows.iter().enumerate() {
+        let u = 0.1 + 0.2 * i as f32;
+        let (sx, sy) = curve(u);
+        let passed = u < u_now - 1e-4;
+        let is_next = i == next;
+        if is_next {
+            g.fill_style(rgba(255, 196, 92, 0.22));
+            dot(g, sx, sy, 8.5);
+            g.fill_style(hex(pal::INK));
+            dot(g, sx, sy, 4.6);
+        } else if passed {
+            g.fill_style(rgba(255, 255, 255, 0.34));
+            dot(g, sx, sy, 3.2);
+        } else {
+            g.fill_style(hex("#161617"));
+            dot(g, sx, sy, 4.0);
+            g.stroke_style(rgba(255, 255, 255, 0.45));
+            g.line_width(1.3);
+            g.begin_path();
+            g.circle(sx, sy, 4.0);
+            g.stroke();
+        }
+        // The timetable row: name over time, all on one line across the stops.
+        let (nc, tc) = if is_next { (hex(pal::INK), hex(pal::INK)) } else if passed { (hex(pal::DIM3), hex(pal::DIM4)) } else { (hex(pal::DIM2), hex(pal::INK2)) };
+        text::draw(g, name, sx, base + 13.0, if is_next { Face::Medium } else { Face::Regular }, 10.5, nc, Align::Center);
+        text::draw(g, time, sx, base + 28.0, Face::Medium, 11.5, tc, Align::Center);
+    }
+
+    // The marker: the sun by day, a pale moon at night.
+    let (mx, my) = curve(u_now);
+    if day {
+        let glow = g.radial(mx, my, 0.0, 16.0, &[(0.0, rgba(255, 200, 90, 0.60)), (1.0, rgba(255, 200, 90, 0.0))]);
         g.fill_style(glow);
-        dot(g, sx, sy, 15.0);
+        dot(g, mx, my, 16.0);
         g.fill_style(hex("#FFD60A"));
-        dot(g, sx, sy, 5.5);
+        dot(g, mx, my, 5.6);
     } else {
-        let sx = if u_now < 0.0 { a.x } else { a.x + a.w };
-        g.fill_style(rgba(150, 165, 200, 0.7));
-        dot(g, sx, base - 2.0, 3.5);
+        let glow = g.radial(mx, my, 0.0, 11.0, &[(0.0, rgba(160, 180, 255, 0.35)), (1.0, rgba(160, 180, 255, 0.0))]);
+        g.fill_style(glow);
+        dot(g, mx, my, 11.0);
+        g.fill_style(rgba(205, 214, 255, 0.95));
+        dot(g, mx, my, 3.8);
     }
-
-    let (rise_t, set_t) = (crate::prayer::hhmm(rise), crate::prayer::hhmm(set));
-    text::draw(g, &format!("Terbit {rise_t}"), a.x, a.y + a.h - 4.0, Face::Regular, 10.0, hex(pal::DIM2), Align::Left);
-    text::draw(g, &format!("Terbenam {set_t}"), a.x + a.w, a.y + a.h - 4.0, Face::Regular, 10.0, hex(pal::DIM2), Align::Right);
 }
 
 // ── The window a session lives in ─────────────────────────────────────────────
@@ -833,9 +858,10 @@ impl App {
 
     // ── Prayer schedule ───────────────────────────────────────────────────────
 
-    /// The page beside Weather: today's five times and the sun's path from sunrise to sunset
-    /// with the sun where it is now. When a prayer time arrives, the same page opens with that
-    /// prayer lit and the "Oke" / "Ingatkan" buttons.
+    /// The page beside Weather, set out like a station board: the next prayer and the minutes to
+    /// it, then the day's five prayers as stops along a route that rises and falls like the sun,
+    /// with the sun (or the moon, at night) travelling between them. When a prayer time arrives
+    /// the same page opens with that stop lit and the "Oke" / "Ingatkan" buttons.
     fn draw_prayer(&mut self, g: &mut Gfx, v: Rect) {
         let now = crate::util::unix_now();
         let off = crate::util::local_offset_secs() as f64;
@@ -847,7 +873,7 @@ impl App {
             (title, where_, idx, rows, sun, true)
         } else if let Some((times, tz, place)) = crate::prayer::today(now) {
             let five = times.five();
-            let next = (0..5).find(|&i| five[i].is_finite() && five[i] > now_h).unwrap_or(0);
+            let (next, _, _) = crate::prayer::next_stop(&five, now_h);
             let rows: Vec<(String, String)> = (0..5).map(|i| (crate::prayer::NAMES[i].to_string(), crate::prayer::hhmm(five[i]))).collect();
             let zone = crate::prayer::zone_label(tz);
             let where_ = if place.is_empty() { zone } else { format!("{place} · {zone}") };
@@ -862,37 +888,42 @@ impl App {
         self.dash_page_title(g, v, &title, &where_);
         ui::card(g, v, Wash::None, false);
 
-        let x = v.x + 18.0;
-        let w = v.w - 36.0;
-        let chip_h = 42.0;
-        let arc_h = if buttons { 58.0 } else { 80.0 };
-        let total = arc_h + 8.0 + chip_h + if buttons { 8.0 + 30.0 } else { 0.0 };
-        let top = v.y + ((v.h - total) / 2.0).max(6.0);
-
         let hours: Vec<f64> = rows.iter().filter_map(|(_, tm)| crate::prayer::clock_hours(tm)).collect();
-        if let (Some(rise), Some(&set)) = (sun, hours.get(3)) {
-            sun_path(g, Rect::new(x, top, w, arc_h), rise, set, now_h, &hours);
+        let five: Option<[f64; 5]> = (hours.len() == 5).then(|| [hours[0], hours[1], hours[2], hours[3], hours[4]]);
+        let x = v.x + 20.0;
+        let w = v.w - 40.0;
+        let route_h = if buttons { 70.0 } else { 88.0 };
+        let head_h = 40.0;
+        let total = head_h + 6.0 + route_h + if buttons { 8.0 + 30.0 } else { 0.0 };
+        let top = v.y + ((v.h - total) / 2.0).max(8.0);
+
+        // The board: what is next (or what has just come), and how long.
+        let accent = hex("#FFC45C");
+        let (label, name, big, small) = if buttons {
+            ("WAKTU SHOLAT".to_string(), rows[lit].0.clone(), rows[lit].1.clone(), String::new())
+        } else if let Some(f) = five {
+            let (_, mins, tomorrow) = crate::prayer::next_stop(&f, now_h);
+            let name = if tomorrow { format!("{} besok", rows[lit].0) } else { rows[lit].0.clone() };
+            ("BERIKUTNYA".to_string(), name, crate::prayer::countdown(mins), format!("pukul {}", rows[lit].1))
+        } else {
+            ("BERIKUTNYA".to_string(), rows[lit].0.clone(), rows[lit].1.clone(), String::new())
+        };
+        text::draw(g, &label, x, top + 8.0, Face::Medium, 9.0, hex(pal::DIM3), Align::Left);
+        text::draw(g, &name, x, top + 28.0, Face::Display, 21.0, hex(pal::INK), Align::Left);
+        text::draw(g, &big, x + w, top + 24.0, Face::Display, 21.0, accent, Align::Right);
+        if !small.is_empty() {
+            text::draw(g, &small, x + w, top + 8.0, Face::Regular, 10.5, hex(pal::DIM2), Align::Right);
         }
 
-        let gap = 6.0;
-        let cw = (w - gap * 4.0) / 5.0;
-        let cy = top + arc_h + 8.0;
-        for (i, (name, time)) in rows.iter().enumerate() {
-            let r = Rect::new(x + i as f32 * (cw + gap), cy, cw, chip_h);
-            let on = i == lit;
-            g.fill_style(if on { rgba(255, 255, 255, 0.14) } else { rgba(255, 255, 255, 0.06) });
-            g.fill_round_rect(r.x, r.y, r.w, r.h, 10.0);
-            if on {
-                g.stroke_style(rgba(255, 255, 255, 0.0));
-                g.line_width(1.0);
-                g.round_rect(r.x + 0.5, r.y + 0.5, r.w - 1.0, r.h - 1.0, 9.5);
-                g.stroke();
-            }
-            text::draw(g, name, r.cx(), r.y + 13.0, Face::Regular, 10.5, hex(if on { pal::INK } else { pal::DIM2 }), Align::Center);
-            text::draw(g, time, r.cx(), r.y + 29.0, Face::Bold, 15.0, hex(if on { pal::INK } else { "#C7C7CC" }), Align::Center);
+        // The route.
+        if let Some(f) = five {
+            let area = Rect::new(x, top + head_h + 6.0, w, route_h);
+            let day = sun.map(|rise| now_h >= rise && now_h <= f[3]).unwrap_or(false);
+            route(g, area, &rows, lit, &f, now_h, day, sun);
         }
+
         if buttons {
-            let by = cy + chip_h + 8.0;
+            let by = top + head_h + 6.0 + route_h + 8.0;
             let (ok, ow) = self.ui.button(g, x, by, "Oke", true, None);
             let (later, _) = self.ui.button(g, x + ow + 8.0, by, "Ingatkan 10 menit", false, None);
             if ok {
