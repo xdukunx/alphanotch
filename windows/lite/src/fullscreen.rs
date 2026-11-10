@@ -62,12 +62,38 @@ pub fn busy() -> bool {
     }
 }
 
+/// Where the island is while a full-screen app (a game, a video, a presentation) may be in front.
+/// Two booleans used to stand for this, and nothing stopped both being true.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum GameScreen {
+    /// Nothing full-screen in front: the island is where the settings put it.
+    #[default]
+    Normal,
+    /// Hidden until the full-screen app goes (one screen, or moving is switched off).
+    Hidden,
+    /// On another screen until the full-screen app goes.
+    Moved,
+}
+
+/// The next state, from what Windows reports and what the settings allow. Pure, so the rules
+/// can be read and tested without a window: `busy` already includes the "hide in full screen"
+/// setting, and `other_screen` says a free screen exists and moving there is allowed.
+pub fn next_game_screen(cur: GameScreen, busy: bool, other_screen: bool) -> GameScreen {
+    match (cur, busy) {
+        (_, false) => GameScreen::Normal,
+        (GameScreen::Normal, true) if other_screen => GameScreen::Moved,
+        (GameScreen::Normal, true) => GameScreen::Hidden,
+        // Already out of the way: stay put until the app goes, even if a screen comes or goes.
+        (held, true) => held,
+    }
+}
+
 impl App {
     /// Matches the hook to the setting.
     pub fn sync_fullscreen_hook(&mut self) {
         set_enabled(self.st.settings.hide_in_fullscreen, self.platform.hwnd);
-        if !self.st.settings.hide_in_fullscreen && (self.game_hidden || self.game_moved) {
-            self.set_game_hidden(false);
+        if !self.st.settings.hide_in_fullscreen && self.game != GameScreen::Normal {
+            self.set_game_screen(false);
         }
     }
 
@@ -86,54 +112,75 @@ impl App {
 
     pub fn fullscreen_check(&mut self) {
         let want = self.st.settings.hide_in_fullscreen && busy();
-        if want != (self.game_hidden || self.game_moved) {
-            self.set_game_hidden(want);
+        if want != (self.game != GameScreen::Normal) {
+            self.set_game_screen(want);
         }
     }
 
-    pub fn set_game_hidden(&mut self, on: bool) {
-        // With a second screen the island goes there instead of vanishing, until the game ends.
-        if on && self.st.settings.game_other_screen && !self.game_hidden && !self.game_moved {
-            let game = crate::platform::foreground_monitor();
-            if crate::platform::other_monitor(game).is_some() {
-                self.game_moved = true;
-                crate::platform::set_game_monitor(game);
-                crate::log::line(format!("full-screen app in front: island moved to the other screen (game on {game:#x}, island to {:#x?})", crate::platform::other_monitor(game)));
+    /// Applies `next_game_screen` and does what entering or leaving each state takes.
+    pub fn set_game_screen(&mut self, busy: bool) {
+        let game_mon = if busy && self.game == GameScreen::Normal { crate::platform::foreground_monitor() } else { 0 };
+        let other = busy && self.st.settings.game_other_screen && crate::platform::other_monitor(game_mon).is_some();
+        let next = next_game_screen(self.game, busy, other);
+        if next == self.game {
+            return;
+        }
+        let was = std::mem::replace(&mut self.game, next);
+        // Leaving.
+        match was {
+            GameScreen::Moved => {
+                crate::platform::set_game_monitor(0);
+                crate::log::line("full-screen app gone: island back on its screen");
                 self.on_display_change();
-                return;
             }
-        }
-        if self.game_moved {
-            if on {
-                return; // still the same game
+            GameScreen::Hidden => {
+                crate::log::line("full-screen app gone: island back");
+                self.platform.set_visible(true);
+                self.on_display_change();
+                self.ensure_running();
             }
-            self.game_moved = false;
-            crate::platform::set_game_monitor(0);
-            crate::log::line("full-screen app gone: island back on its screen");
-            self.on_display_change();
-            return;
+            GameScreen::Normal => {}
         }
-        if on == self.game_hidden {
-            return;
+        // Entering.
+        match next {
+            GameScreen::Moved => {
+                crate::platform::set_game_monitor(game_mon);
+                crate::log::line(format!("full-screen app in front: island moved to the other screen (game on {game_mon:#x})"));
+                self.on_display_change();
+            }
+            GameScreen::Hidden => {
+                crate::log::line("full-screen app in front: island hidden");
+                self.overlay = None;
+                self.platform.set_frame_timer(false);
+                self.platform.set_poll_timer(false);
+                self.running = false;
+                self.platform.set_visible(false);
+            }
+            GameScreen::Normal => {}
         }
-        self.game_hidden = on;
-        crate::stocks::set_active(!on && !self.st.paused && self.st.mode != crate::layout::Mode::Hidden);
-        crate::log::line(if on { "full-screen app in front: island hidden" } else { "full-screen app gone: island back" });
-        if on {
-            self.overlay = None;
-            self.platform.set_frame_timer(false);
-            self.platform.set_poll_timer(false);
-            self.running = false;
-            self.platform.set_visible(false);
-        } else {
-            self.platform.set_visible(true);
-            self.on_display_change();
-            self.ensure_running();
-        }
+        crate::stocks::set_active(next != GameScreen::Hidden && !self.st.paused && self.st.mode != crate::layout::Mode::Hidden);
     }
 
     /// Nothing may pop up: paused by the user, or hidden for a game.
     pub fn quiet(&self) -> bool {
-        self.st.paused || self.game_hidden
+        self.st.paused || self.game == GameScreen::Hidden
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_full_screen_app_moves_or_hides_the_island_and_it_comes_back() {
+        use GameScreen::*;
+        assert_eq!(next_game_screen(Normal, true, true), Moved);
+        assert_eq!(next_game_screen(Normal, true, false), Hidden);
+        assert_eq!(next_game_screen(Moved, false, true), Normal);
+        assert_eq!(next_game_screen(Hidden, false, false), Normal);
+        // A screen plugged in or out mid-game does not shuffle the island around.
+        assert_eq!(next_game_screen(Hidden, true, true), Hidden);
+        assert_eq!(next_game_screen(Moved, true, false), Moved);
+        assert_eq!(next_game_screen(Normal, false, true), Normal);
     }
 }

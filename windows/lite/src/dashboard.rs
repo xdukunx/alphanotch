@@ -136,6 +136,15 @@ fn mmss(secs: f32) -> String {
     format!("{}:{:02}", s / 60, s % 60)
 }
 
+/// The dashboard's timer row: shut, the three presets, or the custom length.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum TimerMenu {
+    #[default]
+    Closed,
+    Presets,
+    Custom,
+}
+
 impl App {
     /// The header-row title beside Mochi on the pages that have no greeting: a name and one line of context.
     pub fn dash_page_title(&self, g: &mut Gfx, v: Rect, title: &str, sub: &str) {
@@ -421,7 +430,7 @@ impl App {
         let bottom = Rect::new(c.x, c.y + c.h - 24.0, c.w, 24.0);
         let top = c.y + 34.0;
         let mut list = Rect::new(c.x, top, c.w, (bottom.y - 7.0 - top).max(0.0));
-        if self.timer_menu {
+        if self.timer_menu != TimerMenu::Closed {
             self.dash_timer_menu(g, Rect::new(list.x, list.y, list.w, 22.0));
             list.y += 28.0;
             list.h = (list.h - 28.0).max(0.0);
@@ -501,12 +510,12 @@ impl App {
             g.fill_round_rect(row.x, row.cy() - 2.0, (bar_w * k).max(4.0), 4.0, 2.0);
             if chip(&mut self.ui, g, "dash-timer-stop", cancel, "Batal", false) {
                 activity::cancel_timer();
-                self.timer_menu = false;
+                self.timer_menu = TimerMenu::Closed;
             }
             return;
         }
 
-        if !self.timer_custom {
+        if self.timer_menu == TimerMenu::Presets {
             let gear_w = 28.0;
             let cw = (row.w - gear_w - 3.0 * 6.0) / 3.0;
             for (i, mins) in [5.0f32, 15.0, 25.0].iter().enumerate() {
@@ -514,7 +523,7 @@ impl App {
                 if chip(&mut self.ui, g, &format!("dash-timer-{mins}"), r, &format!("{}m", *mins as u32), false) {
                     crate::sound::play("blip");
                     activity::start_timer(*mins);
-                    self.timer_menu = false;
+                    self.timer_menu = TimerMenu::Closed;
                 }
             }
             let gear = Rect::new(row.x + row.w - gear_w, row.y, gear_w, row.h);
@@ -523,7 +532,7 @@ impl App {
             g.fill_round_rect(gear.x, gear.y, gear.w, gear.h, 9.0);
             crate::icons::fill(g, crate::icons::Icon::Gear, gear.cx(), gear.cy(), 13.0, hex(pal::INK));
             if clicked {
-                self.timer_custom = true;
+                self.timer_menu = TimerMenu::Custom;
             }
             return;
         }
@@ -538,7 +547,7 @@ impl App {
         let plus = Rect::new(start.x - 4.0 - 24.0, row.y, 24.0, row.h);
         let val = Rect::new(minus.x + 24.0 + 4.0, row.y, plus.x - 4.0 - (minus.x + 28.0), row.h);
         if chip(&mut self.ui, g, "dash-timer-back", back, "‹", false) {
-            self.timer_custom = false;
+            self.timer_menu = TimerMenu::Presets;
         }
         if chip(&mut self.ui, g, "dash-timer-minus", minus, "−", false) {
             self.timer_custom_min = step(self.timer_custom_min, false);
@@ -550,8 +559,7 @@ impl App {
         if chip(&mut self.ui, g, "dash-timer-start", start, "Mulai", true) {
             crate::sound::play("blip");
             activity::start_timer(self.timer_custom_min as f32);
-            self.timer_menu = false;
-            self.timer_custom = false;
+            self.timer_menu = TimerMenu::Closed;
         }
     }
 
@@ -656,7 +664,7 @@ impl App {
         let bw = if label.is_some() { 64.0 } else { 24.0 };
         let btn = Rect::new(bottom.x + bottom.w - bw, bottom.y, bw, bottom.h);
         let (t_click, t_hover, _) = self.ui.click_region(id_of("dash-timer-btn", 93), btn);
-        g.fill_style(rgba(255, 255, 255, if self.timer_menu { 0.16 } else if t_hover { 0.12 } else { 0.06 }));
+        g.fill_style(rgba(255, 255, 255, if self.timer_menu != TimerMenu::Closed { 0.16 } else if t_hover { 0.12 } else { 0.06 }));
         g.fill_round_rect(btn.x, btn.y, btn.w, btn.h, 12.0);
         let tint = if label.is_some() { hex(pal::AMBER) } else { hex(pal::DIM) };
         let icon_x = if label.is_some() { btn.x + 14.0 } else { btn.cx() };
@@ -666,8 +674,7 @@ impl App {
         }
         if t_click {
             crate::sound::play("blip");
-            self.timer_menu = !self.timer_menu;
-            self.timer_custom = false;
+            self.timer_menu = if self.timer_menu == TimerMenu::Closed { TimerMenu::Presets } else { TimerMenu::Closed };
         }
 
         let done_today = self.buddy.tasks_done;

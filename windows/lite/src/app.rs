@@ -212,8 +212,7 @@ pub struct App {
     dash_t: f32,
     pub todos: Vec<crate::todos::Todo>,
     pub done_gids: Vec<String>,
-    pub timer_menu: bool,
-    pub timer_custom: bool,
+    pub timer_menu: crate::dashboard::TimerMenu,
     pub timer_custom_min: u32,
     /// Height of the "Hari ini" body, animated: it folds away when there is nothing to show.
     pub today_h: f32,
@@ -266,9 +265,7 @@ pub struct App {
     pub next_mood: f32,
     last_cursor: (f32, f32),
     /// Petting: when the press on Mochi began, whether it has become a pet, and the last stroke.
-    pub pet_since: Option<f32>,
-    pub petting: bool,
-    pub pet_last: f32,
+    pub pet: crate::buddy::Pet,
     /// Fleeing from a chasing cursor (compact bar only).
     pub chase_score: f32,
     pub chase_prev: (f32, f32, f32),
@@ -284,13 +281,10 @@ pub struct App {
     pub clock_min: i32,
     pub overlay_level: Option<f32>,
     /// A full-screen app is in front and the island is hidden.
-    pub game_hidden: bool,
-    /// A game is in front and the island moved to the other screen.
-    pub game_moved: bool,
+    pub game: crate::fullscreen::GameScreen,
     pub fs_rechecks: u8,
     pub net_state: Option<crate::net::NetState>,
     /// The task a "task due" reminder card is about.
-    pub reminder_task: Option<String>,
     /// A prayer card put off for ten minutes: when to show it again, and the card.
     pub prayer_again: Option<(f64, crate::reminders::ReminderCard)>,
     /// "Dzuhur 11:16", refreshed every half minute, for the idle bar.
@@ -369,8 +363,7 @@ impl App {
             dash_t: 0.0,
             todos: crate::todos::load(),
             done_gids: Vec::new(),
-            timer_menu: false,
-            timer_custom: false,
+            timer_menu: crate::dashboard::TimerMenu::Closed,
             timer_custom_min: 30,
             today_h: 0.0,
             today_target: 0.0,
@@ -408,9 +401,7 @@ impl App {
             next_hobby: 0.0,
             next_mood: 0.0,
             last_cursor: (-1.0, -1.0),
-            pet_since: None,
-            petting: false,
-            pet_last: 0.0,
+            pet: crate::buddy::Pet::Idle,
             chase_score: 0.0,
             chase_prev: (0.0, 0.0, 0.0),
             flee_off: 0.0,
@@ -423,11 +414,9 @@ impl App {
             output_name: None,
             clock_min: -1,
             overlay_level: None,
-            game_hidden: false,
-            game_moved: false,
+            game: crate::fullscreen::GameScreen::Normal,
             fs_rechecks: 0,
             net_state: None,
-            reminder_task: None,
             prayer_again: None,
             prayer_next: None,
             lyrics_open: false,
@@ -695,7 +684,7 @@ impl App {
             let (ix, _, iw, ih) = self.island_rect();
             let (mx, my) = self.st.mouse;
             let near = mx > ix - 160.0 && mx < ix + iw + 160.0 && my < ih + 140.0;
-            let busy = self.st.mode == Mode::Expanded || self.running || self.drag_catch || platform::left_button_down() || self.pet_since.is_some();
+            let busy = self.st.mode == Mode::Expanded || self.running || self.drag_catch || platform::left_button_down() || self.pet != crate::buddy::Pet::Idle;
             self.platform.set_poll_rate(if near || busy { 33 } else { 125 });
         }
 
@@ -1189,8 +1178,7 @@ impl App {
         if self.is_bot_hit(x, y) && !self.upload_active() {
             self.cancel_bot_hover();
             // A quick click is a slap (on release); holding it down is petting.
-            self.pet_since = Some(now());
-            self.petting = false;
+            self.pet = crate::buddy::Pet::Pressed { since: now() };
         }
         // Text fields claim the click before the frame draws.
         self.chat.on_mouse_down(self.ui.input.mouse.0);
@@ -1204,12 +1192,10 @@ impl App {
         self.ui.input.released = true;
         self.platform.capture(false);
         self.slider_drag = false;
-        if self.pet_since.take().is_some() {
-            if !self.petting {
-                self.engine.slap();
-                self.drain_sounds();
-            }
-            self.petting = false;
+        // Let go before it became petting: that was a slap.
+        if matches!(std::mem::take(&mut self.pet), crate::buddy::Pet::Pressed { .. }) {
+            self.engine.slap();
+            self.drain_sounds();
         }
         if self.st.mode == Mode::Expanded {
             self.render_now_keep_edges();

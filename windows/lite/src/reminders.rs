@@ -48,6 +48,8 @@ pub struct ReminderCard {
     pub kind: RemKind,
     pub title: String,
     pub body: String,
+    /// For a due-task card, the task it is about (its text, as the to-do list keys them).
+    pub task: Option<String>,
 }
 
 /// Two care reminders are at least this far apart.
@@ -89,7 +91,7 @@ pub fn card_for(kind: RemKind, name: &str) -> ReminderCard {
         RemKind::Task => (format!("Pengingat tugas{who}"), String::new()),
         RemKind::Prayer => (String::new(), String::new()),
     };
-    ReminderCard { kind, title, body }
+    ReminderCard { kind, title, body, task: None }
 }
 
 /// The card for a usage estimate; `pct` is the share of the user's own busiest stretch.
@@ -100,11 +102,13 @@ pub fn limit_card(alert: crate::coach::LimitAlert) -> ReminderCard {
             kind: RemKind::LimitPlenty,
             title: "Limit Claude masih longgar".into(),
             body: format!("Lima jam terakhir baru ±{pct}% dari puncak pemakaianmu. Pakai dong, sayang kalau tidak terpakai. (perkiraan)"),
+            task: None,
         },
         Fast { pct } => ReminderCard {
             kind: RemKind::LimitFast,
             title: "Hati-hati, pemakaian Claude ngebut".into(),
             body: format!("Sudah ±{pct}% dari puncak pemakaianmu. Pelan-pelan biar tidak habis sebelum limit reset. (perkiraan)"),
+            task: None,
         },
     }
 }
@@ -118,11 +122,13 @@ pub fn official_card(alert: crate::coach::LimitAlert, mins: i64) -> ReminderCard
             kind: RemKind::LimitPlenty,
             title: "Limit Claude masih banyak".into(),
             body: format!("Baru {pct}% dari jatah 5 jam, dan reset {when} lagi. Pakai dong, sayang kalau hangus."),
+            task: None,
         },
         Fast { pct } => ReminderCard {
             kind: RemKind::LimitFast,
             title: "Hati-hati, limit Claude menipis".into(),
             body: format!("Sudah {pct}% dari jatah 5 jam, padahal reset masih {when} lagi. Pelan-pelan ya."),
+            task: None,
         },
     }
 }
@@ -153,7 +159,7 @@ impl App {
         self.fullscreen_check();
         // Prices are fetched only while the island could be looked at.
         crate::stocks::set_active(!self.quiet() && self.st.mode != Mode::Hidden);
-        if self.game_hidden {
+        if self.game == crate::fullscreen::GameScreen::Hidden {
             return; // reminders keep their place and show when the game is gone
         }
         // The idle bar names the next prayer; look it up here, twice a minute, not per frame.
@@ -271,7 +277,7 @@ impl App {
         let name = self.st.settings.display_name.trim().to_string();
         let mut card = card_for(RemKind::Task, &name);
         card.body = self.todos[i].text.clone();
-        self.reminder_task = Some(self.todos[i].text.clone());
+        card.task = Some(self.todos[i].text.clone());
         self.show_coach_card(card, Emote::Surprised);
         true
     }
@@ -319,8 +325,8 @@ impl App {
             return;
         }
         if self.reminder.as_ref().map(|c| c.kind == RemKind::Task).unwrap_or(false) {
-            self.reminder = None;
-            if let Some(text) = self.reminder_task.take() {
+            let card = self.reminder.take();
+            if let Some(text) = card.and_then(|c| c.task) {
                 if let Some(i) = self.todos.iter().position(|t| t.text == text) {
                     if snooze {
                         self.todos[i].due = Some(util::unix_now() as i64 + 600);

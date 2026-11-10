@@ -48,6 +48,26 @@ pub struct Buddy {
     pub prompt_at: f64,
 }
 
+/// The mouse on Mochi: a press that is released quickly is a slap, one held past 0.3 s turns
+/// into petting (a heart every 0.75 s) until the button comes up.
+#[derive(Clone, Copy, PartialEq, Debug, Default)]
+pub enum Pet {
+    #[default]
+    Idle,
+    Pressed { since: f32 },
+    Petting { last: f32 },
+}
+
+/// The step from `Pressed` to `Petting` and the hearts while petting. Returns the new state and
+/// whether to give a heart now. `still_on` is "the button is down and the cursor on Mochi".
+pub fn pet_step(cur: Pet, n: f32, still_on: bool) -> (Pet, bool) {
+    match cur {
+        Pet::Pressed { since } if still_on && n - since > 0.3 => (Pet::Petting { last: n }, true),
+        Pet::Petting { last } if still_on && n - last > 0.75 => (Pet::Petting { last: n }, true),
+        other => (other, false),
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Mood {
     Tired,
@@ -245,18 +265,20 @@ impl App {
         let n = now();
 
         // Petting: held down on Mochi, and the cursor has not wandered off.
-        if let Some(t0) = self.pet_since {
+        if self.pet != Pet::Idle {
             let (mx, my) = self.st.mouse;
-            if self.ui.input.down && n - t0 > 0.3 && self.is_bot_hit(mx, my) {
-                if !self.petting {
-                    self.petting = true;
+            let still_on = self.ui.input.down && self.is_bot_hit(mx, my);
+            let began = matches!(self.pet, Pet::Pressed { .. });
+            let (next, heart) = pet_step(self.pet, n, still_on);
+            self.pet = next;
+            if heart {
+                if began {
                     sound::play("love");
                 }
-                if n - self.pet_last > 0.75 {
-                    self.pet_last = n;
-                    self.engine.pet();
-                    self.ensure_running();
-                }
+                self.engine.pet();
+                self.ensure_running();
+            }
+            if matches!(self.pet, Pet::Petting { .. }) && still_on {
                 self.last_input = n;
                 return;
             }
@@ -391,6 +413,18 @@ mod tests {
         assert_eq!(b.mood(t, 14), Mood::Proud);
         b.errors = vec![t - 10.0, t - 20.0, t - 30.0];
         assert_eq!(b.mood(t, 14), Mood::Sad);
+    }
+
+    #[test]
+    fn a_short_press_stays_a_press_and_a_long_one_becomes_petting() {
+        let p = Pet::Pressed { since: 10.0 };
+        assert_eq!(pet_step(p, 10.2, true), (p, false));
+        assert_eq!(pet_step(p, 10.4, true), (Pet::Petting { last: 10.4 }, true));
+        assert_eq!(pet_step(p, 10.4, false), (p, false)); // wandered off: no petting
+        let q = Pet::Petting { last: 11.0 };
+        assert_eq!(pet_step(q, 11.5, true), (q, false));
+        assert_eq!(pet_step(q, 11.8, true), (Pet::Petting { last: 11.8 }, true));
+        assert_eq!(pet_step(Pet::Idle, 50.0, true), (Pet::Idle, false));
     }
 
     #[test]

@@ -160,7 +160,7 @@ pub fn card(index: usize, five: [f64; 5], sunrise: f64, tz: f64, place: &str, mi
         body.push_str(&format!("\n{} {}", NAMES[i], hhmm(*h)));
     }
     body.push_str(&format!("\nTerbit {}", hhmm(sunrise)));
-    ReminderCard { kind: RemKind::Prayer, title, body }
+    ReminderCard { kind: RemKind::Prayer, title, body, task: None }
 }
 
 /// "05:32" as hours.
